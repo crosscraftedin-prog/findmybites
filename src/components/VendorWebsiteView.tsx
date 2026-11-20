@@ -1,15 +1,20 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
   BadgeCheck,
   Check,
   Copy,
   Crown,
+  Eye,
   Globe2,
   Heart,
   MapPin,
   MessageCircle,
+  Minus,
+  Plus,
+  QrCode,
   ShieldCheck,
+  ShoppingBag,
   Star,
 } from 'lucide-react';
 import {
@@ -19,28 +24,42 @@ import {
   VendorProduct,
   buildWhatsAppUrl,
   formatMoney,
+  getVendorQuickTags,
 } from '../data/vendors';
+import { QrPosterModal } from './QrPosterModal';
+
+export interface VendorMetrics {
+  views: number;
+  whatsappClicks: number;
+}
 
 interface VendorWebsiteViewProps {
   vendor: Vendor | null;
   currency: CurrencyCode;
   isSaved: boolean;
+  metrics?: VendorMetrics;
   onClose: () => void;
   onToggleSave: (vendorId: string) => void;
   onCreateBooking: (booking: BookingEnquiry) => void;
   onOpenBookings: () => void;
+  onTrackWhatsAppClick?: (vendorId: string) => void;
 }
 
 export function VendorWebsiteView({
   vendor,
   currency,
   isSaved,
+  metrics,
   onClose,
   onToggleSave,
   onCreateBooking,
   onOpenBookings,
+  onTrackWhatsAppClick,
 }: VendorWebsiteViewProps) {
   const [selectedProductId, setSelectedProductId] = useState<string>('');
+  const [basket, setBasket] = useState<Record<string, number>>({});
+  const [basketExpanded, setBasketExpanded] = useState(false);
+  const [qrOpen, setQrOpen] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
@@ -52,6 +71,9 @@ export function VendorWebsiteView({
   useEffect(() => {
     if (vendor) {
       setSelectedProductId(vendor.products[0]?.id ?? '');
+      setBasket({});
+      setBasketExpanded(false);
+      setQrOpen(false);
       setSubmittedRef(null);
       setCopiedLink(false);
       setNotes('');
@@ -61,18 +83,67 @@ export function VendorWebsiteView({
   useEffect(() => {
     if (!vendor) return;
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape' && !qrOpen) onClose();
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [vendor, onClose]);
+  }, [vendor, qrOpen, onClose]);
+
+  const basketItems = useMemo(() => {
+    if (!vendor) return [];
+    return vendor.products
+      .map((product) => ({ product, qty: basket[product.id] ?? 0 }))
+      .filter((entry) => entry.qty > 0);
+  }, [vendor, basket]);
+
+  const basketTotalCount = useMemo(
+    () => basketItems.reduce((sum, item) => sum + item.qty, 0),
+    [basketItems]
+  );
+
+  const basketTotalUsd = useMemo(
+    () => basketItems.reduce((sum, item) => sum + item.product.priceUsd * item.qty, 0),
+    [basketItems]
+  );
 
   if (!vendor) return null;
 
   const activeProduct: VendorProduct | undefined =
     vendor.products.find((p) => p.id === selectedProductId) ?? vendor.products[0];
 
+  const quickTags = getVendorQuickTags(vendor);
   const shareUrl = `findmybites.com/v/${vendor.slug}`;
+
+  const updateBasketQty = (productId: string, delta: number) => {
+    setBasket((prev) => {
+      const nextQty = Math.max(0, (prev[productId] ?? 0) + delta);
+      if (nextQty === 0) {
+        const next = { ...prev };
+        delete next[productId];
+        return next;
+      }
+      return { ...prev, [productId]: nextQty };
+    });
+  };
+
+  const buildBasketWhatsAppMessage = () => {
+    const lines = basketItems.map(
+      ({ product, qty }) =>
+        `• ${qty}× ${product.name} (${formatMoney(product.priceUsd * qty, currency)})`
+    );
+    return [
+      `Hi ${vendor.name}, I'd like to order from your FindMyBites storefront (${shareUrl}):`,
+      '',
+      ...lines,
+      '',
+      `Estimated Total: ${formatMoney(basketTotalUsd, currency)}`,
+      `Event Date: ${eventDate} · Guests: ${guests}`,
+      notes.trim() ? `Notes: ${notes.trim()}` : '',
+      'Please confirm availability and next steps!',
+    ]
+      .filter(Boolean)
+      .join('\n');
+  };
 
   const handleCopyUrl = () => {
     navigator.clipboard?.writeText(`https://www.${shareUrl}`).catch(() => {});
@@ -84,6 +155,13 @@ export function VendorWebsiteView({
     e.preventDefault();
     if (!activeProduct || !customerName.trim() || !customerEmail.trim()) return;
 
+    const packageSummary =
+      basketItems.length > 0
+        ? basketItems.map((i) => `${i.qty}× ${i.product.name}`).join(', ')
+        : activeProduct.name;
+
+    const estimatedUsd = basketItems.length > 0 ? basketTotalUsd : activeProduct.priceUsd;
+
     const refCode = `FMB-${Math.floor(1000 + Math.random() * 9000)}`;
     const newBooking: BookingEnquiry = {
       id: `${Date.now()}`,
@@ -92,8 +170,8 @@ export function VendorWebsiteView({
       vendorName: vendor.name,
       vendorCity: `${vendor.city}, ${vendor.country}`,
       vendorCategory: vendor.category,
-      packageName: activeProduct.name,
-      estimatedUsd: activeProduct.priceUsd,
+      packageName: packageSummary,
+      estimatedUsd,
       eventDate,
       guests,
       customerName: customerName.trim(),
@@ -123,17 +201,17 @@ export function VendorWebsiteView({
     >
       {/* Mini-Website Top Bar */}
       <header className="sticky top-0 z-20 border-b border-border bg-background/95 backdrop-blur-md">
-        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
           <button
             type="button"
             onClick={onClose}
             className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground transition-colors hover:bg-accent whitespace-nowrap shrink-0"
           >
             <ArrowLeft className="size-4" aria-hidden="true" />
-            Back to Marketplace
+            Back
           </button>
 
-          <div className="hidden items-center gap-2 rounded-full border border-border bg-muted/60 px-3.5 py-1.5 text-xs text-muted-foreground md:flex">
+          <div className="hidden items-center gap-2 rounded-full border border-border bg-muted/60 px-3.5 py-1.5 text-xs text-muted-foreground lg:flex">
             <Globe2 className="size-3.5 text-brand" aria-hidden="true" />
             <span className="font-mono text-foreground">{shareUrl}</span>
             <button
@@ -149,6 +227,14 @@ export function VendorWebsiteView({
           <div className="flex items-center gap-2 shrink-0">
             <button
               type="button"
+              onClick={() => setQrOpen(true)}
+              className="inline-flex h-10 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-card px-3 text-xs font-semibold text-foreground hover:border-brand hover:text-brand whitespace-nowrap"
+            >
+              <QrCode className="size-4" aria-hidden="true" />
+              <span className="hidden sm:inline">QR Poster</span>
+            </button>
+            <button
+              type="button"
               onClick={() => onToggleSave(vendor.id)}
               className="inline-flex h-10 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-card px-3 text-xs font-semibold text-foreground hover:bg-accent whitespace-nowrap"
             >
@@ -156,16 +242,17 @@ export function VendorWebsiteView({
                 className={`size-4 ${isSaved ? 'fill-brand text-brand' : ''}`}
                 aria-hidden="true"
               />
-              {isSaved ? 'Saved' : 'Save'}
+              <span className="hidden sm:inline">{isSaved ? 'Saved' : 'Save'}</span>
             </button>
             <a
               href={buildWhatsAppUrl(vendor)}
               target="_blank"
               rel="noopener noreferrer"
+              onClick={() => onTrackWhatsAppClick?.(vendor.id)}
               className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-[#25D366] px-4 text-xs font-bold text-white shadow-sm transition-colors hover:bg-[#1ebe5d] whitespace-nowrap"
             >
               <MessageCircle className="size-4" aria-hidden="true" />
-              Chat on WhatsApp
+              WhatsApp
             </a>
           </div>
         </div>
@@ -231,6 +318,7 @@ export function VendorWebsiteView({
                 href={buildWhatsAppUrl(vendor)}
                 target="_blank"
                 rel="noopener noreferrer"
+                onClick={() => onTrackWhatsAppClick?.(vendor.id)}
                 className="inline-flex items-center gap-2 rounded-xl bg-[#25D366] px-6 py-3 text-sm font-bold text-white shadow-lg transition-transform hover:scale-[1.02] hover:bg-[#1ebe5d]"
               >
                 <MessageCircle className="size-5" aria-hidden="true" />
@@ -240,15 +328,24 @@ export function VendorWebsiteView({
                 href="#vendor-products"
                 className="inline-flex items-center gap-2 rounded-xl border border-white/25 bg-white/10 px-5 py-3 text-sm font-semibold text-white backdrop-blur-md transition-colors hover:bg-white/20"
               >
-                Browse {vendor.products.length} Products &amp; Packages
+                <ShoppingBag className="size-4" aria-hidden="true" />
+                Build Order ({vendor.products.length} Items)
               </a>
+              <button
+                type="button"
+                onClick={() => setQrOpen(true)}
+                className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-white/25 bg-white/10 px-4 py-3 text-sm font-semibold text-white backdrop-blur-md transition-colors hover:bg-white/20"
+              >
+                <QrCode className="size-4" aria-hidden="true" />
+                QR Menu Poster
+              </button>
             </div>
           </div>
         </div>
       </section>
 
       {/* Main One-Page Storefront Content */}
-      <main className="mx-auto max-w-6xl space-y-14 px-4 py-12 pb-28 sm:px-6 lg:px-8">
+      <main className="mx-auto max-w-6xl space-y-14 px-4 py-12 pb-36 sm:px-6 lg:px-8">
         {/* About + Service Areas */}
         <section className="grid grid-cols-1 gap-8 border-b border-border pb-10 lg:grid-cols-12">
           <div className="lg:col-span-8">
@@ -260,6 +357,18 @@ export function VendorWebsiteView({
               <span className="font-semibold text-foreground">Specialties: </span>
               {vendor.specialties.join(' · ')}
             </p>
+            {quickTags.length > 0 && (
+              <div className="mt-4 flex flex-wrap gap-2">
+                {quickTags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="rounded-md border border-border bg-muted/60 px-2.5 py-1 text-[11px] font-semibold text-foreground"
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
           <div className="rounded-2xl border border-border bg-card p-5 lg:col-span-4">
             <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
@@ -272,35 +381,52 @@ export function VendorWebsiteView({
               <p className="font-semibold text-foreground">Direct WhatsApp Hotline</p>
               <p className="mt-0.5 font-mono">+{vendor.whatsappNumber}</p>
             </div>
+            {metrics && (
+              <div className="mt-4 flex items-center justify-between border-t border-border pt-3 text-[11px] text-muted-foreground">
+                <span className="inline-flex items-center gap-1">
+                  <Eye className="size-3.5 text-brand" aria-hidden="true" />
+                  <strong className="font-mono text-foreground">{metrics.views}</strong> storefront views
+                </span>
+                <span className="inline-flex items-center gap-1">
+                  <MessageCircle className="size-3.5 text-[#25D366]" aria-hidden="true" />
+                  <strong className="font-mono text-foreground">{metrics.whatsappClicks}</strong> WA leads
+                </span>
+              </div>
+            )}
           </div>
         </section>
 
-        {/* Full Product Catalog Grid */}
+        {/* Full Product Catalog Grid with Multi-Item WhatsApp Basket */}
         <section id="vendor-products">
           <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-end">
             <div>
               <p className="text-xs font-bold uppercase tracking-wide text-brand">
-                One-Page Product Catalog
+                One-Page Product Catalog &amp; WhatsApp Order Basket
               </p>
               <h2 className="mt-1 text-2xl font-extrabold tracking-tight text-foreground sm:text-3xl">
                 Products, Counters &amp; Packages
               </h2>
             </div>
             <p className="text-xs text-muted-foreground">
-              Order any product straight on WhatsApp or select it below to send a booking enquiry.
+              Add multiple items to your WhatsApp Order Basket or enquire on any single item.
             </p>
           </div>
 
           <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
             {vendor.products.map((product) => {
               const isSelected = activeProduct?.id === product.id;
+              const qty = basket[product.id] ?? 0;
               const productWaText = `Hi ${vendor.name}, I saw "${product.name}" (${formatMoney(product.priceUsd, currency)} · ${product.serves}) on your FindMyBites page (${shareUrl}). Is it available for my upcoming event?`;
 
               return (
                 <div
                   key={product.id}
                   className={`flex flex-col overflow-hidden rounded-2xl border bg-card transition-all ${
-                    isSelected ? 'border-brand ring-2 ring-brand/20' : 'border-border'
+                    qty > 0
+                      ? 'border-[#25D366] ring-2 ring-[#25D366]/20'
+                      : isSelected
+                        ? 'border-brand ring-2 ring-brand/20'
+                        : 'border-border'
                   }`}
                 >
                   <div className="relative aspect-[4/3] w-full overflow-hidden bg-muted">
@@ -327,31 +453,52 @@ export function VendorWebsiteView({
                       {product.description}
                     </p>
 
-                    <div className="mt-4 grid grid-cols-2 gap-2 border-t border-border pt-4">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedProductId(product.id);
-                          document.getElementById('vendor-enquiry-form')?.scrollIntoView({
-                            behavior: 'smooth',
-                          });
-                        }}
-                        className={`cursor-pointer rounded-lg border px-3 py-2 text-xs font-semibold transition-colors whitespace-nowrap ${
-                          isSelected
-                            ? 'border-brand bg-brand-soft text-brand-soft-foreground'
-                            : 'border-border bg-background text-foreground hover:border-brand'
-                        }`}
-                      >
-                        {isSelected ? 'Selected' : 'Select Package'}
-                      </button>
+                    <div className="mt-4 flex items-center gap-2 border-t border-border pt-4">
+                      {qty > 0 ? (
+                        <div className="inline-flex flex-1 items-center justify-between rounded-lg border border-[#25D366] bg-[#25D366]/10 px-2 py-1.5">
+                          <button
+                            type="button"
+                            aria-label={`Remove one ${product.name}`}
+                            onClick={() => updateBasketQty(product.id, -1)}
+                            className="grid size-6 cursor-pointer place-items-center rounded-md bg-background text-foreground hover:bg-accent"
+                          >
+                            <Minus className="size-3.5" aria-hidden="true" />
+                          </button>
+                          <span className="font-mono text-xs font-bold text-foreground">
+                            {qty} in order
+                          </span>
+                          <button
+                            type="button"
+                            aria-label={`Add one more ${product.name}`}
+                            onClick={() => updateBasketQty(product.id, 1)}
+                            className="grid size-6 cursor-pointer place-items-center rounded-md bg-[#25D366] text-white hover:bg-[#1ebe5d]"
+                          >
+                            <Plus className="size-3.5" aria-hidden="true" />
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            updateBasketQty(product.id, 1);
+                            setSelectedProductId(product.id);
+                          }}
+                          className="inline-flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-border bg-background px-3 py-2 text-xs font-semibold text-foreground transition-colors hover:border-brand hover:text-brand whitespace-nowrap"
+                        >
+                          <Plus className="size-3.5" aria-hidden="true" />
+                          Add to Order
+                        </button>
+                      )}
+
                       <a
                         href={buildWhatsAppUrl(vendor, productWaText)}
                         target="_blank"
                         rel="noopener noreferrer"
+                        onClick={() => onTrackWhatsAppClick?.(vendor.id)}
                         className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-[#25D366] px-3 py-2 text-xs font-bold text-white transition-colors hover:bg-[#1ebe5d] whitespace-nowrap"
                       >
                         <MessageCircle className="size-3.5" aria-hidden="true" />
-                        WhatsApp
+                        Ask
                       </a>
                     </div>
                   </div>
@@ -371,10 +518,23 @@ export function VendorWebsiteView({
               Send a Direct Booking Request
             </h2>
             <p className="mt-1 text-xs text-muted-foreground">
-              Selected product:{' '}
-              <strong className="text-foreground">
-                {activeProduct?.name} ({activeProduct ? formatMoney(activeProduct.priceUsd, currency) : ''})
-              </strong>
+              {basketItems.length > 0 ? (
+                <>
+                  Order basket:{' '}
+                  <strong className="text-foreground">
+                    {basketTotalCount} {basketTotalCount === 1 ? 'item' : 'items'} (
+                    {formatMoney(basketTotalUsd, currency)})
+                  </strong>
+                </>
+              ) : (
+                <>
+                  Selected product:{' '}
+                  <strong className="text-foreground">
+                    {activeProduct?.name} (
+                    {activeProduct ? formatMoney(activeProduct.priceUsd, currency) : ''})
+                  </strong>
+                </>
+              )}
             </p>
 
             {submittedRef ? (
@@ -386,17 +546,20 @@ export function VendorWebsiteView({
                   </h3>
                 </div>
                 <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                  Your booking request for {activeProduct?.name} on {eventDate} ({guests} guests)
-                  is saved in your Bookings list.
+                  Your booking request for {eventDate} ({guests} guests) is saved in your Bookings
+                  list.
                 </p>
                 <div className="mt-4 flex flex-wrap gap-3">
                   <a
                     href={buildWhatsAppUrl(
                       vendor,
-                      `Hi ${vendor.name}, I just sent booking enquiry ${submittedRef} for "${activeProduct?.name}" on ${eventDate} (${guests} guests). Notes: ${notes || 'None'}`
+                      basketItems.length > 0
+                        ? buildBasketWhatsAppMessage()
+                        : `Hi ${vendor.name}, I just sent booking enquiry ${submittedRef} for "${activeProduct?.name}" on ${eventDate} (${guests} guests). Notes: ${notes || 'None'}`
                     )}
                     target="_blank"
                     rel="noopener noreferrer"
+                    onClick={() => onTrackWhatsAppClick?.(vendor.id)}
                     className="inline-flex items-center gap-1.5 rounded-lg bg-[#25D366] px-4 py-2 text-xs font-bold text-white hover:bg-[#1ebe5d]"
                   >
                     <MessageCircle className="size-4" aria-hidden="true" />
@@ -502,10 +665,13 @@ export function VendorWebsiteView({
                   <a
                     href={buildWhatsAppUrl(
                       vendor,
-                      `Hi ${vendor.name}, I'm interested in "${activeProduct?.name}" for ${guests} guests on ${eventDate}. ${notes}`
+                      basketItems.length > 0
+                        ? buildBasketWhatsAppMessage()
+                        : `Hi ${vendor.name}, I'm interested in "${activeProduct?.name}" for ${guests} guests on ${eventDate}. ${notes}`
                     )}
                     target="_blank"
                     rel="noopener noreferrer"
+                    onClick={() => onTrackWhatsAppClick?.(vendor.id)}
                     className="inline-flex items-center gap-1.5 text-xs font-bold text-[#25D366] hover:underline"
                   >
                     <MessageCircle className="size-4" aria-hidden="true" />
@@ -540,32 +706,107 @@ export function VendorWebsiteView({
         </section>
       </main>
 
-      {/* Sticky Bottom WhatsApp Bar on Vendor Website */}
+      {/* Sticky Bottom WhatsApp Bar + Expandable Multi-Item Order Basket */}
       <div className="fixed bottom-0 left-0 right-0 z-30 border-t border-border bg-card/95 backdrop-blur-md">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
-          <div className="min-w-0">
-            <p className="truncate text-sm font-bold text-foreground">{vendor.name}</p>
-            <p className="truncate text-xs text-muted-foreground">
-              {activeProduct?.name} ·{' '}
-              <span className="font-mono font-semibold text-foreground">
-                {activeProduct ? formatMoney(activeProduct.priceUsd, currency) : ''}
-              </span>
-            </p>
+        {basketItems.length > 0 && basketExpanded && (
+          <div className="border-b border-border bg-background/95">
+            <div className="mx-auto max-w-6xl px-4 py-3 sm:px-6 lg:px-8">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                  Your WhatsApp Order Basket
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setBasket({})}
+                  className="cursor-pointer text-xs font-semibold text-muted-foreground hover:text-foreground hover:underline"
+                >
+                  Clear basket
+                </button>
+              </div>
+              <div className="mt-2 space-y-1.5">
+                {basketItems.map(({ product, qty }) => (
+                  <div
+                    key={product.id}
+                    className="flex items-center justify-between gap-3 text-xs"
+                  >
+                    <span className="truncate font-medium text-foreground">
+                      {qty}× {product.name}
+                    </span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="font-mono font-semibold text-foreground">
+                        {formatMoney(product.priceUsd * qty, currency)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => updateBasketQty(product.id, -1)}
+                        className="grid size-5 cursor-pointer place-items-center rounded border border-border hover:bg-accent"
+                        aria-label={`Decrease ${product.name}`}
+                      >
+                        <Minus className="size-3" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updateBasketQty(product.id, 1)}
+                        className="grid size-5 cursor-pointer place-items-center rounded border border-border hover:bg-accent"
+                        aria-label={`Increase ${product.name}`}
+                      >
+                        <Plus className="size-3" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
+        )}
+
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
+          {basketItems.length > 0 ? (
+            <button
+              type="button"
+              onClick={() => setBasketExpanded((prev) => !prev)}
+              className="min-w-0 cursor-pointer text-left"
+            >
+              <p className="flex items-center gap-1.5 text-sm font-bold text-foreground">
+                <ShoppingBag className="size-4 text-[#25D366]" aria-hidden="true" />
+                {basketTotalCount} {basketTotalCount === 1 ? 'item' : 'items'} selected ·{' '}
+                <span className="font-mono">{formatMoney(basketTotalUsd, currency)}</span>
+              </p>
+              <p className="truncate text-xs text-brand">
+                {basketExpanded ? 'Hide itemized basket' : 'Tap to review items before sending'}
+              </p>
+            </button>
+          ) : (
+            <div className="min-w-0">
+              <p className="truncate text-sm font-bold text-foreground">{vendor.name}</p>
+              <p className="truncate text-xs text-muted-foreground">
+                {activeProduct?.name} ·{' '}
+                <span className="font-mono font-semibold text-foreground">
+                  {activeProduct ? formatMoney(activeProduct.priceUsd, currency) : ''}
+                </span>
+              </p>
+            </div>
+          )}
+
           <a
             href={buildWhatsAppUrl(
               vendor,
-              `Hi ${vendor.name}, I'm viewing your page on FindMyBites × PimpMyParty and want to ask about "${activeProduct?.name}".`
+              basketItems.length > 0
+                ? buildBasketWhatsAppMessage()
+                : `Hi ${vendor.name}, I'm viewing your page on FindMyBites × PimpMyParty and want to ask about "${activeProduct?.name}".`
             )}
             target="_blank"
             rel="noopener noreferrer"
+            onClick={() => onTrackWhatsAppClick?.(vendor.id)}
             className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-[#25D366] px-5 py-2.5 text-xs font-bold text-white shadow-md transition-colors hover:bg-[#1ebe5d] sm:text-sm"
           >
             <MessageCircle className="size-4" aria-hidden="true" />
-            Chat on WhatsApp
+            {basketItems.length > 0 ? 'Send Order on WhatsApp' : 'Chat on WhatsApp'}
           </a>
         </div>
       </div>
+
+      <QrPosterModal vendor={qrOpen ? vendor : null} onClose={() => setQrOpen(false)} />
     </div>
   );
 }

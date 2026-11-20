@@ -1,0 +1,393 @@
+{
+  "entities": {
+    "Vendor": {
+      "title": "Vendor",
+      "description": "A published food artisan or event professional storefront on FindMyBites x PimpMyParty.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase Auth UID of the vendor account owner."
+        },
+        "slug": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 100,
+          "pattern": "^[a-z0-9\\-]+$",
+          "description": "URL-safe storefront slug for findmybites.com/v/<slug>."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 100,
+          "description": "Business display name."
+        },
+        "marketplace": {
+          "type": "string",
+          "enum": ["food", "party"],
+          "description": "Marketplace ecosystem: food (FindMyBites) or party (PimpMyParty)."
+        },
+        "category": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 80,
+          "description": "Primary vendor service category."
+        },
+        "country": {
+          "type": "string",
+          "enum": ["India", "Dubai / UAE", "Sri Lanka", "Pakistan", "Bangladesh", "Nepal"],
+          "description": "Phase 1 launch country."
+        },
+        "state": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 80,
+          "description": "State, emirate, province, or division."
+        },
+        "city": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 80,
+          "description": "City name."
+        },
+        "area": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 100,
+          "description": "Neighborhood or locality."
+        },
+        "lat": {
+          "type": "number",
+          "description": "Approximate latitude for Near Me sorting."
+        },
+        "lng": {
+          "type": "number",
+          "description": "Approximate longitude for Near Me sorting."
+        },
+        "whatsappNumber": {
+          "type": "string",
+          "minLength": 7,
+          "maxLength": 18,
+          "pattern": "^[0-9]+$",
+          "description": "Public business WhatsApp hotline digits with country code."
+        },
+        "planTier": {
+          "type": "string",
+          "enum": ["free", "pro", "business"],
+          "description": "SaaS listing tier (paid tiers rank above free)."
+        },
+        "monthlyAutoPay": {
+          "type": "boolean",
+          "description": "Whether monthly auto-pay subscription is active."
+        },
+        "priceTier": {
+          "type": "string",
+          "enum": ["$", "$$", "$$$", "$$$$"],
+          "description": "Relative price band."
+        },
+        "startingPriceUsd": {
+          "type": "number",
+          "description": "Base package price in USD equivalent."
+        },
+        "rating": {
+          "type": "number",
+          "description": "Average customer rating."
+        },
+        "reviewCount": {
+          "type": "number",
+          "description": "Total verified review count."
+        },
+        "responseTime": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 60,
+          "description": "Typical WhatsApp response SLA."
+        },
+        "verified": {
+          "type": "boolean",
+          "description": "Admin-verified partner badge."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["active", "paused"],
+          "description": "Storefront visibility state."
+        },
+        "tagline": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 180,
+          "description": "Short storefront headline."
+        },
+        "description": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 1200,
+          "description": "Full storefront description."
+        },
+        "serviceAreas": {
+          "type": "array",
+          "description": "Up to 10 covered local areas."
+        },
+        "specialties": {
+          "type": "array",
+          "description": "Up to 10 specialties."
+        },
+        "image": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "Hero cover image URL or local asset path."
+        },
+        "products": {
+          "type": "array",
+          "description": "Up to 20 catalog products/packages displayed on the vendor mini-website."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server last-updated timestamp."
+        }
+      },
+      "required": [
+        "ownerId",
+        "slug",
+        "name",
+        "marketplace",
+        "category",
+        "country",
+        "state",
+        "city",
+        "area",
+        "lat",
+        "lng",
+        "whatsappNumber",
+        "planTier",
+        "monthlyAutoPay",
+        "priceTier",
+        "startingPriceUsd",
+        "rating",
+        "reviewCount",
+        "responseTime",
+        "verified",
+        "status",
+        "tagline",
+        "description",
+        "serviceAreas",
+        "specialties",
+        "image",
+        "products",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Private user account profile containing saved vendor IDs and contact details.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase Auth UID."
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "description": "User display name."
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "maxLength": 160,
+          "description": "Verified account email (private PII)."
+        },
+        "savedVendorIds": {
+          "type": "array",
+          "description": "Up to 50 shortlisted vendor IDs."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server last-updated timestamp."
+        }
+      },
+      "required": ["uid", "displayName", "email", "savedVendorIds", "createdAt", "updatedAt"]
+    },
+    "BookingEnquiry": {
+      "title": "BookingEnquiry",
+      "description": "Customer booking enquiry sent to a vendor storefront.",
+      "type": "object",
+      "properties": {
+        "reference": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 32,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Human-readable booking reference code."
+        },
+        "customerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase Auth UID of the customer."
+        },
+        "vendorId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Target vendor identifier."
+        },
+        "vendorOwnerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "UID of the vendor owner or platform."
+        },
+        "vendorName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "Vendor business name."
+        },
+        "vendorCity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "Vendor city and country."
+        },
+        "vendorCategory": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "Vendor category."
+        },
+        "packageName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240,
+          "description": "Selected product or order basket summary."
+        },
+        "estimatedUsd": {
+          "type": "number",
+          "description": "Estimated booking value in USD equivalent."
+        },
+        "eventDate": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 30,
+          "description": "Requested event date."
+        },
+        "guests": {
+          "type": "number",
+          "description": "Expected guest count."
+        },
+        "customerName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "description": "Customer name (private to customer & vendor owner)."
+        },
+        "customerEmail": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 160,
+          "description": "Customer email or phone (private to customer & vendor owner)."
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 1000,
+          "description": "Event details and customization notes."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["Confirmed Enquiry", "Awaiting Vendor Reply", "Completed", "Cancelled"],
+          "description": "Enquiry lifecycle state (Completed and Cancelled are terminal)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp."
+        }
+      },
+      "required": [
+        "reference",
+        "customerId",
+        "vendorId",
+        "vendorOwnerId",
+        "vendorName",
+        "vendorCity",
+        "vendorCategory",
+        "packageName",
+        "estimatedUsd",
+        "eventDate",
+        "guests",
+        "customerName",
+        "customerEmail",
+        "notes",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "AdminRecord": {
+      "title": "AdminRecord",
+      "description": "Trusted admin role document.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "grantedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "grantedAt"]
+    }
+  },
+  "firestore": {
+    "/vendors/{vendorId}": {
+      "schema": { "$ref": "#/entities/Vendor" },
+      "description": "Published vendor storefronts readable publicly when status is active; writable only by authenticated owner or admin."
+    },
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Private user account profiles and shortlisted vendor IDs; isolated to document owner and admin."
+    },
+    "/bookings/{bookingId}": {
+      "schema": { "$ref": "#/entities/BookingEnquiry" },
+      "description": "Customer booking enquiries accessible strictly to the customer, the target vendor owner, or an admin."
+    },
+    "/admins/{adminId}": {
+      "schema": { "$ref": "#/entities/AdminRecord" },
+      "description": "Trusted admin directory managed strictly by existing admins."
+    }
+  }
+}

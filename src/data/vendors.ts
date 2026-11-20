@@ -147,6 +147,8 @@ export interface VendorReview {
 
 export interface Vendor {
   id: string;
+  ownerId?: string;
+  status?: 'active' | 'paused';
   slug: string;
   name: string;
   marketplace: 'food' | 'party';
@@ -178,6 +180,8 @@ export interface Vendor {
 export interface BookingEnquiry {
   id: string;
   reference: string;
+  customerId?: string;
+  vendorOwnerId?: string;
   vendorId: string;
   vendorName: string;
   vendorCity: string;
@@ -190,7 +194,7 @@ export interface BookingEnquiry {
   customerEmail: string;
   notes: string;
   createdAt: string;
-  status: 'Confirmed Enquiry' | 'Awaiting Vendor Reply';
+  status: 'Confirmed Enquiry' | 'Awaiting Vendor Reply' | 'Completed' | 'Cancelled';
 }
 
 export interface SaasPlan {
@@ -1507,3 +1511,93 @@ export function haversineKm(lat1: number, lng1: number, lat2: number, lng2: numb
     Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
+
+export type QuickFilterTag =
+  | 'Eggless'
+  | 'Pure Veg'
+  | 'Halal'
+  | 'Same-Day'
+  | 'Corporate / Bulk'
+  | 'Wedding Ready';
+
+export const QUICK_FILTER_TAGS: QuickFilterTag[] = [
+  'Eggless',
+  'Pure Veg',
+  'Halal',
+  'Same-Day',
+  'Corporate / Bulk',
+  'Wedding Ready',
+];
+
+export function getVendorQuickTags(vendor: Vendor): QuickFilterTag[] {
+  const hay = `${vendor.name} ${vendor.category} ${vendor.tagline} ${vendor.description} ${vendor.specialties.join(' ')} ${vendor.products.map((p) => `${p.name} ${p.description} ${p.tag ?? ''}`).join(' ')}`.toLowerCase();
+  const tags: QuickFilterTag[] = [];
+
+  if (
+    hay.includes('eggless') ||
+    (vendor.marketplace === 'food' &&
+      (vendor.category.includes('Bakers') || vendor.category.includes('Mithai') || vendor.category.includes('Gifting')))
+  ) {
+    tags.push('Eggless');
+  }
+
+  if (
+    hay.includes('veg') ||
+    hay.includes('jain') ||
+    hay.includes('chaat') ||
+    hay.includes('mithai') ||
+    hay.includes('mocktail') ||
+    hay.includes('hamper') ||
+    hay.includes('date')
+  ) {
+    tags.push('Pure Veg');
+  }
+
+  if (
+    hay.includes('halal') ||
+    vendor.country === 'Dubai / UAE' ||
+    vendor.country === 'Pakistan' ||
+    vendor.country === 'Bangladesh'
+  ) {
+    tags.push('Halal');
+  }
+
+  if (
+    hay.includes('same-day') ||
+    hay.includes('same day') ||
+    hay.includes('express') ||
+    vendor.category.includes('Balloon') ||
+    vendor.category.includes('Snack') ||
+    vendor.category.includes('Home Bakers') ||
+    vendor.category.includes('Mithai')
+  ) {
+    tags.push('Same-Day');
+  }
+
+  if (
+    hay.includes('corporate') ||
+    hay.includes('bulk') ||
+    hay.includes('office') ||
+    hay.includes('platter') ||
+    hay.includes('hamper') ||
+    hay.includes('catering') ||
+    hay.includes('mocktail')
+  ) {
+    tags.push('Corporate / Bulk');
+  }
+
+  if (
+    hay.includes('wedding') ||
+    hay.includes('mehendi') ||
+    hay.includes('sangeet') ||
+    hay.includes('nikah') ||
+    hay.includes('valima') ||
+    hay.includes('reception') ||
+    vendor.marketplace === 'party'
+  ) {
+    tags.push('Wedding Ready');
+  }
+
+  return tags;
+}
+

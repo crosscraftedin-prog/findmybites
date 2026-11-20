@@ -1,0 +1,311 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Pillar 0: Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Global Hardened Primitives ---
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(uid) {
+      return isVerifiedUser() && request.auth.uid == uid;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isAdmin() {
+      return isVerifiedUser() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        request.auth.token.email == 'crosscraftedin@gmail.com'
+      );
+    }
+
+    // --- Entity Validation Blueprints ---
+    function isValidStringList(listVal, maxLen) {
+      return listVal is list &&
+        listVal.size() <= maxLen &&
+        (listVal.size() == 0 || (listVal[0] is string && listVal[0].size() <= 100));
+    }
+
+    function isValidProductsList(listVal) {
+      return listVal is list &&
+        listVal.size() >= 1 &&
+        listVal.size() <= 20 &&
+        listVal[0] is map;
+    }
+
+    function isValidVendor(data) {
+      return data.keys().hasAll([
+          'ownerId', 'slug', 'name', 'marketplace', 'category',
+          'country', 'state', 'city', 'area', 'lat', 'lng',
+          'whatsappNumber', 'planTier', 'monthlyAutoPay', 'priceTier',
+          'startingPriceUsd', 'rating', 'reviewCount', 'responseTime',
+          'verified', 'status', 'tagline', 'description',
+          'serviceAreas', 'specialties', 'image', 'products',
+          'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'ownerId', 'slug', 'name', 'marketplace', 'category',
+          'country', 'state', 'city', 'area', 'lat', 'lng',
+          'whatsappNumber', 'planTier', 'monthlyAutoPay', 'priceTier',
+          'startingPriceUsd', 'rating', 'reviewCount', 'responseTime',
+          'verified', 'status', 'tagline', 'description',
+          'serviceAreas', 'specialties', 'image', 'products',
+          'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.ownerId) &&
+        data.slug is string && data.slug.size() >= 2 && data.slug.size() <= 100 && data.slug.matches('^[a-z0-9\\-]+$') &&
+        data.name is string && data.name.size() >= 2 && data.name.size() <= 100 &&
+        data.marketplace in ['food', 'party'] &&
+        data.category is string && data.category.size() >= 2 && data.category.size() <= 80 &&
+        data.country in ['India', 'Dubai / UAE', 'Sri Lanka', 'Pakistan', 'Bangladesh', 'Nepal'] &&
+        data.state is string && data.state.size() >= 2 && data.state.size() <= 80 &&
+        data.city is string && data.city.size() >= 2 && data.city.size() <= 80 &&
+        data.area is string && data.area.size() >= 2 && data.area.size() <= 100 &&
+        data.lat is number && data.lat >= -90 && data.lat <= 90 &&
+        data.lng is number && data.lng >= -180 && data.lng <= 180 &&
+        data.whatsappNumber is string && data.whatsappNumber.size() >= 7 && data.whatsappNumber.size() <= 18 && data.whatsappNumber.matches('^[0-9]+$') &&
+        data.planTier in ['free', 'pro', 'business'] &&
+        data.monthlyAutoPay is bool &&
+        data.priceTier in ['$', '$$', '$$$', '$$$$'] &&
+        data.startingPriceUsd is number && data.startingPriceUsd >= 0 && data.startingPriceUsd <= 100000 &&
+        data.rating is number && data.rating >= 0 && data.rating <= 5 &&
+        data.reviewCount is number && data.reviewCount >= 0 && data.reviewCount <= 100000 &&
+        data.responseTime is string && data.responseTime.size() >= 2 && data.responseTime.size() <= 60 &&
+        data.verified is bool &&
+        data.status in ['active', 'paused'] &&
+        data.tagline is string && data.tagline.size() >= 3 && data.tagline.size() <= 180 &&
+        data.description is string && data.description.size() >= 5 && data.description.size() <= 1200 &&
+        isValidStringList(data.serviceAreas, 10) &&
+        isValidStringList(data.specialties, 10) &&
+        data.image is string && data.image.size() >= 1 && data.image.size() <= 500 &&
+        isValidProductsList(data.products) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidUserProfile(data, userId) {
+      return data.keys().hasAll(['uid', 'displayName', 'email', 'savedVendorIds', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['uid', 'displayName', 'email', 'savedVendorIds', 'createdAt', 'updatedAt']) &&
+        data.uid == userId &&
+        isValidId(data.uid) &&
+        data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 100 &&
+        data.email is string && data.email.size() >= 3 && data.email.size() <= 160 &&
+        isValidStringList(data.savedVendorIds, 50) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidBooking(data) {
+      return data.keys().hasAll([
+          'reference', 'customerId', 'vendorId', 'vendorOwnerId',
+          'vendorName', 'vendorCity', 'vendorCategory', 'packageName',
+          'estimatedUsd', 'eventDate', 'guests', 'customerName',
+          'customerEmail', 'notes', 'status', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'reference', 'customerId', 'vendorId', 'vendorOwnerId',
+          'vendorName', 'vendorCity', 'vendorCategory', 'packageName',
+          'estimatedUsd', 'eventDate', 'guests', 'customerName',
+          'customerEmail', 'notes', 'status', 'createdAt', 'updatedAt'
+        ]) &&
+        data.reference is string && data.reference.size() >= 4 && data.reference.size() <= 32 && data.reference.matches('^[a-zA-Z0-9_\\-]+$') &&
+        isValidId(data.customerId) &&
+        isValidId(data.vendorId) &&
+        isValidId(data.vendorOwnerId) &&
+        data.vendorName is string && data.vendorName.size() >= 1 && data.vendorName.size() <= 120 &&
+        data.vendorCity is string && data.vendorCity.size() >= 1 && data.vendorCity.size() <= 120 &&
+        data.vendorCategory is string && data.vendorCategory.size() >= 1 && data.vendorCategory.size() <= 80 &&
+        data.packageName is string && data.packageName.size() >= 1 && data.packageName.size() <= 240 &&
+        data.estimatedUsd is number && data.estimatedUsd >= 0 && data.estimatedUsd <= 500000 &&
+        data.eventDate is string && data.eventDate.size() >= 6 && data.eventDate.size() <= 30 &&
+        data.guests is number && data.guests >= 1 && data.guests <= 100000 &&
+        data.customerName is string && data.customerName.size() >= 1 && data.customerName.size() <= 100 &&
+        data.customerEmail is string && data.customerEmail.size() >= 3 && data.customerEmail.size() <= 160 &&
+        data.notes is string && data.notes.size() <= 1000 &&
+        data.status in ['Confirmed Enquiry', 'Awaiting Vendor Reply', 'Completed', 'Cancelled'] &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidAdminRecord(data, adminId) {
+      return data.keys().hasAll(['uid', 'grantedAt']) &&
+        data.keys().hasOnly(['uid', 'grantedAt']) &&
+        data.uid == adminId &&
+        isValidId(data.uid) &&
+        data.grantedAt is timestamp;
+    }
+
+    // --- Collection: /vendors/{vendorId} ---
+    match /vendors/{vendorId} {
+      allow get: if isValidId(vendorId) && (
+        existing().status == 'active' ||
+        isOwner(existing().ownerId) ||
+        isAdmin()
+      );
+
+      allow list: if existing().status == 'active' ||
+        (isVerifiedUser() && existing().ownerId == request.auth.uid);
+
+      allow create: if isVerifiedUser() &&
+        isValidId(vendorId) &&
+        isValidVendor(incoming()) &&
+        incoming().ownerId == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        ((incoming().verified == false && incoming().reviewCount == 0) || isAdmin());
+
+      allow update: if isVerifiedUser() &&
+        isValidId(vendorId) &&
+        isValidVendor(incoming()) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          // Tier 1: Owner editing storefront details, products, or plan (cannot self-verify or fake reviews)
+          (
+            isOwner(existing().ownerId) &&
+            incoming().verified == existing().verified &&
+            incoming().rating == existing().rating &&
+            incoming().reviewCount == existing().reviewCount &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'name', 'category', 'country', 'state', 'city', 'area',
+              'lat', 'lng', 'whatsappNumber', 'planTier', 'monthlyAutoPay',
+              'priceTier', 'startingPriceUsd', 'responseTime', 'status',
+              'tagline', 'description', 'serviceAreas', 'specialties',
+              'image', 'products', 'updatedAt'
+            ])
+          ) ||
+          // Tier 2: Admin verification & moderation
+          (
+            isAdmin() &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'verified', 'status', 'planTier', 'monthlyAutoPay', 'updatedAt'
+            ])
+          )
+        );
+
+      allow delete: if isVerifiedUser() &&
+        isValidId(vendorId) &&
+        (isOwner(existing().ownerId) || isAdmin());
+    }
+
+    // --- Collection: /users/{userId} (Private PII & Saved Shortlist) ---
+    match /users/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if false;
+
+      allow create: if isVerifiedUser() &&
+        isValidId(userId) &&
+        isOwner(userId) &&
+        isValidUserProfile(incoming(), userId) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isVerifiedUser() &&
+        isValidId(userId) &&
+        isValidUserProfile(incoming(), userId) &&
+        incoming().uid == existing().uid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          (
+            isOwner(userId) &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'displayName', 'savedVendorIds', 'updatedAt'
+            ])
+          ) ||
+          (
+            isAdmin() &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'displayName', 'savedVendorIds', 'updatedAt'
+            ])
+          )
+        );
+
+      allow delete: if isVerifiedUser() && isValidId(userId) && (isOwner(userId) || isAdmin());
+    }
+
+    // --- Collection: /bookings/{bookingId} (Private Customer <-> Vendor Enquiries) ---
+    match /bookings/{bookingId} {
+      allow get: if isValidId(bookingId) && isVerifiedUser() && (
+        existing().customerId == request.auth.uid ||
+        existing().vendorOwnerId == request.auth.uid ||
+        isAdmin()
+      );
+
+      allow list: if isVerifiedUser() && (
+        existing().customerId == request.auth.uid ||
+        existing().vendorOwnerId == request.auth.uid
+      );
+
+      allow create: if isVerifiedUser() &&
+        isValidId(bookingId) &&
+        isValidBooking(incoming()) &&
+        incoming().customerId == request.auth.uid &&
+        incoming().status in ['Confirmed Enquiry', 'Awaiting Vendor Reply'] &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isVerifiedUser() &&
+        isValidId(bookingId) &&
+        isValidBooking(incoming()) &&
+        incoming().customerId == existing().customerId &&
+        incoming().vendorId == existing().vendorId &&
+        incoming().vendorOwnerId == existing().vendorOwnerId &&
+        incoming().reference == existing().reference &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          // Action 1: Customer cancels non-terminal enquiry
+          (
+            existing().customerId == request.auth.uid &&
+            !(existing().status in ['Completed', 'Cancelled']) &&
+            incoming().status == 'Cancelled' &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+          ) ||
+          // Action 2: Vendor owner updates non-terminal enquiry status
+          (
+            existing().vendorOwnerId == request.auth.uid &&
+            !(existing().status in ['Completed', 'Cancelled']) &&
+            incoming().status in ['Confirmed Enquiry', 'Completed', 'Cancelled'] &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+          ) ||
+          // Action 3: Admin override
+          (
+            isAdmin() &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'notes', 'updatedAt'])
+          )
+        );
+
+      allow delete: if isVerifiedUser() &&
+        isValidId(bookingId) &&
+        (existing().customerId == request.auth.uid || isAdmin());
+    }
+
+    // --- Collection: /admins/{adminId} ---
+    match /admins/{adminId} {
+      allow get: if isValidId(adminId) && (isOwner(adminId) || isAdmin());
+      allow list: if false;
+      allow create: if isAdmin() && isValidId(adminId) && isValidAdminRecord(incoming(), adminId) && incoming().grantedAt == request.time;
+      allow update: if false;
+      allow delete: if isAdmin() && isValidId(adminId);
+    }
+  }
+}

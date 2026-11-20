@@ -30,13 +30,15 @@ import {
   Users,
   UtensilsCrossed,
 } from 'lucide-react';
+import { onAuthStateChanged, type User as FirebaseUser } from 'firebase/auth';
 import { Ecosystem, Header } from './components/Header';
 import { JoshPlannerDrawer } from './components/JoshPlannerDrawer';
 import { ListBusinessModal } from './components/ListBusinessModal';
 import { LocationPickerModal, SelectedLocation } from './components/LocationPickerModal';
 import { SavedBookingsDrawer } from './components/SavedBookingsDrawer';
 import { VendorCard } from './components/VendorCard';
-import { VendorWebsiteView } from './components/VendorWebsiteView';
+import { VendorDashboardModal } from './components/VendorDashboardModal';
+import { VendorMetrics, VendorWebsiteView } from './components/VendorWebsiteView';
 import {
   BookingEnquiry,
   CATEGORY_CARDS,
@@ -53,14 +55,29 @@ import {
   PLATFORM_TESTIMONIALS,
   PlanTier,
   PriceTier,
+  QUICK_FILTER_TAGS,
+  QuickFilterTag,
   SAAS_PLANS,
   STATES_BY_COUNTRY,
   Vendor,
   formatPlanPrice,
+  getVendorQuickTags,
   haversineKm,
   planRankWeight,
 } from './data/vendors';
+import { ADMIN_EMAIL, auth, signInWithGoogle, signOutUser } from './firebase';
 import { useSeoMeta } from './hooks/useSeoMeta';
+import {
+  createBookingInCloud,
+  createVendorInCloud,
+  ensureUserProfile,
+  subscribeActiveVendors,
+  subscribeMyBookings,
+  subscribeMyVendors,
+  subscribeVendorLeads,
+  syncSavedVendorsToCloud,
+  updateBookingStatusInCloud,
+} from './services/firestoreService';
 
 function slugifySeo(text: string): string {
   return text
@@ -226,6 +243,7 @@ type RadiusOption = 5 | 15 | 35 | 100 | 0; // 0 = Any distance
 const STORAGE_SAVED = 'fmb_saved_ids_v2';
 const STORAGE_BOOKINGS = 'fmb_bookings_v2';
 const STORAGE_CUSTOM_VENDORS = 'fmb_custom_vendors_v2';
+const STORAGE_ANALYTICS = 'fmb_vendor_analytics_v1';
 
 const TRUST_ITEMS = [
   { icon: Navigation, label: 'Instant Near Me', desc: 'Local vendors by area' },
@@ -369,11 +387,21 @@ export default function App() {
   const [selectedCountry, setSelectedCountry] = useState<LaunchCountry>('All');
   const [selectedState, setSelectedState] = useState<string>('All');
   const [selectedTierFilter, setSelectedTierFilter] = useState<'all' | 'paid' | 'free'>('all');
+  const [selectedQuickTag, setSelectedQuickTag] = useState<QuickFilterTag | 'All'>('All');
   const [selectedPrice, setSelectedPrice] = useState<PriceTier | 'All'>('All');
   const [minRating, setMinRating] = useState<number>(0);
   const [sortBy, setSortBy] = useState<SortOption>('featured');
   const [currency, setCurrency] = useState<CurrencyCode>('INR');
   const [language, setLanguage] = useState('English');
+
+  const [vendorAnalytics, setVendorAnalytics] = useState<Record<string, VendorMetrics>>(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_ANALYTICS);
+      return raw ? (JSON.parse(raw) as Record<string, VendorMetrics>) : {};
+    } catch {
+      return {};
+    }
+  });
 
   // Near Me Location State
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number; label: string } | null>(
@@ -389,7 +417,68 @@ export default function App() {
   const [aiPlannerOpen, setAiPlannerOpen] = useState(false);
   const [listModalOpen, setListModalOpen] = useState(false);
   const [listModalPlan, setListModalPlan] = useState<PlanTier>('free');
+  const [dashboardOpen, setDashboardOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+
+  // Firebase Auth & Live Cloud Firestore State
+  const [authUser, setAuthUser] = useState<FirebaseUser | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [cloudVendors, setCloudVendors] = useState<Vendor[]>([]);
+  const [myCloudVendors, setMyCloudVendors] = useState<Vendor[]>([]);
+  const [cloudBookings, setCloudBookings] = useState<BookingEnquiry[]>([]);
+  const [vendorLeads, setVendorLeads] = useState<BookingEnquiry[]>([]);
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (u) => {
+      setAuthUser(u);
+      setAuthReady(true);
+    });
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    let unsub: (() => void) | undefined;
+    try {
+      unsub = subscribeActiveVendors((list) => {
+        setCloudVendors(list);
+      });
+    } catch {
+      // ignore if offline
+    }
+    return () => unsub?.();
+  }, []);
+
+  useEffect(() => {
+    if (!authReady || !authUser) {
+      setMyCloudVendors([]);
+      setCloudBookings([]);
+      setVendorLeads([]);
+      return;
+    }
+
+    let active = true;
+    void ensureUserProfile(authUser, savedIds)
+      .then((cloudSaved) => {
+        if (active && cloudSaved.length > 0) {
+          setSavedIds(cloudSaved);
+        }
+      })
+      .catch(() => {
+        // non-blocking profile sync fallback
+      });
+
+    const unsubMine = subscribeMyVendors(authUser.uid, setMyCloudVendors);
+    const unsubBookings = subscribeMyBookings(authUser.uid, setCloudBookings);
+    const unsubLeads = subscribeVendorLeads(authUser.uid, setVendorLeads);
+
+    return () => {
+      active = false;
+      unsubMine();
+      unsubBookings();
+      unsubLeads();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authReady, authUser]);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode);
@@ -425,12 +514,54 @@ export default function App() {
   }, [customVendors]);
 
   useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_ANALYTICS, JSON.stringify(vendorAnalytics));
+    } catch {
+      // ignore storage quota errors
+    }
+  }, [vendorAnalytics]);
+
+  useEffect(() => {
+    if (!activeVendor) return;
+    const id = activeVendor.id;
+    setVendorAnalytics((prev) => {
+      const current = prev[id] ?? { views: 24 + (activeVendor.reviewCount % 40), whatsappClicks: 6 + (activeVendor.reviewCount % 12) };
+      return {
+        ...prev,
+        [id]: { ...current, views: current.views + 1 },
+      };
+    });
+  }, [activeVendor]);
+
+  const trackWhatsAppClick = (vendorId: string) => {
+    setVendorAnalytics((prev) => {
+      const current = prev[vendorId] ?? { views: 28, whatsappClicks: 8 };
+      return {
+        ...prev,
+        [vendorId]: { ...current, whatsappClicks: current.whatsappClicks + 1 },
+      };
+    });
+  };
+
+  useEffect(() => {
     if (!notice) return;
     const t = window.setTimeout(() => setNotice(null), 4500);
     return () => window.clearTimeout(t);
   }, [notice]);
 
-  const allVendors = useMemo(() => [...customVendors, ...INITIAL_VENDORS], [customVendors]);
+  const allVendors = useMemo(() => {
+    const seen = new Set<string>();
+    const merged: Vendor[] = [];
+    for (const v of [...cloudVendors, ...customVendors, ...INITIAL_VENDORS]) {
+      if (!seen.has(v.id)) {
+        seen.add(v.id);
+        merged.push(v);
+      }
+    }
+    return merged;
+  }, [cloudVendors, customVendors]);
+
+  const effectiveBookings = authUser ? cloudBookings : bookings;
   const ecoKey: 'food' | 'party' = ecosystem === 'FINDMYBITES' ? 'food' : 'party';
 
   useSeoMeta({
@@ -593,6 +724,7 @@ export default function App() {
       if (selectedState !== 'All' && v.state !== selectedState) return false;
       if (selectedTierFilter === 'paid' && v.planTier === 'free') return false;
       if (selectedTierFilter === 'free' && v.planTier !== 'free') return false;
+      if (selectedQuickTag !== 'All' && !getVendorQuickTags(v).includes(selectedQuickTag)) return false;
       if (selectedPrice !== 'All' && v.priceTier !== selectedPrice) return false;
       if (minRating > 0 && v.rating < minRating) return false;
 
@@ -640,6 +772,7 @@ export default function App() {
     selectedCountry,
     selectedState,
     selectedTierFilter,
+    selectedQuickTag,
     selectedPrice,
     minRating,
     searchQuery,
@@ -668,6 +801,7 @@ export default function App() {
     selectedCountry !== 'All' ||
     selectedState !== 'All' ||
     selectedTierFilter !== 'all' ||
+    selectedQuickTag !== 'All' ||
     selectedPrice !== 'All' ||
     minRating > 0 ||
     searchQuery.trim().length > 0 ||
@@ -681,6 +815,7 @@ export default function App() {
     setSelectedCountry('All');
     setSelectedState('All');
     setSelectedTierFilter('all');
+    setSelectedQuickTag('All');
     setSelectedPrice('All');
     setMinRating(0);
     setUserCoords(null);
@@ -689,18 +824,61 @@ export default function App() {
     setSortBy('featured');
   };
 
+  const handleSignIn = async () => {
+    try {
+      const user = await signInWithGoogle();
+      setNotice(`Signed in as ${user.displayName || user.email}. Cloud sync is active!`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Sign-in cancelled.';
+      if (!msg.includes('popup-closed-by-user')) {
+        setNotice('Could not complete Google Sign-In. Please allow popups and try again.');
+      }
+    }
+  };
+
+  const handleSignOut = async () => {
+    await signOutUser();
+    setDashboardOpen(false);
+    setNotice('Signed out cleanly.');
+  };
+
   const toggleSave = (vendorId: string) => {
-    setSavedIds((prev) =>
-      prev.includes(vendorId) ? prev.filter((id) => id !== vendorId) : [...prev, vendorId]
-    );
+    setSavedIds((prev) => {
+      const next = prev.includes(vendorId)
+        ? prev.filter((id) => id !== vendorId)
+        : [...prev, vendorId];
+      if (authUser) {
+        void syncSavedVendorsToCloud(authUser.uid, next).catch(() => {});
+      }
+      return next;
+    });
   };
 
   const handleCreateBooking = (booking: BookingEnquiry) => {
+    if (authUser) {
+      const targetVendor = allVendors.find((v) => v.id === booking.vendorId);
+      const vendorOwnerId = targetVendor?.ownerId || 'platform';
+      void createBookingInCloud(booking, authUser.uid, vendorOwnerId)
+        .then(() => {
+          setNotice(`Enquiry ${booking.reference} saved to Cloud for ${booking.vendorName}.`);
+        })
+        .catch(() => {
+          setBookings((prev) => [booking, ...prev]);
+          setNotice(`Enquiry ${booking.reference} saved locally for ${booking.vendorName}.`);
+        });
+      return;
+    }
     setBookings((prev) => [booking, ...prev]);
     setNotice(`Enquiry ${booking.reference} saved for ${booking.vendorName}.`);
   };
 
   const handleCancelBooking = (bookingId: string) => {
+    if (authUser) {
+      void updateBookingStatusInCloud(bookingId, 'Cancelled')
+        .then(() => setNotice('Booking enquiry cancelled.'))
+        .catch(() => {});
+      return;
+    }
     setBookings((prev) => prev.filter((b) => b.id !== bookingId));
   };
 
@@ -709,19 +887,27 @@ export default function App() {
     setListModalOpen(true);
   };
 
-  const handleAddVendor = (vendor: Vendor) => {
-    setCustomVendors((prev) => [vendor, ...prev]);
-    setEcosystem(vendor.marketplace === 'party' ? 'PIMPMYPARTY' : 'FINDMYBITES');
+  const handleAddVendor = async (vendor: Vendor) => {
+    let savedVendor = vendor;
+    if (authUser) {
+      const isAdminUser =
+        authUser.emailVerified && authUser.email?.toLowerCase() === ADMIN_EMAIL;
+      savedVendor = await createVendorInCloud(vendor, authUser.uid, isAdminUser);
+    } else {
+      setCustomVendors((prev) => [vendor, ...prev]);
+    }
+
+    setEcosystem(savedVendor.marketplace === 'party' ? 'PIMPMYPARTY' : 'FINDMYBITES');
     setSelectedCategory('All');
     setSelectedCountry('All');
     setSelectedState('All');
     setNearMeAllEcosystems(false);
     setNotice(
-      vendor.planTier === 'free'
-        ? `${vendor.name} published! Opening your new one-page vendor website.`
-        : `${vendor.name} activated on ${vendor.planTier === 'business' ? 'Business Spotlight' : 'Pro Auto-Pay'} — now pinned at the top!`
+      savedVendor.planTier === 'free'
+        ? `${savedVendor.name} published live to Cloud! Opening your new one-page vendor website.`
+        : `${savedVendor.name} activated on ${savedVendor.planTier === 'business' ? 'Business Spotlight' : 'Pro Auto-Pay'} — now pinned at the top!`
     );
-    setActiveVendor(vendor);
+    setActiveVendor(savedVendor);
   };
 
   const handleHeroSearch = (e: FormEvent) => {
@@ -746,10 +932,15 @@ export default function App() {
 
   const hero = HERO_META[ecosystem];
   const heroStats = [
-    { label: 'Verified Vendors', value: 1695 + customVendors.length, suffix: '+', icon: Users },
+    {
+      label: 'Verified Vendors',
+      value: 1695 + cloudVendors.length + customVendors.length,
+      suffix: '+',
+      icon: Users,
+    },
     { label: 'Launch Countries', value: 6, suffix: '', icon: Globe2 },
     { label: 'Direct WhatsApp', value: 100, suffix: '%', icon: MessageCircle },
-    { label: 'AI Plans Built', value: 4280 + bookings.length, suffix: '+', icon: Sparkles },
+    { label: 'AI Plans Built', value: 4280 + effectiveBookings.length, suffix: '+', icon: Sparkles },
   ];
 
   const sidebarCategories = nearMeAllEcosystems
@@ -764,10 +955,14 @@ export default function App() {
         darkMode={darkMode}
         onToggleDarkMode={() => setDarkMode((d) => !d)}
         savedCount={savedIds.length}
-        bookingsCount={bookings.length}
+        bookingsCount={effectiveBookings.length}
+        user={authUser}
+        myVendorCount={myCloudVendors.length}
         onOpenSaved={() => setDrawerTab('saved')}
         onOpenBookings={() => setDrawerTab('bookings')}
         onOpenListBusiness={() => handleOpenListModal('free')}
+        onOpenDashboard={() => setDashboardOpen(true)}
+        onSignIn={() => void handleSignIn()}
       />
 
       {notice && (
@@ -1297,6 +1492,40 @@ export default function App() {
                     ))}
                   </div>
                 )}
+              </div>
+
+              {/* Dietary, Halal & Occasion Quick Filters */}
+              <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-brand-border/60 pt-3">
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Quick filters:
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedQuickTag('All')}
+                  className={`cursor-pointer rounded-md border px-2.5 py-1 text-xs font-semibold transition-colors ${
+                    selectedQuickTag === 'All'
+                      ? 'border-brand bg-brand text-brand-foreground'
+                      : 'border-border bg-background text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  All
+                </button>
+                {QUICK_FILTER_TAGS.map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() =>
+                      setSelectedQuickTag((prev) => (prev === tag ? 'All' : tag))
+                    }
+                    className={`cursor-pointer rounded-md border px-2.5 py-1 text-xs font-semibold transition-colors ${
+                      selectedQuickTag === tag
+                        ? 'border-brand bg-brand text-brand-foreground'
+                        : 'border-border bg-background text-muted-foreground hover:border-brand/50 hover:text-foreground'
+                    }`}
+                  >
+                    {tag}
+                  </button>
+                ))}
               </div>
             </div>
 
@@ -2153,10 +2382,12 @@ export default function App() {
         vendor={activeVendor}
         currency={currency}
         isSaved={activeVendor ? savedIds.includes(activeVendor.id) : false}
+        metrics={activeVendor ? vendorAnalytics[activeVendor.id] : undefined}
         onClose={() => setActiveVendor(null)}
         onToggleSave={toggleSave}
         onCreateBooking={handleCreateBooking}
         onOpenBookings={() => setDrawerTab('bookings')}
+        onTrackWhatsAppClick={trackWhatsAppClick}
       />
 
       <SavedBookingsDrawer
@@ -2164,19 +2395,36 @@ export default function App() {
         onChangeTab={setDrawerTab}
         onClose={() => setDrawerTab(null)}
         savedVendors={savedVendors}
-        bookings={bookings}
+        bookings={effectiveBookings}
         currency={currency}
         onSelectVendor={setActiveVendor}
         onToggleSave={toggleSave}
         onCancelBooking={handleCancelBooking}
+        onTrackWhatsAppClick={trackWhatsAppClick}
       />
 
       <ListBusinessModal
         isOpen={listModalOpen}
         initialPlanTier={listModalPlan}
         currency={currency}
+        user={authUser}
+        onSignIn={handleSignIn}
         onClose={() => setListModalOpen(false)}
         onAddVendor={handleAddVendor}
+      />
+
+      <VendorDashboardModal
+        isOpen={dashboardOpen}
+        user={authUser}
+        myVendors={myCloudVendors}
+        vendorLeads={vendorLeads}
+        currency={currency}
+        onClose={() => setDashboardOpen(false)}
+        onSignIn={handleSignIn}
+        onSignOut={handleSignOut}
+        onOpenListModal={handleOpenListModal}
+        onOpenVendorWebsite={setActiveVendor}
+        onNotify={setNotice}
       />
 
       <LocationPickerModal

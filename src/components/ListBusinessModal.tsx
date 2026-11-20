@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { Check, Crown, MessageCircle, RefreshCw, X } from 'lucide-react';
+import type { User } from 'firebase/auth';
+import { Check, Cloud, Crown, LogIn, MessageCircle, RefreshCw, X } from 'lucide-react';
 import {
   COUNTRY_REGION_LABEL,
   CurrencyCode,
@@ -33,8 +34,10 @@ interface ListBusinessModalProps {
   isOpen: boolean;
   initialPlanTier?: PlanTier;
   currency: CurrencyCode;
+  user: User | null;
+  onSignIn: () => Promise<void>;
   onClose: () => void;
-  onAddVendor: (vendor: Vendor) => void;
+  onAddVendor: (vendor: Vendor) => Promise<void> | void;
 }
 
 const COUNTRY_DEFAULT_COORDS: Record<
@@ -82,9 +85,12 @@ export function ListBusinessModal({
   isOpen,
   initialPlanTier = 'free',
   currency,
+  user,
+  onSignIn,
   onClose,
   onAddVendor,
 }: ListBusinessModalProps) {
+  const [submitting, setSubmitting] = useState(false);
   const [marketplace, setMarketplace] = useState<'food' | 'party'>('food');
   const [name, setName] = useState('');
   const [category, setCategory] = useState<string>(FOOD_CATEGORIES[0]);
@@ -147,10 +153,16 @@ export function ListBusinessModal({
     return '$$$$';
   };
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !city.trim() || !tagline.trim()) return;
     if (isPaidPlan && !autoPayAccepted) return;
+    if (!user) {
+      await onSignIn();
+      return;
+    }
+
+    setSubmitting(true);
 
     const matchedCity = LAUNCH_CITY_PRESETS.find(
       (p) => p.city.toLowerCase() === city.trim().toLowerCase()
@@ -234,13 +246,17 @@ export function ListBusinessModal({
       ],
     };
 
-    onAddVendor(newVendor);
-    setName('');
-    setArea('');
-    setProductName('');
-    setTagline('');
-    setStartingPriceUsd(120);
-    onClose();
+    try {
+      await onAddVendor(newVendor);
+      setName('');
+      setArea('');
+      setProductName('');
+      setTagline('');
+      setStartingPriceUsd(120);
+      onClose();
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -548,10 +564,39 @@ export function ListBusinessModal({
             </div>
           )}
 
+          {!user ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-brand-border bg-brand-soft/40 p-4">
+              <div className="flex items-start gap-2.5 text-xs">
+                <Cloud className="mt-0.5 size-4 shrink-0 text-brand" aria-hidden="true" />
+                <div>
+                  <p className="font-bold text-foreground">
+                    Sign in with Google to save your storefront to the live cloud
+                  </p>
+                  <p className="mt-0.5 text-muted-foreground">
+                    So customers on any device can find you and you can edit products anytime.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => void onSignIn()}
+                className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-brand px-4 py-2 text-xs font-bold text-brand-foreground hover:bg-brand-hover whitespace-nowrap"
+              >
+                <LogIn className="size-3.5" aria-hidden="true" />
+                Sign in with Google
+              </button>
+            </div>
+          ) : (
+            <p className="inline-flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
+              <Cloud className="size-3.5" aria-hidden="true" />
+              Publishing live to Cloud Firestore as <strong>{user.displayName || user.email}</strong>
+            </p>
+          )}
+
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
             <p className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
               <Check className="size-3.5 text-emerald-500" aria-hidden="true" />
-              Creates live one-page website + WhatsApp link instantly
+              Creates live one-page website + QR poster + WhatsApp link instantly
             </p>
             <div className="flex items-center gap-2.5">
               <button
@@ -563,12 +608,16 @@ export function ListBusinessModal({
               </button>
               <button
                 type="submit"
-                disabled={isPaidPlan && !autoPayAccepted}
+                disabled={submitting || (isPaidPlan && !autoPayAccepted)}
                 className="cursor-pointer rounded-lg bg-brand px-5 py-2 text-sm font-bold text-brand-foreground hover:bg-brand-hover disabled:opacity-50 whitespace-nowrap"
               >
-                {isPaidPlan
-                  ? `Activate ${selectedPlanMeta.name} & Publish`
-                  : 'Publish Free Listing'}
+                {submitting
+                  ? 'Publishing to Cloud…'
+                  : !user
+                    ? 'Sign in with Google & Publish'
+                    : isPaidPlan
+                      ? `Activate ${selectedPlanMeta.name} & Publish`
+                      : 'Publish Free Listing'}
               </button>
             </div>
           </div>

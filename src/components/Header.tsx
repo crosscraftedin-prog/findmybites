@@ -1,4 +1,13 @@
-import { Moon, PartyPopper, Sparkles, Sun, UtensilsCrossed } from 'lucide-react';
+import type { User } from 'firebase/auth';
+import {
+  LogIn,
+  Moon,
+  PartyPopper,
+  Sparkles,
+  Store,
+  Sun,
+  UtensilsCrossed,
+} from 'lucide-react';
 
 export type Ecosystem = 'FINDMYBITES' | 'PIMPMYPARTY';
 
@@ -9,9 +18,13 @@ interface HeaderProps {
   onToggleDarkMode: () => void;
   savedCount: number;
   bookingsCount: number;
+  user: User | null;
+  myVendorCount: number;
   onOpenSaved: () => void;
   onOpenBookings: () => void;
   onOpenListBusiness: () => void;
+  onOpenDashboard: () => void;
+  onSignIn: () => void;
 }
 
 export function Header({
@@ -21,9 +34,13 @@ export function Header({
   onToggleDarkMode,
   savedCount,
   bookingsCount,
+  user,
+  myVendorCount,
   onOpenSaved,
   onOpenBookings,
   onOpenListBusiness,
+  onOpenDashboard,
+  onSignIn,
 }: HeaderProps) {
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border bg-background/85 backdrop-blur-xl supports-[backdrop-filter]:bg-background/75">
@@ -87,7 +104,7 @@ export function Header({
           </button>
         </nav>
 
-        {/* Right controls: EcosystemToggle + Dark mode + List your business */}
+        {/* Right controls: EcosystemToggle + Dark mode + Auth/Portal + List your business */}
         <div className="flex items-center gap-2 shrink-0">
           <div
             role="tablist"
@@ -138,6 +155,38 @@ export function Header({
               <Moon className="size-4" aria-hidden="true" />
             )}
           </button>
+
+          {user ? (
+            <button
+              type="button"
+              onClick={onOpenDashboard}
+              className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 text-xs font-semibold text-foreground transition-colors hover:border-brand hover:text-brand whitespace-nowrap shrink-0"
+              title="Open Vendor Cloud Dashboard"
+            >
+              {user.photoURL ? (
+                <img
+                  src={user.photoURL}
+                  alt={user.displayName || 'Account'}
+                  referrerPolicy="no-referrer"
+                  className="size-5 rounded-full object-cover"
+                />
+              ) : (
+                <Store className="size-3.5 text-brand" aria-hidden="true" />
+              )}
+              <span className="hidden md:inline">
+                Portal{myVendorCount > 0 ? ` (${myVendorCount})` : ''}
+              </span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onSignIn}
+              className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-card px-3 text-xs font-semibold text-foreground transition-colors hover:border-brand hover:text-brand whitespace-nowrap shrink-0"
+            >
+              <LogIn className="size-3.5" aria-hidden="true" />
+              <span className="hidden md:inline">Sign in</span>
+            </button>
+          )}
 
           <button
             type="button"
