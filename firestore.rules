@@ -423,10 +423,11 @@ service cloud.firestore {
           (
             incoming().ownerId == existing().ownerId &&
             isOwner(existing().ownerId) &&
-            incoming().verified == existing().verified &&
+            (!('verified' in existing()) || incoming().verified == existing().verified) &&
             (!('rating' in existing()) || incoming().rating == existing().rating) &&
             (!('reviewCount' in existing()) || incoming().reviewCount == existing().reviewCount) &&
             (
+              !('status' in existing()) ||
               (existing().status != 'pending_review' && incoming().status in ['active', 'paused']) ||
               incoming().status == existing().status
             ) &&
@@ -462,11 +463,12 @@ service cloud.firestore {
           ) ||
           // Tier 3: Atomic Baker Store Claim Transfer using a valid SHA-256 /storeClaims/{claimId} ticket
           (
+            'claimStatus' in existing() &&
             existing().claimStatus == 'pending' &&
             incoming().ownerId == request.auth.uid &&
             incoming().claimStatus == 'claimed' &&
             isValidSha256Id(incoming().claimedByToken) &&
-            incoming().verified == existing().verified &&
+            (!('verified' in existing()) || incoming().verified == existing().verified) &&
             (!('rating' in existing()) || incoming().rating == existing().rating) &&
             (!('reviewCount' in existing()) || incoming().reviewCount == existing().reviewCount) &&
             incoming().diff(existing()).affectedKeys().hasOnly([

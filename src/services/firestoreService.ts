@@ -595,7 +595,19 @@ export async function updateVendorInCloud(
   try {
     await updateDoc(doc(db, 'vendors', vendorId), clean);
   } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, docPath);
+    const payloadShape: Record<string, string> = {};
+    for (const [key, val] of Object.entries(clean)) {
+      if (key === 'updatedAt') {
+        payloadShape[key] = 'serverTimestamp';
+      } else if (typeof val === 'string') {
+        payloadShape[key] = `string(${val.length})`;
+      } else if (Array.isArray(val)) {
+        payloadShape[key] = `array(${val.length})`;
+      } else {
+        payloadShape[key] = typeof val;
+      }
+    }
+    handleFirestoreError(error, OperationType.UPDATE, docPath, payloadShape);
   }
 }
 

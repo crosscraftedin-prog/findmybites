@@ -32,6 +32,7 @@ export interface FirestoreErrorInfo {
   error: string;
   operationType: OperationType;
   path: string | null;
+  payloadShape?: Record<string, string>;
   authInfo: {
     userId?: string | null;
     email?: string | null;
@@ -48,7 +49,8 @@ export interface FirestoreErrorInfo {
 export function handleFirestoreError(
   error: unknown,
   operationType: OperationType,
-  path: string | null
+  path: string | null,
+  payloadShape?: Record<string, string>
 ): never {
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
@@ -66,6 +68,7 @@ export function handleFirestoreError(
     },
     operationType,
     path,
+    ...(payloadShape ? { payloadShape } : {}),
   };
   console.error('Firestore Error: ', JSON.stringify(errInfo));
   throw new Error(JSON.stringify(errInfo));
