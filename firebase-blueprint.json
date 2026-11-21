@@ -166,6 +166,14 @@
           "type": "array",
           "description": "Up to 10 covered local areas."
         },
+        "allStatesCoverage": {
+          "type": "boolean",
+          "description": "Admin-controlled flag allowing this storefront to appear across all states in its country (e.g., Pan-India)."
+        },
+        "serviceStates": {
+          "type": "array",
+          "description": "Admin-controlled list of up to 40 states/regions where this storefront is visible and accepts orders."
+        },
         "specialties": {
           "type": "array",
           "description": "Up to 10 specialties."
@@ -887,6 +895,100 @@
         "updatedBy",
         "updatedAt"
       ]
+    },
+    "ChristmasDish": {
+      "title": "ChristmasDish",
+      "description": "Admin-managed dish in the Hyderabad Christmas Lunch & Dinner custom menu builder.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 120,
+          "description": "Dish display name."
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "christmas-specials",
+            "starters",
+            "biryani-rice",
+            "curries-dal",
+            "breads",
+            "soups-chinese",
+            "desserts",
+            "beverages-sides"
+          ],
+          "description": "Course category in the custom menu builder."
+        },
+        "foodType": {
+          "type": "string",
+          "enum": ["veg", "non-veg"],
+          "description": "Dietary indicator (Veg or Non-Veg)."
+        },
+        "priceInrPerGuest": {
+          "type": "number",
+          "description": "Per-guest price in Indian Rupees (INR)."
+        },
+        "portion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60,
+          "description": "Serving portion weight or piece count per guest."
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 400,
+          "description": "Short dish description."
+        },
+        "image": {
+          "type": "string",
+          "maxLength": 150000,
+          "description": "Optional dish photo URL or compressed 640x480 JPEG data URL."
+        },
+        "popular": {
+          "type": "boolean",
+          "description": "Whether the dish is highlighted as a popular pick."
+        },
+        "active": {
+          "type": "boolean",
+          "description": "Whether the dish is visible on the live Hyderabad Christmas menu (false hides deleted built-in defaults)."
+        },
+        "sortOrder": {
+          "type": "number",
+          "description": "Optional display sort order."
+        },
+        "updatedBy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Admin UID who created or last updated this dish."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp."
+        }
+      },
+      "required": [
+        "name",
+        "category",
+        "foodType",
+        "priceInrPerGuest",
+        "portion",
+        "description",
+        "popular",
+        "active",
+        "updatedBy",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -933,6 +1035,10 @@
     "/siteSettings/{settingId}": {
       "schema": { "$ref": "#/entities/SiteSettings" },
       "description": "Publicly readable global SEO and campaign settings, writable strictly by verified admins."
+    },
+    "/christmasDishes/{dishId}": {
+      "schema": { "$ref": "#/entities/ChristmasDish" },
+      "description": "Publicly readable Hyderabad Christmas Dinner & Lunch custom menu dishes, writable strictly by verified admins."
     }
   }
 }

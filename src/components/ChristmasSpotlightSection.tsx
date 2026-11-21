@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   BadgeCheck,
   Cake,
@@ -13,6 +13,7 @@ import {
   Snowflake,
   Sparkles,
   Star,
+  UtensilsCrossed,
   Wine,
 } from 'lucide-react';
 import {
@@ -23,20 +24,26 @@ import {
   isChristmasVendor,
   planRankWeight,
 } from '../data/vendors';
+import type { CustomMenuDish } from '../data/christmasMenu';
+import { ChristmasCustomMenuBuilder } from './ChristmasCustomMenuBuilder';
 
-type FestiveTab = 'all' | 'bakers' | 'hampers' | 'catering' | 'decor';
+type FestiveTab = 'all' | 'dinner-lunch' | 'bakers' | 'hampers' | 'catering' | 'decor';
 
 interface ChristmasSpotlightSectionProps {
   vendors: Vendor[];
   currency: CurrencyCode;
+  christmasDishes?: CustomMenuDish[];
+  isHyderabadEligible?: boolean;
+  openDinnerSignal?: number;
   canEditVendor: (vendor: Vendor) => boolean;
   onSelectVendor: (vendor: Vendor) => void;
   onEditVendor: (vendor: Vendor) => void;
   onOpenChristmasListModal: () => void;
   onTrackWhatsAppClick: (vendorId: string) => void;
+  onNotify?: (message: string) => void;
 }
 
-const FESTIVE_TABS: Array<{ id: FestiveTab; label: string }> = [
+const BASE_FESTIVE_TABS: Array<{ id: Exclude<FestiveTab, 'dinner-lunch'>; label: string }> = [
   { id: 'all', label: 'All Christmas & NYE' },
   { id: 'bakers', label: 'Plum Cakes & Bakers' },
   { id: 'hampers', label: 'Christmas Hampers & Sweets' },
@@ -81,15 +88,41 @@ function matchesFestiveTab(v: Vendor, tab: FestiveTab): boolean {
 export function ChristmasSpotlightSection({
   vendors,
   currency,
+  christmasDishes,
+  isHyderabadEligible = true,
+  openDinnerSignal = 0,
   canEditVendor,
   onSelectVendor,
   onEditVendor,
   onOpenChristmasListModal,
   onTrackWhatsAppClick,
+  onNotify,
 }: ChristmasSpotlightSectionProps) {
   const [activeTab, setActiveTab] = useState<FestiveTab>('all');
 
+  useEffect(() => {
+    if (!isHyderabadEligible && activeTab === 'dinner-lunch') {
+      setActiveTab('all');
+    }
+  }, [isHyderabadEligible, activeTab]);
+
+  useEffect(() => {
+    if (openDinnerSignal > 0 && isHyderabadEligible) {
+      setActiveTab('dinner-lunch');
+    }
+  }, [openDinnerSignal, isHyderabadEligible]);
+
+  const visibleTabs = useMemo<Array<{ id: FestiveTab; label: string }>>(() => {
+    if (!isHyderabadEligible) return BASE_FESTIVE_TABS;
+    return [
+      BASE_FESTIVE_TABS[0],
+      { id: 'dinner-lunch', label: 'Christmas Dinner & Lunch (Hyderabad)' },
+      ...BASE_FESTIVE_TABS.slice(1),
+    ];
+  }, [isHyderabadEligible]);
+
   const festiveVendors = useMemo(() => {
+    if (activeTab === 'dinner-lunch') return [];
     return vendors
       .filter((v) => isChristmasVendor(v))
       .filter((v) => matchesFestiveTab(v, activeTab))
@@ -172,8 +205,9 @@ export function ChristmasSpotlightSection({
 
         {/* Festive Sub-Category Tabs */}
         <div className="mt-6 flex flex-wrap items-center gap-2">
-          {FESTIVE_TABS.map((tab) => {
+          {visibleTabs.map((tab) => {
             const active = activeTab === tab.id;
+            const isDinnerTab = tab.id === 'dinner-lunch';
             return (
               <button
                 key={tab.id}
@@ -182,9 +216,12 @@ export function ChristmasSpotlightSection({
                 className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-bold transition-all ${
                   active
                     ? 'border-amber-300 bg-amber-400 text-neutral-950 shadow-md'
-                    : 'border-white/20 bg-white/10 text-white/90 hover:bg-white/20'
+                    : isDinnerTab
+                      ? 'border-amber-300/60 bg-amber-400/20 text-amber-100 hover:bg-amber-400/30'
+                      : 'border-white/20 bg-white/10 text-white/90 hover:bg-white/20'
                 }`}
               >
+                {tab.id === 'dinner-lunch' && <UtensilsCrossed className="size-3.5" aria-hidden="true" />}
                 {tab.id === 'bakers' && <Cake className="size-3.5" aria-hidden="true" />}
                 {tab.id === 'hampers' && <Gift className="size-3.5" aria-hidden="true" />}
                 {tab.id === 'catering' && <Wine className="size-3.5" aria-hidden="true" />}
@@ -196,8 +233,10 @@ export function ChristmasSpotlightSection({
           })}
         </div>
 
-        {/* Highlighted Christmas & NYE Vendor Grid */}
-        {festiveVendors.length === 0 ? (
+        {/* Hyderabad-Only Custom Christmas Dinner & Lunch Menu Builder OR Vendor Grid */}
+        {activeTab === 'dinner-lunch' && isHyderabadEligible ? (
+          <ChristmasCustomMenuBuilder dishes={christmasDishes} onOrderSent={onNotify} />
+        ) : festiveVendors.length === 0 ? (
           <div className="mt-8 rounded-2xl border border-white/15 bg-white/10 p-8 text-center backdrop-blur-md">
             <p className="text-base font-bold text-white">
               Be the first vendor featured in this Christmas category!

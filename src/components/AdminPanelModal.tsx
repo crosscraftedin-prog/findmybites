@@ -24,6 +24,7 @@ import {
   Sparkles,
   Trash2,
   Upload,
+  UtensilsCrossed,
   X,
 } from 'lucide-react';
 import {
@@ -61,6 +62,7 @@ import {
 } from '../services/firestoreService';
 import { compressImageFile } from '../utils/imageUpload';
 import { FoodTypeIcon } from './FoodTypeBadge';
+import { StateCoveragePicker } from './StateCoveragePicker';
 import {
   AdminApprovalsTab,
   AdminCampaignsTab,
@@ -68,6 +70,8 @@ import {
   AdminOverviewTab,
   AdminSeoManagerTab,
 } from './AdminCommandTabs';
+import { AdminChristmasMenuTab } from './AdminChristmasMenuTab';
+import { CustomMenuDish, mergeChristmasDishes } from '../data/christmasMenu';
 
 interface AdminPanelModalProps {
   open: boolean;
@@ -75,6 +79,7 @@ interface AdminPanelModalProps {
   adminUser: User;
   cloudVendors: Vendor[];
   allCatalogVendors: Vendor[];
+  cloudChristmasDishes: CustomMenuDish[];
   transfers: AdminTransferRecord[];
   claims: StoreClaim[];
   bookings: BookingEnquiry[];
@@ -92,6 +97,7 @@ interface AdminPanelModalProps {
 type AdminTab =
   | 'overview'
   | 'approvals'
+  | 'christmas-menu'
   | 'create'
   | 'transfers'
   | 'seo'
@@ -227,6 +233,7 @@ export function AdminPanelModal({
   adminUser,
   cloudVendors,
   allCatalogVendors,
+  cloudChristmasDishes,
   transfers,
   claims,
   bookings,
@@ -241,6 +248,10 @@ export function AdminPanelModal({
   onToast,
 }: AdminPanelModalProps) {
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
+  const activeChristmasDishCount = useMemo(
+    () => mergeChristmasDishes(cloudChristmasDishes).activeDishes.length,
+    [cloudChristmasDishes]
+  );
 
   // --- Create & Transfer Store Form State ---
   const [name, setName] = useState('');
@@ -249,6 +260,8 @@ export function AdminPanelModal({
   const [stateName, setStateName] = useState('Maharashtra');
   const [city, setCity] = useState('Mumbai');
   const [area, setArea] = useState('');
+  const [allStatesCoverage, setAllStatesCoverage] = useState(false);
+  const [serviceStates, setServiceStates] = useState<string[]>([]);
   const [lat, setLat] = useState(19.076);
   const [lng, setLng] = useState(72.8777);
   const [phoneCode, setPhoneCode] = useState('91');
@@ -340,6 +353,8 @@ export function AdminPanelModal({
   const handleCountryChange = (nextCountry: Exclude<LaunchCountry, 'All'>) => {
     setCountry(nextCountry);
     setPhoneCode(COUNTRY_PHONE_CODES[nextCountry] || '91');
+    setAllStatesCoverage(false);
+    setServiceStates([]);
     const regions = STATES_BY_COUNTRY[nextCountry] || [];
     if (regions[0]) {
       setStateName(regions[0].name);
@@ -444,6 +459,8 @@ export function AdminPanelModal({
   const resetBuilder = () => {
     setName('');
     setArea('');
+    setAllStatesCoverage(false);
+    setServiceStates([]);
     setPhoneLocal('');
     setBioHandle('');
     setCoverImage(categoryDefaultImg);
@@ -545,6 +562,10 @@ export function AdminPanelModal({
       christmasOffer: christmasSpecial ? christmasOffer.trim() : undefined,
       bioHandle: bioHandle.trim() || slugBase,
       serviceAreas: [area.trim() || city, city].filter(Boolean),
+      allStatesCoverage,
+      serviceStates: allStatesCoverage
+        ? []
+        : serviceStates.filter((s) => s && s !== stateName),
       specialties: [category, ...validProducts.slice(0, 3).map((p) => p.name)],
       image: coverImage || categoryDefaultImg,
       products: validProducts,
@@ -679,6 +700,13 @@ export function AdminPanelModal({
                   icon: ClipboardCheck,
                   badge: pendingApprovalCount,
                   badgeTone: 'bg-rose-600 text-white',
+                },
+                {
+                  id: 'christmas-menu',
+                  label: 'Christmas Menu',
+                  icon: UtensilsCrossed,
+                  badge: activeChristmasDishCount,
+                  badgeTone: 'bg-emerald-600 text-white',
                 },
                 { id: 'create', label: 'Create & Transfer', icon: Cake, badge: 0 },
                 {
@@ -1107,6 +1135,19 @@ export function AdminPanelModal({
                         {lat.toFixed(3)}, {lng.toFixed(3)} · Tap GPS
                       </button>
                     </div>
+                  </div>
+
+                  {/* Multi-State / Pan-India Coverage Selector */}
+                  <div className="mt-4">
+                    <StateCoveragePicker
+                      country={country}
+                      primaryState={stateName}
+                      allStatesCoverage={allStatesCoverage}
+                      serviceStates={serviceStates}
+                      onChangeAllStates={setAllStatesCoverage}
+                      onChangeServiceStates={setServiceStates}
+                      compact
+                    />
                   </div>
 
                   {/* Tagline, Description & Cover Image */}
@@ -1668,6 +1709,15 @@ export function AdminPanelModal({
               eventRequests={eventRequests}
               allCatalogVendors={allCatalogVendors}
               currency={currency}
+              onToast={onToast}
+            />
+          )}
+
+          {/* TAB 2B: HYDERABAD CHRISTMAS LUNCH & DINNER MENU MANAGER */}
+          {activeTab === 'christmas-menu' && (
+            <AdminChristmasMenuTab
+              adminUser={adminUser}
+              cloudChristmasDishes={cloudChristmasDishes}
               onToast={onToast}
             />
           )}

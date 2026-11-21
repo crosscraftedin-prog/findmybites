@@ -83,6 +83,8 @@ import {
   getVendorQuickTags,
   haversineKm,
   planRankWeight,
+  vendorCoversLocationQuery,
+  vendorCoversState,
 } from './data/vendors';
 import { ADMIN_EMAIL, auth, signInWithGoogle, signOutUser } from './firebase';
 import { useSeoMeta } from './hooks/useSeoMeta';
@@ -100,6 +102,7 @@ import {
   subscribeAllReviewsForAdmin,
   subscribeAllVendorMetricsForAdmin,
   subscribeAllVendorsForAdmin,
+  subscribeChristmasDishes,
   subscribeMyBookings,
   subscribeMyEventRequests,
   subscribeMyVendors,
@@ -109,6 +112,7 @@ import {
   syncSavedVendorsToCloud,
   updateBookingStatusInCloud,
 } from './services/firestoreService';
+import { CustomMenuDish, mergeChristmasDishes } from './data/christmasMenu';
 import { requestBrowserGpsLocation, resolveRegionFromCoords } from './utils/geolocation';
 import {
   ResolvedSeoDirectoryRoute,
@@ -475,6 +479,7 @@ export default function App() {
   const [listModalOpen, setListModalOpen] = useState(false);
   const [listModalPlan, setListModalPlan] = useState<PlanTier>('free');
   const [listModalChristmas, setListModalChristmas] = useState(false);
+  const [openDinnerSignal, setOpenDinnerSignal] = useState(0);
   const [snowEnabled, setSnowEnabled] = useState(true);
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [adminPanelOpen, setAdminPanelOpen] = useState(false);
@@ -502,6 +507,7 @@ export default function App() {
   const [adminAllEventRequests, setAdminAllEventRequests] = useState<EventRequest[]>([]);
   const [adminAllMetrics, setAdminAllMetrics] = useState<CloudVendorMetric[]>([]);
   const [siteSettings, setSiteSettings] = useState<SiteSettings>(DEFAULT_SITE_SETTINGS);
+  const [cloudChristmasDishes, setCloudChristmasDishes] = useState<CustomMenuDish[]>([]);
   const [seoDirectoryRoute, setSeoDirectoryRoute] = useState<ResolvedSeoDirectoryRoute | null>(
     null
   );
@@ -517,6 +523,7 @@ export default function App() {
   useEffect(() => {
     let unsubVendors: (() => void) | undefined;
     let unsubSettings: (() => void) | undefined;
+    let unsubChristmasDishes: (() => void) | undefined;
     try {
       unsubVendors = subscribeActiveVendors((list) => {
         setCloudVendors(list);
@@ -524,14 +531,23 @@ export default function App() {
       unsubSettings = subscribeSiteSettings((cfg) => {
         setSiteSettings(cfg);
       });
+      unsubChristmasDishes = subscribeChristmasDishes((list) => {
+        setCloudChristmasDishes(list);
+      });
     } catch {
       // ignore if offline
     }
     return () => {
       unsubVendors?.();
       unsubSettings?.();
+      unsubChristmasDishes?.();
     };
   }, []);
+
+  const activeChristmasDishes = useMemo(
+    () => mergeChristmasDishes(cloudChristmasDishes).activeDishes,
+    [cloudChristmasDishes]
+  );
 
   useEffect(() => {
     setSnowEnabled(siteSettings.snowfallEnabled);
@@ -1133,7 +1149,9 @@ export default function App() {
     const list = activeVendorPool.filter((v) => {
       if (selectedCategory !== 'All' && v.category !== selectedCategory) return false;
       if (selectedCountry !== 'All' && v.country !== selectedCountry) return false;
-      if (selectedState !== 'All' && v.state !== selectedState) return false;
+      if (selectedState !== 'All' && !vendorCoversState(v, selectedState, selectedCountry)) {
+        return false;
+      }
       if (selectedTierFilter === 'paid' && v.planTier === 'free') return false;
       if (selectedTierFilter === 'free' && v.planTier !== 'free') return false;
       if (selectedQuickTag !== 'All' && !getVendorQuickTags(v).includes(selectedQuickTag)) return false;
@@ -1142,17 +1160,31 @@ export default function App() {
 
       if (userCoords && nearMeRadiusKm > 0) {
         const d = haversineKm(userCoords.lat, userCoords.lng, v.lat, v.lng);
-        if (d > nearMeRadiusKm) return false;
+        if (d > nearMeRadiusKm) {
+          const coversUserArea =
+            (selectedState !== 'All' && vendorCoversState(v, selectedState, selectedCountry)) ||
+            (Boolean(userCoords.label) &&
+              userCoords.label
+                .split(',')
+                .some(
+                  (part) => part.trim().length >= 2 && vendorCoversLocationQuery(v, part.trim())
+                )) ||
+            (Boolean(v.allStatesCoverage) &&
+              (selectedCountry === 'All' || v.country === selectedCountry));
+          if (!coversUserArea) return false;
+        }
       }
 
-      if (loc) {
-        const locHay = `${v.city} ${v.area} ${v.state} ${v.country} ${v.serviceAreas.join(' ')}`.toLowerCase();
-        if (!locHay.includes(loc)) return false;
+      if (loc && !vendorCoversLocationQuery(v, loc)) {
+        return false;
       }
 
       if (q) {
         const prodNames = v.products.map((p) => p.name).join(' ');
-        const hay = `${v.name} ${v.category} ${v.city} ${v.area} ${v.state} ${v.country} ${v.tagline} ${v.specialties.join(' ')} ${prodNames}`.toLowerCase();
+        const stateExtras = v.allStatesCoverage
+          ? `pan-india all states ${v.country}`
+          : (v.serviceStates || []).join(' ');
+        const hay = `${v.name} ${v.category} ${v.city} ${v.area} ${v.state} ${stateExtras} ${v.country} ${v.tagline} ${v.specialties.join(' ')} ${prodNames}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
 
@@ -1218,6 +1250,30 @@ export default function App() {
     () => allVendors.filter((v) => savedIds.includes(v.id)),
     [allVendors, savedIds]
   );
+
+  // Christmas Dinner & Lunch Custom Menu Builder is Hyderabad-only for now
+  const isHyderabadEligible = useMemo(() => {
+    const hydRegex =
+      /hyderabad|secunderabad|telangana|gachibowli|jubilee|banjara|madhapur|kondapur|kukatpally|begumpet|hitec|miyapur|manikonda|kompally|dilsukhnagar|sainikpuri|begum bazar|somajiguda|abids/i;
+
+    if (selectedCountry !== 'All' && selectedCountry !== 'India') return false;
+    if (selectedState !== 'All') {
+      return selectedState.toLowerCase() === 'telangana';
+    }
+    if (locationQuery.trim().length > 0) {
+      return hydRegex.test(locationQuery.trim());
+    }
+    if (seoDirectoryRoute?.cityEntry) {
+      return hydRegex.test(
+        `${seoDirectoryRoute.cityEntry.slug} ${seoDirectoryRoute.cityEntry.city} ${seoDirectoryRoute.cityEntry.state}`
+      );
+    }
+    if (userCoords) {
+      const distToHydKm = haversineKm(userCoords.lat, userCoords.lng, 17.385, 78.4867);
+      return distToHydKm <= 75 || hydRegex.test(userCoords.label || '');
+    }
+    return true;
+  }, [selectedCountry, selectedState, locationQuery, seoDirectoryRoute, userCoords]);
 
   const hasActiveFilters =
     selectedCategory !== 'All' ||
@@ -1479,7 +1535,22 @@ export default function App() {
                 <Snowflake className="size-3.5 shrink-0 text-amber-300" aria-hidden="true" />
                 <span>{siteSettings.promoText}</span>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                {isHyderabadEligible && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOpenDinnerSignal((s) => s + 1);
+                      document
+                        .getElementById('christmas-special')
+                        ?.scrollIntoView({ behavior: 'smooth' });
+                    }}
+                    className="inline-flex cursor-pointer items-center gap-1 rounded-full bg-emerald-400 px-3 py-1 text-[11px] font-extrabold text-neutral-950 transition-colors hover:bg-emerald-300"
+                  >
+                    <UtensilsCrossed className="size-3" aria-hidden="true" />
+                    Christmas Dinner &amp; Lunch (Hyd)
+                  </button>
+                )}
                 <a
                   href="#christmas-special"
                   className="rounded-full bg-amber-400 px-3 py-1 text-[11px] font-extrabold text-neutral-950 transition-colors hover:bg-amber-300"
@@ -1718,11 +1789,15 @@ export default function App() {
         <ChristmasSpotlightSection
           vendors={allVendors}
           currency={currency}
+          christmasDishes={activeChristmasDishes}
+          isHyderabadEligible={isHyderabadEligible}
+          openDinnerSignal={openDinnerSignal}
           canEditVendor={canEditVendor}
           onSelectVendor={setActiveVendor}
           onEditVendor={handleEditStorefront}
           onOpenChristmasListModal={() => handleOpenListModal('free', true)}
           onTrackWhatsAppClick={trackWhatsAppClick}
+          onNotify={setNotice}
         />
 
         {/* 2. TRUST STRIP */}
@@ -1909,6 +1984,7 @@ export default function App() {
                         ? haversineKm(userCoords.lat, userCoords.lng, vendor.lat, vendor.lng)
                         : null
                     }
+                    browsingState={selectedState !== 'All' ? selectedState : undefined}
                     canEdit={canEditVendor(vendor)}
                     onToggleSave={toggleSave}
                     onSelect={setActiveVendor}
@@ -2378,6 +2454,7 @@ export default function App() {
                             ? haversineKm(userCoords.lat, userCoords.lng, vendor.lat, vendor.lng)
                             : null
                         }
+                        browsingState={selectedState !== 'All' ? selectedState : undefined}
                         canEdit={canEditVendor(vendor)}
                         onToggleSave={toggleSave}
                         onSelect={setActiveVendor}
@@ -2978,6 +3055,11 @@ export default function App() {
         currency={currency}
         isSaved={resolvedActiveVendor ? savedIds.includes(resolvedActiveVendor.id) : false}
         metrics={resolvedActiveVendor ? vendorAnalytics[resolvedActiveVendor.id] : undefined}
+        browsingLocation={
+          [locationQuery.trim(), selectedState !== 'All' ? selectedState : '']
+            .filter((part, idx, arr) => part && arr.indexOf(part) === idx)
+            .join(', ') || userCoords?.label || undefined
+        }
         user={authUser}
         canEdit={resolvedActiveVendor ? canEditVendor(resolvedActiveVendor) : false}
         onSignIn={handleSignIn}
@@ -3081,7 +3163,7 @@ export default function App() {
         onSelectLocation={handleSelectLocation}
       />
 
-      {/* Full 7-Tab Admin Command Center */}
+      {/* Full Admin Command Center */}
       {isAdminUser && authUser && (
         <AdminPanelModal
           open={adminPanelOpen}
@@ -3089,6 +3171,7 @@ export default function App() {
           adminUser={authUser}
           cloudVendors={effectiveAdminVendors}
           allCatalogVendors={allVendors}
+          cloudChristmasDishes={cloudChristmasDishes}
           transfers={adminTransfers}
           claims={adminStoreClaims}
           bookings={adminAllBookings}

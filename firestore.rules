@@ -100,7 +100,8 @@ service cloud.firestore {
           'verified', 'status', 'tagline', 'description', 'promoBanner',
           'christmasSpecial', 'christmasOffer',
           'bioHandle', 'bioTheme', 'instagramHandle', 'customLinks',
-          'serviceAreas', 'specialties', 'image', 'logo', 'gallery', 'products',
+          'serviceAreas', 'allStatesCoverage', 'serviceStates',
+          'specialties', 'image', 'logo', 'gallery', 'products',
           'claimStatus', 'claimedByToken',
           'seoTitle', 'seoDescription', 'seoKeywords',
           'createdAt', 'updatedAt'
@@ -141,6 +142,8 @@ service cloud.firestore {
         (!('seoDescription' in data) || (data.seoDescription is string && data.seoDescription.size() <= 240)) &&
         (!('seoKeywords' in data) || (data.seoKeywords is string && data.seoKeywords.size() <= 300)) &&
         (!('serviceAreas' in data) || isValidStringList(data.serviceAreas, 10, 100)) &&
+        (!('allStatesCoverage' in data) || data.allStatesCoverage is bool) &&
+        (!('serviceStates' in data) || isValidStringList(data.serviceStates, 40, 80)) &&
         (!('specialties' in data) || isValidStringList(data.specialties, 10, 100)) &&
         data.image is string && data.image.size() >= 1 && data.image.size() <= 350000 &&
         (!('logo' in data) || (data.logo is string && data.logo.size() <= 120000)) &&
@@ -347,6 +350,35 @@ service cloud.firestore {
         data.updatedAt is timestamp;
     }
 
+    function isValidChristmasDish(data) {
+      return data.keys().hasAll([
+          'name', 'category', 'foodType', 'priceInrPerGuest',
+          'portion', 'description', 'popular', 'active',
+          'updatedBy', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'name', 'category', 'foodType', 'priceInrPerGuest',
+          'portion', 'description', 'image', 'popular', 'active',
+          'sortOrder', 'updatedBy', 'createdAt', 'updatedAt'
+        ]) &&
+        data.name is string && data.name.size() >= 2 && data.name.size() <= 120 &&
+        data.category in [
+          'christmas-specials', 'starters', 'biryani-rice', 'curries-dal',
+          'breads', 'soups-chinese', 'desserts', 'beverages-sides'
+        ] &&
+        data.foodType in ['veg', 'non-veg'] &&
+        data.priceInrPerGuest is number && data.priceInrPerGuest >= 1 && data.priceInrPerGuest <= 50000 &&
+        data.portion is string && data.portion.size() >= 1 && data.portion.size() <= 60 &&
+        data.description is string && data.description.size() <= 400 &&
+        (!('image' in data) || (data.image is string && data.image.size() <= 150000)) &&
+        data.popular is bool &&
+        data.active is bool &&
+        (!('sortOrder' in data) || (data.sortOrder is number && data.sortOrder >= 0 && data.sortOrder <= 10000)) &&
+        isValidId(data.updatedBy) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
     // --- Collection: /vendors/{vendorId} ---
     match /vendors/{vendorId} {
       allow get: if isValidId(vendorId) && (
@@ -365,6 +397,8 @@ service cloud.firestore {
         incoming().ownerId == request.auth.uid &&
         !('claimedByToken' in incoming()) &&
         (!('claimStatus' in incoming()) || incoming().claimStatus == 'none' || (incoming().claimStatus == 'pending' && isAdmin())) &&
+        (!('allStatesCoverage' in incoming()) || incoming().allStatesCoverage == false || isAdmin()) &&
+        (!('serviceStates' in incoming()) || incoming().serviceStates.size() == 0 || isAdmin()) &&
         incoming().status in ['active', 'pending_review'] &&
         incoming().createdAt == request.time &&
         incoming().updatedAt == request.time &&
@@ -406,7 +440,8 @@ service cloud.firestore {
               'planTier', 'monthlyAutoPay', 'priceTier', 'startingPriceUsd',
               'responseTime', 'tagline', 'description', 'promoBanner',
               'christmasSpecial', 'christmasOffer', 'bioHandle', 'bioTheme',
-              'instagramHandle', 'customLinks', 'serviceAreas', 'specialties',
+              'instagramHandle', 'customLinks', 'serviceAreas',
+              'allStatesCoverage', 'serviceStates', 'specialties',
               'image', 'logo', 'gallery', 'products', 'claimStatus',
               'seoTitle', 'seoDescription', 'seoKeywords', 'updatedAt'
             ])
@@ -532,6 +567,33 @@ service cloud.firestore {
         ]);
 
       allow delete: if isAdmin() && isValidId(settingId);
+    }
+
+    // --- Collection: /christmasDishes/{dishId} (Admin-Managed Hyderabad Christmas Custom Menu) ---
+    match /christmasDishes/{dishId} {
+      allow get: if isValidId(dishId);
+      allow list: if isRootAdminToken() || (request.query.limit != null && request.query.limit <= 200);
+
+      allow create: if isAdmin() &&
+        isValidId(dishId) &&
+        isValidChristmasDish(incoming()) &&
+        incoming().updatedBy == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isAdmin() &&
+        isValidId(dishId) &&
+        isValidChristmasDish(incoming()) &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedBy == request.auth.uid &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'name', 'category', 'foodType', 'priceInrPerGuest',
+          'portion', 'description', 'image', 'popular', 'active',
+          'sortOrder', 'updatedBy', 'updatedAt'
+        ]);
+
+      allow delete: if isAdmin() && isValidId(dishId);
     }
 
     // --- Collection: /users/{userId} (Private PII & Saved Shortlist) ---

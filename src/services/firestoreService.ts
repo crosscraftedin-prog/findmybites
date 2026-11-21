@@ -36,6 +36,11 @@ import {
   normalizePhoneDigits,
   sanitizeSafeHttpUrl,
 } from '../data/vendors';
+import {
+  CUSTOM_MENU_CATEGORIES,
+  CustomMenuCategoryId,
+  CustomMenuDish,
+} from '../data/christmasMenu';
 import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 
 function sanitizeId(raw: string): string {
@@ -201,6 +206,10 @@ function docToVendor(id: string, data: Record<string, unknown>): Vendor {
           .slice(0, 8)
       : undefined,
     serviceAreas: Array.isArray(data.serviceAreas) ? (data.serviceAreas as string[]) : [],
+    allStatesCoverage: Boolean(data.allStatesCoverage),
+    serviceStates: Array.isArray(data.serviceStates)
+      ? (data.serviceStates as string[]).filter((s) => typeof s === 'string' && s.trim().length > 0).slice(0, 40)
+      : undefined,
     specialties: Array.isArray(data.specialties) ? (data.specialties as string[]) : [],
     image: typeof data.image === 'string' ? data.image : '/src/assets/images/cat-bakers.png',
     logo: typeof data.logo === 'string' && data.logo.length > 0 ? data.logo : undefined,
@@ -358,6 +367,17 @@ export async function createVendorInCloud(
       ? { christmasOffer: vendor.christmasOffer.trim().slice(0, 140) }
       : {}),
     serviceAreas: serviceAreas.length > 0 ? serviceAreas : [vendor.city],
+    ...(isAdminUser && vendor.allStatesCoverage !== undefined
+      ? { allStatesCoverage: Boolean(vendor.allStatesCoverage) }
+      : {}),
+    ...(isAdminUser && Array.isArray(vendor.serviceStates) && vendor.serviceStates.length > 0
+      ? {
+          serviceStates: vendor.serviceStates
+            .map((s) => s.trim().slice(0, 80))
+            .filter(Boolean)
+            .slice(0, 40),
+        }
+      : {}),
     specialties: specialties.length > 0 ? specialties : [vendor.category],
     image: clampStr(vendor.image, 1, 150000, '/src/assets/images/cat-bakers.png'),
     ...(vendor.logo && vendor.logo.trim().length > 0
@@ -420,6 +440,8 @@ export async function updateVendorInCloud(
     seoTitle: string;
     seoDescription: string;
     seoKeywords: string;
+    allStatesCoverage: boolean;
+    serviceStates: string[];
     image: string;
     logo: string;
     gallery: string[];
@@ -463,6 +485,13 @@ export async function updateVendorInCloud(
   if (updates.seoDescription !== undefined)
     clean.seoDescription = updates.seoDescription.trim().slice(0, 220);
   if (updates.seoKeywords !== undefined) clean.seoKeywords = updates.seoKeywords.trim().slice(0, 240);
+  if (updates.allStatesCoverage !== undefined)
+    clean.allStatesCoverage = Boolean(updates.allStatesCoverage);
+  if (updates.serviceStates !== undefined)
+    clean.serviceStates = updates.serviceStates
+      .map((s) => s.trim().slice(0, 80))
+      .filter(Boolean)
+      .slice(0, 40);
   if (updates.image !== undefined)
     clean.image = clampStr(updates.image, 1, 150000, '/src/assets/images/cat-bakers.png');
   if (updates.logo !== undefined) clean.logo = updates.logo.trim().slice(0, 70000);
@@ -1050,6 +1079,15 @@ export async function adminCreateStoreWithTransfer(
       : {}),
     ...(cleanBioHandle ? { bioHandle: cleanBioHandle } : {}),
     serviceAreas: serviceAreas.length > 0 ? serviceAreas : [vendor.city],
+    ...(vendor.allStatesCoverage ? { allStatesCoverage: true } : {}),
+    ...(Array.isArray(vendor.serviceStates) && vendor.serviceStates.length > 0
+      ? {
+          serviceStates: vendor.serviceStates
+            .map((s) => s.trim().slice(0, 80))
+            .filter(Boolean)
+            .slice(0, 40),
+        }
+      : {}),
     specialties: specialties.length > 0 ? specialties : [vendor.category],
     image: clampStr(vendor.image, 1, 150000, '/src/assets/images/cat-bakers.png'),
     ...(vendor.logo && vendor.logo.trim().length > 0
@@ -1571,5 +1609,166 @@ export async function adminDeleteBookingInCloud(bookingId: string): Promise<void
     handleFirestoreError(error, OperationType.DELETE, docPath);
   }
 }
+
+// ============================================================================
+// CHRISTMAS LUNCH & DINNER CUSTOM MENU (HYDERABAD) — ADMIN CLOUD CRUD
+// ============================================================================
+
+const VALID_CHRISTMAS_CATEGORIES = new Set<CustomMenuCategoryId>(
+  CUSTOM_MENU_CATEGORIES.map((c) => c.id)
+);
+
+function docToChristmasDish(id: string, data: Record<string, unknown>): CustomMenuDish {
+  const rawCat = typeof data.category === 'string' ? data.category : 'christmas-specials';
+  const category: CustomMenuCategoryId = VALID_CHRISTMAS_CATEGORIES.has(
+    rawCat as CustomMenuCategoryId
+  )
+    ? (rawCat as CustomMenuCategoryId)
+    : 'christmas-specials';
+
+  return {
+    id,
+    name: typeof data.name === 'string' ? data.name : 'Untitled Dish',
+    category,
+    foodType: data.foodType === 'non-veg' ? 'non-veg' : 'veg',
+    priceInrPerGuest:
+      typeof data.priceInrPerGuest === 'number' && Number.isFinite(data.priceInrPerGuest)
+        ? Math.max(1, Math.min(50000, Math.round(data.priceInrPerGuest)))
+        : 99,
+    portion: typeof data.portion === 'string' && data.portion.trim() ? data.portion : '1 serving',
+    description: typeof data.description === 'string' ? data.description : '',
+    image:
+      typeof data.image === 'string' && data.image.trim().length > 0
+        ? data.image.trim()
+        : undefined,
+    popular: Boolean(data.popular),
+    active: data.active !== false,
+    sortOrder: typeof data.sortOrder === 'number' ? data.sortOrder : undefined,
+    isCloudSaved: true,
+  };
+}
+
+export function subscribeChristmasDishes(
+  onData: (dishes: CustomMenuDish[]) => void
+): () => void {
+  const q = query(collection(db, 'christmasDishes'), limit(200));
+  return onSnapshot(
+    q,
+    (snap) => {
+      onData(snap.docs.map((d) => docToChristmasDish(d.id, d.data())));
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'christmasDishes');
+    }
+  );
+}
+
+export async function adminSaveChristmasDish(
+  dish: Omit<CustomMenuDish, 'id'> & { id?: string },
+  adminUid: string
+): Promise<CustomMenuDish> {
+  const dishId = dish.id
+    ? sanitizeId(dish.id)
+    : sanitizeId(`xmas-dish-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`);
+
+  const name = clampStr(dish.name, 2, 120, 'Christmas Special Dish');
+  const category: CustomMenuCategoryId = VALID_CHRISTMAS_CATEGORIES.has(dish.category)
+    ? dish.category
+    : 'christmas-specials';
+  const foodType = dish.foodType === 'non-veg' ? 'non-veg' : 'veg';
+  const priceInrPerGuest = Math.max(
+    1,
+    Math.min(50000, Math.round(Number(dish.priceInrPerGuest) || 1))
+  );
+  const portion = clampStr(dish.portion, 1, 60, '1 serving');
+  const description = (dish.description || '').trim().slice(0, 400);
+  const rawImage = (dish.image || '').trim();
+  const safeImage =
+    rawImage.startsWith('data:image/') || rawImage.startsWith('/')
+      ? rawImage.slice(0, 150000)
+      : (sanitizeSafeHttpUrl(rawImage) ?? '').slice(0, 150000);
+  const popular = Boolean(dish.popular);
+  const active = dish.active !== false;
+  const sortOrder =
+    typeof dish.sortOrder === 'number' && Number.isFinite(dish.sortOrder)
+      ? Math.max(0, Math.min(10000, Math.round(dish.sortOrder)))
+      : 50;
+
+  const docPath = `christmasDishes/${dishId}`;
+  const ref = doc(db, 'christmasDishes', dishId);
+
+  const sharedFields = {
+    name,
+    category,
+    foodType,
+    priceInrPerGuest,
+    portion,
+    description,
+    image: safeImage,
+    popular,
+    active,
+    sortOrder,
+    updatedBy: adminUid,
+    updatedAt: serverTimestamp(),
+  };
+
+  try {
+    const existingSnap = await getDoc(ref);
+    if (existingSnap.exists()) {
+      await updateDoc(ref, sharedFields);
+    } else {
+      await setDoc(ref, {
+        ...sharedFields,
+        createdAt: serverTimestamp(),
+      });
+    }
+
+    return {
+      id: dishId,
+      name,
+      category,
+      foodType,
+      priceInrPerGuest,
+      portion,
+      description,
+      image: safeImage || undefined,
+      popular,
+      active,
+      sortOrder,
+      isCloudSaved: true,
+    };
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, docPath);
+  }
+}
+
+export async function adminDeleteChristmasDish(
+  dish: CustomMenuDish,
+  adminUid: string,
+  isBuiltIn: boolean
+): Promise<void> {
+  const dishId = sanitizeId(dish.id);
+  const docPath = `christmasDishes/${dishId}`;
+  try {
+    if (isBuiltIn) {
+      await adminSaveChristmasDish({ ...dish, id: dishId, active: false }, adminUid);
+    } else {
+      await deleteDoc(doc(db, 'christmasDishes', dishId));
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, docPath);
+  }
+}
+
+export async function adminRestoreChristmasDish(dishId: string): Promise<void> {
+  const safeId = sanitizeId(dishId);
+  const docPath = `christmasDishes/${safeId}`;
+  try {
+    await deleteDoc(doc(db, 'christmasDishes', safeId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, docPath);
+  }
+}
+
 
 

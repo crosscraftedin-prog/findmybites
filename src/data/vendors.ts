@@ -68,20 +68,38 @@ export const COUNTRY_REGION_LABEL: Record<Exclude<LaunchCountry, 'All'>, string>
 
 export const STATES_BY_COUNTRY: Record<Exclude<LaunchCountry, 'All'>, StateRegion[]> = {
   India: [
-    { name: 'Maharashtra', cities: ['Mumbai', 'Pune', 'Nagpur', 'Nashik'], lat: 19.076, lng: 72.8777 },
-    { name: 'Karnataka', cities: ['Bengaluru', 'Mysuru', 'Mangaluru'], lat: 12.9716, lng: 77.5946 },
-    { name: 'Delhi NCR', cities: ['Delhi NCR', 'New Delhi', 'Gurugram', 'Noida'], lat: 28.6139, lng: 77.209 },
+    { name: 'Maharashtra', cities: ['Mumbai', 'Pune', 'Nagpur', 'Nashik', 'Thane'], lat: 19.076, lng: 72.8777 },
+    { name: 'Karnataka', cities: ['Bengaluru', 'Mysuru', 'Mangaluru', 'Hubballi'], lat: 12.9716, lng: 77.5946 },
+    { name: 'Delhi NCR', cities: ['Delhi NCR', 'New Delhi', 'Gurugram', 'Noida', 'Ghaziabad', 'Faridabad'], lat: 28.6139, lng: 77.209 },
     { name: 'Kerala', cities: ['Kochi', 'Thiruvananthapuram', 'Kozhikode', 'Thrissur'], lat: 9.9312, lng: 76.2673 },
-    { name: 'Tamil Nadu', cities: ['Chennai', 'Coimbatore', 'Madurai'], lat: 13.0827, lng: 80.2707 },
-    { name: 'Telangana', cities: ['Hyderabad', 'Warangal'], lat: 17.385, lng: 78.4867 },
+    { name: 'Tamil Nadu', cities: ['Chennai', 'Coimbatore', 'Madurai', 'Tiruchirappalli'], lat: 13.0827, lng: 80.2707 },
+    { name: 'Telangana', cities: ['Hyderabad', 'Warangal', 'Nizamabad'], lat: 17.385, lng: 78.4867 },
     { name: 'Gujarat', cities: ['Ahmedabad', 'Surat', 'Vadodara', 'Rajkot'], lat: 23.0225, lng: 72.5714 },
-    { name: 'West Bengal', cities: ['Kolkata', 'Siliguri', 'Howrah'], lat: 22.5726, lng: 88.3639 },
-    { name: 'Rajasthan', cities: ['Jaipur', 'Udaipur', 'Jodhpur'], lat: 26.9124, lng: 75.7873 },
-    { name: 'Punjab & Chandigarh', cities: ['Chandigarh', 'Ludhiana', 'Amritsar'], lat: 30.7333, lng: 76.7794 },
-    { name: 'Uttar Pradesh', cities: ['Lucknow', 'Agra', 'Kanpur', 'Varanasi'], lat: 26.8467, lng: 80.9462 },
-    { name: 'Goa', cities: ['Panaji', 'North Goa', 'South Goa'], lat: 15.2993, lng: 74.124 },
-    { name: 'Andhra Pradesh', cities: ['Visakhapatnam', 'Vijayawada', 'Tirupati'], lat: 17.6868, lng: 83.2185 },
-    { name: 'Madhya Pradesh', cities: ['Indore', 'Bhopal'], lat: 22.7196, lng: 75.8577 },
+    { name: 'West Bengal', cities: ['Kolkata', 'Siliguri', 'Howrah', 'Durgapur'], lat: 22.5726, lng: 88.3639 },
+    { name: 'Rajasthan', cities: ['Jaipur', 'Udaipur', 'Jodhpur', 'Kota'], lat: 26.9124, lng: 75.7873 },
+    { name: 'Punjab & Chandigarh', cities: ['Chandigarh', 'Ludhiana', 'Amritsar', 'Jalandhar'], lat: 30.7333, lng: 76.7794 },
+    { name: 'Uttar Pradesh', cities: ['Lucknow', 'Agra', 'Kanpur', 'Varanasi', 'Prayagraj'], lat: 26.8467, lng: 80.9462 },
+    { name: 'Goa', cities: ['Panaji', 'North Goa', 'South Goa', 'Margao'], lat: 15.2993, lng: 74.124 },
+    { name: 'Andhra Pradesh', cities: ['Visakhapatnam', 'Vijayawada', 'Tirupati', 'Guntur'], lat: 17.6868, lng: 83.2185 },
+    { name: 'Madhya Pradesh', cities: ['Indore', 'Bhopal', 'Gwalior', 'Jabalpur'], lat: 22.7196, lng: 75.8577 },
+    { name: 'Haryana', cities: ['Gurugram', 'Faridabad', 'Panipat', 'Ambala', 'Karnal'], lat: 29.0588, lng: 76.0856 },
+    { name: 'Bihar', cities: ['Patna', 'Gaya', 'Muzaffarpur', 'Bhagalpur'], lat: 25.5941, lng: 85.1376 },
+    { name: 'Odisha', cities: ['Bhubaneswar', 'Cuttack', 'Puri', 'Rourkela'], lat: 20.2961, lng: 85.8245 },
+    { name: 'Assam', cities: ['Guwahati', 'Silchar', 'Dibrugarh', 'Jorhat'], lat: 26.1445, lng: 91.7362 },
+    { name: 'Jharkhand', cities: ['Ranchi', 'Jamshedpur', 'Dhanbad', 'Bokaro'], lat: 23.3441, lng: 85.3096 },
+    { name: 'Chhattisgarh', cities: ['Raipur', 'Bilaspur', 'Bhilai', 'Durg'], lat: 21.2514, lng: 81.6296 },
+    { name: 'Uttarakhand', cities: ['Dehradun', 'Haridwar', 'Rishikesh', 'Nainital'], lat: 30.3165, lng: 78.0322 },
+    { name: 'Himachal Pradesh', cities: ['Shimla', 'Manali', 'Dharamshala', 'Solan'], lat: 31.1048, lng: 77.1734 },
+    { name: 'Jammu & Kashmir', cities: ['Srinagar', 'Jammu', 'Leh'], lat: 34.0837, lng: 74.7973 },
+    { name: 'Puducherry', cities: ['Puducherry', 'Karaikal'], lat: 11.9416, lng: 79.8083 },
+    { name: 'Tripura', cities: ['Agartala'], lat: 23.8315, lng: 91.2868 },
+    { name: 'Meghalaya', cities: ['Shillong'], lat: 25.5788, lng: 91.8933 },
+    { name: 'Manipur', cities: ['Imphal'], lat: 24.817, lng: 93.9368 },
+    { name: 'Nagaland', cities: ['Kohima', 'Dimapur'], lat: 25.6751, lng: 94.1086 },
+    { name: 'Mizoram', cities: ['Aizawl'], lat: 23.7271, lng: 92.7176 },
+    { name: 'Arunachal Pradesh', cities: ['Itanagar'], lat: 27.0844, lng: 93.6053 },
+    { name: 'Sikkim', cities: ['Gangtok'], lat: 27.3389, lng: 88.6065 },
+    { name: 'Andaman & Nicobar Islands', cities: ['Port Blair'], lat: 11.6234, lng: 92.7265 },
   ],
   'Dubai / UAE': [
     { name: 'Dubai', cities: ['Dubai', 'Downtown Dubai', 'Dubai Marina', 'Palm Jumeirah'], lat: 25.2048, lng: 55.2708 },
@@ -286,6 +304,8 @@ export interface Vendor {
   instagramHandle?: string;
   customLinks?: VendorBioLink[];
   serviceAreas: string[];
+  allStatesCoverage?: boolean;
+  serviceStates?: string[];
   specialties: string[];
   image: string;
   logo?: string;
@@ -297,6 +317,89 @@ export interface Vendor {
   seoTitle?: string;
   seoDescription?: string;
   seoKeywords?: string;
+}
+
+export function getVendorCoveredStatesList(vendor: Vendor): string[] {
+  if (vendor.allStatesCoverage) {
+    const regions = STATES_BY_COUNTRY[vendor.country] || [];
+    return regions.map((r) => r.name);
+  }
+  const set = new Set<string>();
+  if (vendor.state) set.add(vendor.state);
+  if (Array.isArray(vendor.serviceStates)) {
+    for (const st of vendor.serviceStates) {
+      if (st && st.trim()) set.add(st.trim());
+    }
+  }
+  return Array.from(set);
+}
+
+export function vendorCoversState(
+  vendor: Vendor,
+  stateName: string,
+  countryFilter?: LaunchCountry
+): boolean {
+  if (!stateName || stateName === 'All') return true;
+  if (countryFilter && countryFilter !== 'All' && vendor.country !== countryFilter) {
+    return false;
+  }
+  if (vendor.state === stateName) return true;
+  if (vendor.allStatesCoverage) {
+    const countryRegions = STATES_BY_COUNTRY[vendor.country] || [];
+    return countryRegions.some((r) => r.name === stateName);
+  }
+  return Array.isArray(vendor.serviceStates) && vendor.serviceStates.includes(stateName);
+}
+
+export function vendorCoversLocationQuery(vendor: Vendor, rawQuery: string): boolean {
+  const q = rawQuery.trim().toLowerCase();
+  if (!q) return true;
+  const baseHay = `${vendor.city} ${vendor.area} ${vendor.state} ${vendor.country} ${vendor.serviceAreas.join(' ')}`.toLowerCase();
+  if (baseHay.includes(q)) return true;
+
+  const countryRegions = STATES_BY_COUNTRY[vendor.country] || [];
+  if (vendor.allStatesCoverage) {
+    if (vendor.country === 'India' && (q.includes('pan india') || q.includes('pan-india') || q.includes('all india'))) {
+      return true;
+    }
+    return countryRegions.some(
+      (r) =>
+        r.name.toLowerCase().includes(q) ||
+        r.cities.some((c) => c.toLowerCase().includes(q) || q.includes(c.toLowerCase()))
+    );
+  }
+
+  if (Array.isArray(vendor.serviceStates) && vendor.serviceStates.length > 0) {
+    const coveredSet = new Set(vendor.serviceStates);
+    return countryRegions.some(
+      (r) =>
+        coveredSet.has(r.name) &&
+        (r.name.toLowerCase().includes(q) ||
+          r.cities.some((c) => c.toLowerCase().includes(q) || q.includes(c.toLowerCase())))
+    );
+  }
+
+  return false;
+}
+
+export function getVendorCoverageLabel(vendor: Vendor, browsingState?: string): string | null {
+  if (vendor.allStatesCoverage) {
+    const panLabel = vendor.country === 'India' ? 'Pan-India Delivery' : `All ${vendor.country}`;
+    if (browsingState && browsingState !== 'All' && browsingState !== vendor.state) {
+      return `Available in ${browsingState} · ${vendor.country === 'India' ? 'Pan-India' : 'Nationwide'}`;
+    }
+    return panLabel;
+  }
+  const extraStates = Array.isArray(vendor.serviceStates)
+    ? vendor.serviceStates.filter((s) => s && s !== vendor.state)
+    : [];
+  if (extraStates.length === 0) return null;
+
+  const totalStates = extraStates.length + 1;
+  if (browsingState && browsingState !== 'All' && browsingState !== vendor.state && extraStates.includes(browsingState)) {
+    return `Available in ${browsingState} · ${totalStates} States`;
+  }
+  return `Serves ${totalStates} States`;
 }
 
 export interface SiteSettings {

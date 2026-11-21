@@ -35,6 +35,8 @@ import {
   VendorReview,
   buildWhatsAppUrl,
   formatMoney,
+  getVendorCoverageLabel,
+  getVendorCoveredStatesList,
   getVendorQuickTags,
 } from '../data/vendors';
 import {
@@ -57,6 +59,7 @@ interface VendorWebsiteViewProps {
   currency: CurrencyCode;
   isSaved: boolean;
   metrics?: VendorMetrics;
+  browsingLocation?: string;
   user?: User | null;
   canEdit?: boolean;
   onSignIn?: () => Promise<void>;
@@ -75,6 +78,7 @@ export function VendorWebsiteView({
   currency,
   isSaved,
   metrics,
+  browsingLocation,
   user,
   canEdit = false,
   onSignIn,
@@ -204,6 +208,7 @@ export function VendorWebsiteView({
       ...lines,
       '',
       `Estimated Total: ${formatMoney(basketTotalUsd, currency)}`,
+      browsingLocation ? `Delivery Region: ${browsingLocation}` : '',
       `Event Date: ${eventDate} · Guests: ${guests}`,
       notes.trim() ? `Notes: ${notes.trim()}` : '',
       'Please confirm availability and next steps!',
@@ -443,6 +448,15 @@ export function VendorWebsiteView({
                 <MapPin className="size-3.5" aria-hidden="true" />
                 {vendor.area}, {vendor.city}, {vendor.state} · {vendor.country}
               </span>
+              {(() => {
+                const covBadge = getVendorCoverageLabel(vendor, browsingLocation);
+                return covBadge ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-indigo-500/90 px-2.5 py-0.5 text-[11px] font-bold text-white">
+                    <Globe2 className="size-3" aria-hidden="true" />
+                    {covBadge}
+                  </span>
+                ) : null;
+              })()}
             </div>
 
             <div className="mt-3 flex items-center gap-3">
@@ -489,7 +503,12 @@ export function VendorWebsiteView({
 
             <div className="mt-7 flex flex-wrap gap-3">
               <a
-                href={buildWhatsAppUrl(vendor)}
+                href={buildWhatsAppUrl(
+                  vendor,
+                  browsingLocation
+                    ? `Hi ${vendor.name}, I found your storefront on FindMyBites (${shareUrl}). Delivery Region: ${browsingLocation}. I'd love to discuss an order!`
+                    : undefined
+                )}
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={() => onTrackWhatsAppClick?.(vendor.id)}
@@ -559,6 +578,35 @@ export function VendorWebsiteView({
             <p className="mt-2.5 text-sm leading-relaxed text-foreground">
               {vendor.serviceAreas.join(' · ')}
             </p>
+            {(vendor.allStatesCoverage || (vendor.serviceStates && vendor.serviceStates.length > 0)) && (
+              <div className="mt-4 border-t border-border pt-3.5">
+                <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-indigo-700 dark:text-indigo-300">
+                  <Globe2 className="size-3.5" aria-hidden="true" />
+                  {vendor.allStatesCoverage
+                    ? vendor.country === 'India'
+                      ? 'Pan-India Coverage'
+                      : `All ${vendor.country} Coverage`
+                    : `Multi-State Delivery (${getVendorCoveredStatesList(vendor).length} States)`}
+                </p>
+                {vendor.allStatesCoverage ? (
+                  <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+                    Available across all states &amp; major cities in {vendor.country} via our
+                    verified fulfillment network (HQ: {vendor.city}, {vendor.state}).
+                  </p>
+                ) : (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {getVendorCoveredStatesList(vendor).map((st) => (
+                      <span
+                        key={st}
+                        className="rounded-md border border-indigo-500/30 bg-indigo-500/10 px-2 py-0.5 text-[11px] font-semibold text-indigo-800 dark:text-indigo-200"
+                      >
+                        {st}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             <div className="mt-4 border-t border-border pt-4 text-xs text-muted-foreground">
               <p className="font-semibold text-foreground">Direct WhatsApp Hotline</p>
               <p className="mt-0.5 font-mono">+{vendor.whatsappNumber}</p>
@@ -701,7 +749,10 @@ export function VendorWebsiteView({
                       product.dietaryTags && product.dietaryTags.length > 0
                         ? ` [${product.dietaryTags.join(', ')}]`
                         : '';
-                    const productWaText = `Hi ${vendor.name}, I saw "${product.name}" (${formatMoney(product.priceUsd, currency)} · ${product.serves}${foodTypeText}${dietarySuffix}) on your FindMyBites page (${shareUrl}). Is it available for my upcoming event?`;
+                    const deliveryRegionSuffix = browsingLocation
+                      ? ` · Delivery Region: ${browsingLocation}`
+                      : '';
+                    const productWaText = `Hi ${vendor.name}, I saw "${product.name}" (${formatMoney(product.priceUsd, currency)} · ${product.serves}${foodTypeText}${dietarySuffix}${deliveryRegionSuffix}) on your FindMyBites page (${shareUrl}). Is it available for my upcoming event?`;
 
                     return (
                       <div

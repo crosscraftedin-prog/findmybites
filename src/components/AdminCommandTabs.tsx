@@ -44,6 +44,7 @@ import {
   Vendor,
   formatMoney,
   generateTransferPasscode,
+  getVendorCoverageLabel,
   normalizePasscode,
   normalizePhoneDigits,
 } from '../data/vendors';
@@ -65,6 +66,7 @@ import {
   generateAutoStoreSeo,
   generateLiveSitemapXml,
 } from '../utils/seoDirectory';
+import { StateCoveragePicker } from './StateCoveragePicker';
 
 function getSiteOrigin(): string {
   if (typeof window !== 'undefined' && window.location.hostname.includes('findmybites.com')) {
@@ -354,6 +356,38 @@ export function AdminApprovalsTab({
   const [transferTarget, setTransferTarget] = useState<Vendor | null>(null);
   const [transferPhone, setTransferPhone] = useState('');
   const [transferPass, setTransferPass] = useState('');
+  const [coverageVendorId, setCoverageVendorId] = useState<string | null>(null);
+  const [draftAllStates, setDraftAllStates] = useState(false);
+  const [draftServiceStates, setDraftServiceStates] = useState<string[]>([]);
+
+  const openCoverageEditor = (vendor: Vendor) => {
+    if (coverageVendorId === vendor.id) {
+      setCoverageVendorId(null);
+      return;
+    }
+    setCoverageVendorId(vendor.id);
+    setDraftAllStates(Boolean(vendor.allStatesCoverage));
+    setDraftServiceStates(vendor.serviceStates ? [...vendor.serviceStates] : []);
+  };
+
+  const handleSaveCoverage = async (vendor: Vendor) => {
+    const cleanStates = draftAllStates
+      ? []
+      : Array.from(new Set(draftServiceStates.filter((s) => s && s !== vendor.state)));
+    await handleUpdate(
+      vendor,
+      {
+        allStatesCoverage: draftAllStates,
+        serviceStates: cleanStates,
+      },
+      draftAllStates
+        ? `${vendor.name} is now live across ALL states in ${vendor.country}!`
+        : cleanStates.length > 0
+          ? `${vendor.name} now appears in ${cleanStates.length + 1} states!`
+          : `${vendor.name} set to primary HQ state (${vendor.state}) only.`
+    );
+    setCoverageVendorId(null);
+  };
 
   const pendingCount = allCloudVendors.filter((v) => v.status === 'pending_review').length;
 
@@ -587,6 +621,15 @@ export function AdminApprovalsTab({
                           <Snowflake className="size-2.5" /> Xmas
                         </span>
                       )}
+                      {(() => {
+                        const covLabel = getVendorCoverageLabel(v);
+                        return covLabel ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-indigo-600 px-2 py-0.5 text-[10px] font-bold text-white">
+                            <Globe2 className="size-2.5" />
+                            {covLabel}
+                          </span>
+                        ) : null;
+                      })()}
                       <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-bold uppercase text-muted-foreground">
                         {v.planTier}
                       </span>
@@ -717,6 +760,20 @@ export function AdminApprovalsTab({
 
                       <button
                         type="button"
+                        disabled={isBusy}
+                        onClick={() => openCoverageEditor(v)}
+                        className={`inline-flex cursor-pointer items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold ${
+                          coverageVendorId === v.id || v.allStatesCoverage || (v.serviceStates && v.serviceStates.length > 0)
+                            ? 'border-indigo-500/50 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300'
+                            : 'border-border bg-background text-foreground hover:border-indigo-500'
+                        }`}
+                      >
+                        <Globe2 className="size-3" />
+                        States / Pan-India
+                      </button>
+
+                      <button
+                        type="button"
                         onClick={() => onEditVendor(v)}
                         className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-border bg-background px-2.5 py-1.5 text-[11px] font-bold hover:border-brand"
                       >
@@ -778,6 +835,43 @@ export function AdminApprovalsTab({
                         </button>
                       )}
                     </div>
+
+                    {/* Inline Multi-State / Pan-India Coverage Editor */}
+                    {coverageVendorId === v.id && (
+                      <div className="mt-3 space-y-2.5">
+                        <StateCoveragePicker
+                          country={v.country}
+                          primaryState={v.state}
+                          allStatesCoverage={draftAllStates}
+                          serviceStates={draftServiceStates}
+                          onChangeAllStates={setDraftAllStates}
+                          onChangeServiceStates={setDraftServiceStates}
+                          compact
+                        />
+                        <div className="flex flex-wrap items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setCoverageVendorId(null)}
+                            className="cursor-pointer rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() => void handleSaveCoverage(v)}
+                            className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-1.5 text-xs font-extrabold text-white hover:bg-indigo-700 disabled:opacity-50"
+                          >
+                            {isBusy ? (
+                              <Loader2 className="size-3.5 animate-spin" />
+                            ) : (
+                              <Save className="size-3.5" />
+                            )}
+                            Save State Visibility
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

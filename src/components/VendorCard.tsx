@@ -4,6 +4,7 @@ import {
   Crown,
   Edit3,
   ExternalLink,
+  Globe2,
   Heart,
   MapPin,
   MessageCircle,
@@ -11,13 +12,20 @@ import {
   Star,
   UtensilsCrossed,
 } from 'lucide-react';
-import { CurrencyCode, Vendor, buildWhatsAppUrl, formatMoney } from '../data/vendors';
+import {
+  CurrencyCode,
+  Vendor,
+  buildWhatsAppUrl,
+  formatMoney,
+  getVendorCoverageLabel,
+} from '../data/vendors';
 
 interface VendorCardProps {
   vendor: Vendor;
   currency: CurrencyCode;
   isSaved: boolean;
   distanceKm?: number | null;
+  browsingState?: string;
   canEdit?: boolean;
   onToggleSave: (vendorId: string) => void;
   onSelect: (vendor: Vendor) => void;
@@ -29,6 +37,7 @@ export function VendorCard({
   currency,
   isSaved,
   distanceKm,
+  browsingState,
   canEdit = false,
   onToggleSave,
   onSelect,
@@ -36,6 +45,12 @@ export function VendorCard({
 }: VendorCardProps) {
   const [imgFailed, setImgFailed] = useState(false);
   const isPaid = vendor.planTier === 'business' || vendor.planTier === 'pro';
+  const coverageLabel = getVendorCoverageLabel(vendor, browsingState);
+  const isMultiState = Boolean(coverageLabel);
+  const cardWaText =
+    browsingState && browsingState !== vendor.state && isMultiState
+      ? `Hi ${vendor.name}, I found your storefront on FindMyBites while browsing ${browsingState}. I'd like to enquire about an order for ${browsingState}!`
+      : undefined;
 
   return (
     <article
@@ -92,14 +107,28 @@ export function VendorCard({
           />
         </button>
 
-        {distanceKm != null && (
+        {distanceKm != null ? (
           <div className="absolute bottom-3 left-3 inline-flex items-center gap-1 rounded-full bg-black/70 px-2.5 py-1 text-xs font-bold text-white backdrop-blur-md">
-            <MapPin className="size-3 text-brand" aria-hidden="true" />
-            {distanceKm < 1
-              ? `${Math.round(distanceKm * 1000)} m away`
-              : `${distanceKm < 50 ? distanceKm.toFixed(1) : Math.round(distanceKm).toLocaleString()} km away`}
+            {isMultiState && distanceKm > 60 ? (
+              <>
+                <Globe2 className="size-3 text-emerald-400" aria-hidden="true" />
+                {vendor.allStatesCoverage ? 'Pan-India Delivery' : 'Delivers to Your Area'}
+              </>
+            ) : (
+              <>
+                <MapPin className="size-3 text-brand" aria-hidden="true" />
+                {distanceKm < 1
+                  ? `${Math.round(distanceKm * 1000)} m away`
+                  : `${distanceKm < 50 ? distanceKm.toFixed(1) : Math.round(distanceKm).toLocaleString()} km away`}
+              </>
+            )}
           </div>
-        )}
+        ) : coverageLabel ? (
+          <div className="absolute bottom-3 left-3 inline-flex items-center gap-1 rounded-full bg-indigo-600/90 px-2.5 py-1 text-[11px] font-bold text-white backdrop-blur-md">
+            <Globe2 className="size-3" aria-hidden="true" />
+            {vendor.allStatesCoverage ? 'Pan-India' : coverageLabel}
+          </div>
+        ) : null}
 
         <div className="absolute bottom-3 right-3 rounded-full bg-black/65 px-2.5 py-1 font-mono text-xs font-semibold tabular-nums text-white backdrop-blur-md">
           from {formatMoney(vendor.startingPriceUsd, currency)}
@@ -146,6 +175,13 @@ export function VendorCard({
             </span>
           </div>
 
+          {coverageLabel && (
+            <div className="mt-1.5 inline-flex max-w-full items-center gap-1 rounded-md border border-indigo-500/30 bg-indigo-500/10 px-2 py-0.5 text-[11px] font-bold text-indigo-700 dark:text-indigo-300">
+              <Globe2 className="size-3 shrink-0" aria-hidden="true" />
+              <span className="truncate">{coverageLabel}</span>
+            </div>
+          )}
+
           <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
             <span className="truncate font-medium text-foreground">
               {vendor.category} · {vendor.products.length} products
@@ -186,7 +222,7 @@ export function VendorCard({
             </button>
 
             <a
-              href={buildWhatsAppUrl(vendor)}
+              href={buildWhatsAppUrl(vendor, cardWaText)}
               target="_blank"
               rel="noopener noreferrer"
               onClick={(e) => e.stopPropagation()}
