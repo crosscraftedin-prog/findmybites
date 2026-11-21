@@ -1,8 +1,25 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { ChangeEvent, FormEvent, useEffect, useState } from 'react';
 import type { User } from 'firebase/auth';
-import { Check, Cloud, Crown, LogIn, MessageCircle, RefreshCw, X } from 'lucide-react';
 import {
+  Check,
+  Cloud,
+  Crown,
+  ImagePlus,
+  Loader2,
+  LocateFixed,
+  LogIn,
+  MapPin,
+  MessageCircle,
+  Plus,
+  RefreshCw,
+  Trash2,
+  Upload,
+  X,
+} from 'lucide-react';
+import {
+  COUNTRY_DEFAULT_CURRENCY,
   COUNTRY_REGION_LABEL,
+  CURRENCIES,
   CurrencyCode,
   FOOD_CATEGORIES,
   IMG_BALLOON,
@@ -27,8 +44,13 @@ import {
   SAAS_PLANS,
   STATES_BY_COUNTRY,
   Vendor,
+  VendorProduct,
   formatPlanPrice,
+  localToUsd,
+  usdToLocal,
 } from '../data/vendors';
+import { compressImageFile, parseCoordsFromMapsLink } from '../utils/imageUpload';
+import { requestBrowserGpsLocation, resolveRegionFromCoords } from '../utils/geolocation';
 
 interface ListBusinessModalProps {
   isOpen: boolean;
@@ -38,6 +60,15 @@ interface ListBusinessModalProps {
   onSignIn: () => Promise<void>;
   onClose: () => void;
   onAddVendor: (vendor: Vendor) => Promise<void> | void;
+}
+
+interface DraftProduct {
+  id: string;
+  name: string;
+  serves: string;
+  priceLocal: number;
+  description: string;
+  image: string;
 }
 
 const COUNTRY_DEFAULT_COORDS: Record<
@@ -91,19 +122,40 @@ export function ListBusinessModal({
   onAddVendor,
 }: ListBusinessModalProps) {
   const [submitting, setSubmitting] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [marketplace, setMarketplace] = useState<'food' | 'party'>('food');
   const [name, setName] = useState('');
   const [category, setCategory] = useState<string>(FOOD_CATEGORIES[0]);
   const [country, setCountry] = useState<Exclude<LaunchCountry, 'All'>>('India');
+  const [formCurrency, setFormCurrency] = useState<CurrencyCode>(currency || 'INR');
   const [stateName, setStateName] = useState<string>(STATES_BY_COUNTRY.India[0].name);
   const [city, setCity] = useState(STATES_BY_COUNTRY.India[0].cities[0]);
   const [area, setArea] = useState('');
+  const [latInput, setLatInput] = useState<string>(String(STATES_BY_COUNTRY.India[0].lat));
+  const [lngInput, setLngInput] = useState<string>(String(STATES_BY_COUNTRY.India[0].lng));
+  const [mapsPaste, setMapsPaste] = useState('');
+  const [detectingGps, setDetectingGps] = useState(false);
+  const [gpsStatus, setGpsStatus] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const [whatsappNumber, setWhatsappNumber] = useState('919820001122');
-  const [productName, setProductName] = useState('');
-  const [startingPriceUsd, setStartingPriceUsd] = useState(120);
   const [tagline, setTagline] = useState('');
   const [planTier, setPlanTier] = useState<PlanTier>(initialPlanTier);
   const [autoPayAccepted, setAutoPayAccepted] = useState(true);
+
+  // Branding uploads
+  const [logoDataUrl, setLogoDataUrl] = useState<string>('');
+  const [coverDataUrl, setCoverDataUrl] = useState<string>('');
+
+  // Multi-product builder with local currency & product image upload
+  const [products, setProducts] = useState<DraftProduct[]>([
+    {
+      id: 'draft-1',
+      name: '',
+      serves: 'Custom / 50 pax',
+      priceLocal: usdToLocal(35, currency || 'INR'),
+      description: '',
+      image: '',
+    },
+  ]);
 
   useEffect(() => {
     setPlanTier(initialPlanTier);
@@ -128,6 +180,8 @@ export function ListBusinessModal({
   const isPaidPlan = planTier === 'pro' || planTier === 'business';
   const selectedPlanMeta = SAAS_PLANS.find((p) => p.id === planTier) ?? SAAS_PLANS[0];
   const statesForCountry = STATES_BY_COUNTRY[country];
+  const currencyMeta = CURRENCIES[formCurrency];
+  const defaultCover = DEFAULT_IMAGE_BY_CATEGORY[category] || IMG_CAKE;
 
   const handleCountryChange = (nextCountry: Exclude<LaunchCountry, 'All'>) => {
     setCountry(nextCountry);
@@ -135,7 +189,21 @@ export function ListBusinessModal({
     const firstState = STATES_BY_COUNTRY[nextCountry][0];
     setStateName(firstState.name);
     setCity(firstState.cities[0]);
+    setLatInput(String(firstState.lat));
+    setLngInput(String(firstState.lng));
     setWhatsappNumber(`${meta.phonePrefix}9800001122`);
+
+    // Auto-switch currency to match the selected country and keep prices sensible
+    const nextCurrency = COUNTRY_DEFAULT_CURRENCY[nextCountry];
+    if (nextCurrency !== formCurrency) {
+      setProducts((prev) =>
+        prev.map((p) => ({
+          ...p,
+          priceLocal: usdToLocal(localToUsd(p.priceLocal, formCurrency), nextCurrency),
+        }))
+      );
+      setFormCurrency(nextCurrency);
+    }
   };
 
   const handleStateChange = (nextState: string) => {
@@ -143,13 +211,178 @@ export function ListBusinessModal({
     const found = statesForCountry.find((s) => s.name === nextState);
     if (found) {
       setCity(found.cities[0]);
+      setLatInput(String(found.lat));
+      setLngInput(String(found.lng));
     }
   };
 
-  const computeTier = (price: number): PriceTier => {
-    if (price < 120) return '$';
-    if (price < 450) return '$$';
-    if (price < 1000) return '$$$';
+  const handleCityChange = (nextCity: string) => {
+    setCity(nextCity);
+    const matched = LAUNCH_CITY_PRESETS.find(
+      (c) => c.city.toLowerCase() === nextCity.trim().toLowerCase()
+    );
+    if (matched) {
+      setLatInput(String(matched.lat));
+      setLngInput(String(matched.lng));
+    }
+  };
+
+  const handleCurrencyChange = (nextCurr: CurrencyCode) => {
+    setProducts((prev) =>
+      prev.map((p) => ({
+        ...p,
+        priceLocal: usdToLocal(localToUsd(p.priceLocal, formCurrency), nextCurr),
+      }))
+    );
+    setFormCurrency(nextCurr);
+  };
+
+  const handleMapsLinkPaste = (value: string) => {
+    setMapsPaste(value);
+    const parsed = parseCoordsFromMapsLink(value);
+    if (parsed) {
+      setLatInput(String(parsed.lat));
+      setLngInput(String(parsed.lng));
+      setGpsStatus({
+        type: 'ok',
+        text: `Extracted coordinates: ${parsed.lat}, ${parsed.lng}`,
+      });
+    }
+  };
+
+  const handleDetectVendorGps = async () => {
+    setDetectingGps(true);
+    setGpsStatus(null);
+    try {
+      const coords = await requestBrowserGpsLocation();
+      setLatInput(String(coords.lat));
+      setLngInput(String(coords.lng));
+
+      const resolved = await resolveRegionFromCoords(coords.lat, coords.lng);
+      if (resolved.exactCountryMatched) {
+        setCountry(resolved.country);
+        setStateName(resolved.state);
+        setCity(resolved.city);
+        if (resolved.area) setArea(resolved.area);
+        const nextCurrency = COUNTRY_DEFAULT_CURRENCY[resolved.country];
+        if (nextCurrency !== formCurrency) {
+          setProducts((prev) =>
+            prev.map((p) => ({
+              ...p,
+              priceLocal: usdToLocal(localToUsd(p.priceLocal, formCurrency), nextCurrency),
+            }))
+          );
+          setFormCurrency(nextCurrency);
+        }
+      }
+
+      setGpsStatus({
+        type: 'ok',
+        text: `GPS pin captured: ${coords.lat}, ${coords.lng} (${resolved.label})`,
+      });
+    } catch (err) {
+      setGpsStatus({
+        type: 'err',
+        text:
+          err instanceof Error
+            ? err.message
+            : 'Could not access GPS. Allow location in your browser or paste a Google Maps link.',
+      });
+    } finally {
+      setDetectingGps(false);
+    }
+  };
+
+  const handleLogoUpload = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadError(null);
+    try {
+      const dataUrl = await compressImageFile(file, {
+        maxWidth: 220,
+        maxHeight: 220,
+        quality: 0.8,
+        maxChars: 55000,
+      });
+      setLogoDataUrl(dataUrl);
+    } catch {
+      setUploadError('Could not process logo image. Please try a JPG or PNG file.');
+    }
+  };
+
+  const handleCoverUpload = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadError(null);
+    try {
+      const dataUrl = await compressImageFile(file, {
+        maxWidth: 960,
+        maxHeight: 540,
+        quality: 0.76,
+        maxChars: 130000,
+      });
+      setCoverDataUrl(dataUrl);
+    } catch {
+      setUploadError('Could not process cover photo. Please try a JPG or PNG file.');
+    }
+  };
+
+  const handleProductImageUpload = async (
+    productId: string,
+    e: ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadError(null);
+    try {
+      const dataUrl = await compressImageFile(file, {
+        maxWidth: 640,
+        maxHeight: 480,
+        quality: 0.72,
+        maxChars: 90000,
+      });
+      setProducts((prev) =>
+        prev.map((p) => (p.id === productId ? { ...p, image: dataUrl } : p))
+      );
+    } catch {
+      setUploadError('Could not process product photo. Please try a JPG or PNG file.');
+    }
+  };
+
+  const updateProductField = <K extends keyof DraftProduct>(
+    id: string,
+    field: K,
+    value: DraftProduct[K]
+  ) => {
+    setProducts((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, [field]: value } : p))
+    );
+  };
+
+  const addDraftProduct = () => {
+    if (products.length >= 10) return;
+    setProducts((prev) => [
+      ...prev,
+      {
+        id: `draft-${Date.now()}`,
+        name: '',
+        serves: 'Custom',
+        priceLocal: usdToLocal(50, formCurrency),
+        description: '',
+        image: '',
+      },
+    ]);
+  };
+
+  const removeDraftProduct = (id: string) => {
+    if (products.length <= 1) return;
+    setProducts((prev) => prev.filter((p) => p.id !== id));
+  };
+
+  const computeTier = (priceUsd: number): PriceTier => {
+    if (priceUsd < 120) return '$';
+    if (priceUsd < 450) return '$$';
+    if (priceUsd < 1000) return '$$$';
     return '$$$$';
   };
 
@@ -169,90 +402,100 @@ export function ListBusinessModal({
     );
     const matchedState = statesForCountry.find((s) => s.name === stateName);
     const fallback = COUNTRY_DEFAULT_COORDS[country];
-    const lat = matchedCity?.lat ?? matchedState?.lat ?? fallback.lat;
-    const lng = matchedCity?.lng ?? matchedState?.lng ?? fallback.lng;
 
-    const cleanSlug =
-      name
-        .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-|-$/g, '') +
-      '-' +
-      city
-        .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-');
+    const parsedLat = Number(latInput);
+    const parsedLng = Number(lngInput);
+    const lat =
+      Number.isFinite(parsedLat) && parsedLat >= -90 && parsedLat <= 90
+        ? parsedLat
+        : (matchedCity?.lat ?? matchedState?.lat ?? fallback.lat);
+    const lng =
+      Number.isFinite(parsedLng) && parsedLng >= -180 && parsedLng <= 180
+        ? parsedLng
+        : (matchedCity?.lng ?? matchedState?.lng ?? fallback.lng);
 
-    const img = DEFAULT_IMAGE_BY_CATEGORY[category] ?? IMG_CAKE;
-    const cleanDigits = whatsappNumber.replace(/[^\d]/g, '') || `${fallback.phonePrefix}9800001122`;
-    const primaryProductTitle = productName.trim() || `Signature ${category} Package`;
+    const slug = `${name
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '')}-${city
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')}`;
+
+    const coverImg = coverDataUrl || defaultCover;
+    const digits = whatsappNumber.replace(/[^\d]/g, '') || `${fallback.phonePrefix}9820001122`;
+
+    const finalProducts: VendorProduct[] = products.map((p, idx) => {
+      const priceUsd = Math.max(1, localToUsd(p.priceLocal, formCurrency));
+      return {
+        id: `prod-${Date.now()}-${idx + 1}`,
+        name: p.name.trim() || `${category} Package ${idx + 1}`,
+        serves: p.serves.trim() || 'Custom',
+        priceUsd,
+        description:
+          p.description.trim() ||
+          `Direct WhatsApp booking with ${name.trim()} in ${city.trim()}, ${stateName}.`,
+        image: p.image || coverImg,
+        ...(idx === 0 ? { tag: isPaidPlan ? 'Featured' : 'Popular' } : {}),
+      };
+    });
+
+    const minPriceUsd = Math.min(...finalProducts.map((p) => p.priceUsd));
 
     const newVendor: Vendor = {
-      id: `vendor-${Date.now()}`,
-      slug: cleanSlug,
+      id: `custom-${Date.now()}`,
+      slug,
       name: name.trim(),
       marketplace,
       category,
       city: city.trim(),
-      area: area.trim() || `${city.trim()} Central`,
       state: stateName,
+      area: area.trim() || city.trim(),
       country,
       lat,
       lng,
-      whatsappNumber: cleanDigits,
+      whatsappNumber: digits,
       planTier,
       monthlyAutoPay: isPaidPlan && autoPayAccepted,
-      priceTier: computeTier(startingPriceUsd),
-      startingPriceUsd,
+      priceTier: computeTier(minPriceUsd),
+      startingPriceUsd: minPriceUsd,
       rating: 5.0,
-      reviewCount: 1,
-      responseTime: 'Under 15 mins on WhatsApp',
-      verified: true,
+      reviewCount: 0,
+      responseTime: isPaidPlan
+        ? 'Replies within 10 mins on WhatsApp'
+        : 'Replies within 30 mins on WhatsApp',
+      verified: false,
       tagline: tagline.trim(),
-      description: `${tagline.trim()} Serving ${area.trim() || city.trim()} and nearby neighbourhoods in ${city.trim()}, ${country}. Message us directly on WhatsApp for custom menus, dates, and zero-commission quotes.`,
-      serviceAreas: [area.trim() || `${city.trim()} Central`, city.trim(), `Greater ${city.trim()}`],
+      description: `${tagline.trim()} Published directly on FindMyBites × PimpMyParty with a dedicated one-page storefront and direct WhatsApp ordering across ${area.trim() || city.trim()}, ${city.trim()}, ${stateName}.`,
+      serviceAreas: [area.trim() || city.trim(), city.trim(), stateName, `${city.trim()} Metro`].filter(
+        (v, i, arr) => v && arr.indexOf(v) === i
+      ),
       specialties: [category, 'Direct WhatsApp Booking', 'Custom Orders'],
-      image: img,
-      products: [
-        {
-          id: `prod-${Date.now()}-1`,
-          name: primaryProductTitle,
-          serves: 'Up to 50 guests',
-          priceUsd: startingPriceUsd,
-          description: tagline.trim(),
-          image: img,
-          tag: isPaidPlan ? 'Featured' : 'Popular',
-        },
-        {
-          id: `prod-${Date.now()}-2`,
-          name: `Grand ${category} Celebration Package`,
-          serves: '100–150 guests',
-          priceUsd: Math.round(startingPriceUsd * 2.1),
-          description:
-            'Expanded full-event setup with on-site team, customisation, and priority delivery.',
-          image: img,
-        },
-      ],
-      reviews: [
-        {
-          id: `rev-${Date.now()}`,
-          author: 'FindMyBites Verification Team',
-          role: 'Launch Partner Verification',
-          date: 'November 2026',
-          rating: 5.0,
-          comment: 'Storefront, WhatsApp contact, and local service area verified.',
-        },
-      ],
+      image: coverImg,
+      logo: logoDataUrl || undefined,
+      products: finalProducts,
+      reviews: [],
     };
 
     try {
       await onAddVendor(newVendor);
       setName('');
       setArea('');
-      setProductName('');
       setTagline('');
-      setStartingPriceUsd(120);
+      setLogoDataUrl('');
+      setCoverDataUrl('');
+      setMapsPaste('');
+      setProducts([
+        {
+          id: `draft-${Date.now()}`,
+          name: '',
+          serves: 'Custom / 50 pax',
+          priceLocal: usdToLocal(35, formCurrency),
+          description: '',
+          image: '',
+        },
+      ]);
       onClose();
     } finally {
       setSubmitting(false);
@@ -268,17 +511,16 @@ export function ListBusinessModal({
       onClick={onClose}
     >
       <div
-        data-ecosystem={marketplace === 'party' ? 'PIMPMYPARTY' : 'FINDMYBITES'}
-        className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-border bg-card text-card-foreground shadow-2xl"
+        className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-border bg-card text-card-foreground shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-card/95 px-6 py-4 backdrop-blur">
           <div>
-            <h2 className="text-lg font-extrabold text-foreground sm:text-xl">
+            <h2 className="text-lg font-extrabold text-foreground">
               Launch Your One-Page Vendor Website
             </h2>
             <p className="text-xs text-muted-foreground">
-              Get listed across India, Dubai, Sri Lanka, Pakistan, Bangladesh &amp; Nepal with direct WhatsApp leads
+              Upload your logo, cover &amp; product photos, set your local currency &amp; map pin
             </p>
           </div>
           <button
@@ -291,48 +533,62 @@ export function ListBusinessModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-5 p-6">
-          {/* SaaS Plan Selector (Free vs Paid Monthly Auto-Pay) */}
+        <form onSubmit={handleSubmit} className="space-y-6 p-6">
+          {/* 1. Plan Selection (Free vs Monthly Auto-Pay SaaS) */}
           <div>
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
-                1. Choose SaaS Listing Plan
-              </span>
-              <span className="text-[11px] font-medium text-brand">
-                Paid listings always rank on top
-              </span>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <label className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                1. Choose Your Listing Plan
+              </label>
+              <div className="flex items-center gap-1.5">
+                <label htmlFor="biz-currency" className="text-xs font-semibold text-muted-foreground">
+                  Currency:
+                </label>
+                <select
+                  id="biz-currency"
+                  value={formCurrency}
+                  onChange={(e) => handleCurrencyChange(e.target.value as CurrencyCode)}
+                  className="cursor-pointer rounded-lg border border-brand bg-background px-2.5 py-1 text-xs font-bold text-foreground focus:outline-none"
+                >
+                  {Object.values(CURRENCIES).map((c) => (
+                    <option key={c.code} value={c.code}>
+                      {c.code} ({c.symbol.trim()})
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
-            <div className="mt-2 grid grid-cols-1 gap-2.5 sm:grid-cols-3">
-              {SAAS_PLANS.map((plan) => {
-                const selected = planTier === plan.id;
+
+            <div className="mt-2.5 grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+              {SAAS_PLANS.map((p) => {
+                const active = planTier === p.id;
                 return (
                   <button
-                    key={plan.id}
+                    key={p.id}
                     type="button"
-                    onClick={() => setPlanTier(plan.id)}
-                    className={`flex cursor-pointer flex-col rounded-xl border p-3 text-left transition-all ${
-                      selected
-                        ? 'border-brand bg-brand-soft/60 ring-2 ring-brand/25'
+                    onClick={() => setPlanTier(p.id)}
+                    className={`cursor-pointer rounded-xl border p-3.5 text-left transition-all ${
+                      active
+                        ? 'border-brand bg-brand-soft/60 ring-2 ring-brand/20'
                         : 'border-border bg-background hover:border-brand/50'
                     }`}
                   >
                     <div className="flex items-center justify-between gap-1">
-                      <span className="text-xs font-bold text-foreground">{plan.name}</span>
-                      {plan.id !== 'free' && (
-                        <Crown className="size-3.5 shrink-0 text-brand" aria-hidden="true" />
+                      <span className="text-xs font-bold text-foreground">{p.name}</span>
+                      {p.id !== 'free' && (
+                        <Crown className="size-3.5 text-brand" aria-hidden="true" />
                       )}
                     </div>
                     <p className="mt-1 font-mono text-base font-extrabold text-foreground">
-                      {plan.priceUsdMonthly === 0
-                        ? 'Free'
-                        : `${formatPlanPrice(plan, currency)}/mo`}
+                      {formatPlanPrice(p, formCurrency)}
+                      <span className="text-[11px] font-normal text-muted-foreground">/mo</span>
                     </p>
-                    <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
-                      {plan.id === 'business'
-                        ? '#1 pinned top slot + AI priority'
-                        : plan.id === 'pro'
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      {p.id === 'free'
+                        ? 'Basic listing + WhatsApp button'
+                        : p.id === 'pro'
                           ? 'Ranks above all Free listings'
-                          : 'Basic listing + WhatsApp button'}
+                          : '#1 Pinned top slot + AI priority'}
                     </p>
                   </button>
                 );
@@ -340,16 +596,16 @@ export function ListBusinessModal({
             </div>
           </div>
 
-          {/* Ecosystem Switch */}
-          <div>
-            <span className="block text-xs font-bold uppercase tracking-wide text-muted-foreground">
+          {/* 2. Marketplace & Core Info */}
+          <div className="space-y-4 border-t border-border pt-5">
+            <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
               2. Marketplace &amp; Business Details
-            </span>
-            <div className="mt-2 grid grid-cols-2 gap-2 rounded-xl bg-muted p-1">
+            </p>
+            <div className="grid grid-cols-2 gap-2 rounded-xl bg-muted p-1">
               <button
                 type="button"
                 onClick={() => setMarketplace('food')}
-                className={`cursor-pointer rounded-lg py-2 text-xs font-semibold transition-colors whitespace-nowrap ${
+                className={`cursor-pointer rounded-lg py-2 text-xs font-bold transition-colors ${
                   marketplace === 'food'
                     ? 'bg-[#ef6c22] text-white shadow-xs'
                     : 'text-muted-foreground hover:text-foreground'
@@ -360,7 +616,7 @@ export function ListBusinessModal({
               <button
                 type="button"
                 onClick={() => setMarketplace('party')}
-                className={`cursor-pointer rounded-lg py-2 text-xs font-semibold transition-colors whitespace-nowrap ${
+                className={`cursor-pointer rounded-lg py-2 text-xs font-bold transition-colors ${
                   marketplace === 'party'
                     ? 'bg-[#db2fb2] text-white shadow-xs'
                     : 'text-muted-foreground hover:text-foreground'
@@ -369,172 +625,471 @@ export function ListBusinessModal({
                 PimpMyParty · Decor &amp; Events
               </button>
             </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label htmlFor="biz-name" className="block text-xs font-semibold text-foreground">
+                  Business Name
+                </label>
+                <input
+                  id="biz-name"
+                  type="text"
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g. Govada Foods or Velvet Whisk Bakery"
+                  className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:border-brand focus:outline-none"
+                />
+              </div>
+              <div>
+                <label htmlFor="biz-cat" className="block text-xs font-semibold text-foreground">
+                  Category
+                </label>
+                <select
+                  id="biz-cat"
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                  className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:border-brand focus:outline-none"
+                >
+                  {categories.map((cat) => (
+                    <option key={cat} value={cat}>
+                      {cat}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label
+                  htmlFor="biz-wa"
+                  className="flex items-center gap-1 text-xs font-semibold text-foreground"
+                >
+                  <MessageCircle className="size-3.5 text-[#25D366]" aria-hidden="true" />
+                  WhatsApp Number (with country code)
+                </label>
+                <input
+                  id="biz-wa"
+                  type="text"
+                  required
+                  value={whatsappNumber}
+                  onChange={(e) => setWhatsappNumber(e.target.value)}
+                  placeholder="919820001122"
+                  className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2.5 font-mono text-sm text-foreground focus:border-brand focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="biz-tagline" className="block text-xs font-semibold text-foreground">
+                  Short Storefront Headline &amp; Specialties
+                </label>
+                <input
+                  id="biz-tagline"
+                  type="text"
+                  required
+                  value={tagline}
+                  onChange={(e) => setTagline(e.target.value)}
+                  placeholder="e.g. Custom eggless cakes, live counters & wedding snacks"
+                  className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:border-brand focus:outline-none"
+                />
+              </div>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div>
-              <label htmlFor="biz-name" className="block text-xs font-semibold text-foreground">
-                Business Name
-              </label>
-              <input
-                id="biz-name"
-                type="text"
-                required
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Royal Chaat & Bakery Studio"
-                className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:border-brand focus:outline-none"
-              />
-            </div>
-            <div>
-              <label htmlFor="biz-category" className="block text-xs font-semibold text-foreground">
-                Category
-              </label>
-              <select
-                id="biz-category"
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:border-brand focus:outline-none"
+          {/* 3. Location + Exact Latitude & Longitude */}
+          <div className="space-y-4 border-t border-border pt-5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                <MapPin className="size-3.5 text-brand" aria-hidden="true" />
+                3. Storefront Location &amp; Map Coordinates (Lat / Lng)
+              </p>
+              <button
+                type="button"
+                disabled={detectingGps}
+                onClick={() => void handleDetectVendorGps()}
+                className="inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-brand px-3.5 py-1.5 text-xs font-bold text-brand-foreground shadow-xs transition-colors hover:bg-brand-hover disabled:opacity-60"
               >
-                {categories.map((cat) => (
-                  <option key={cat} value={cat}>
-                    {cat}
-                  </option>
-                ))}
-              </select>
+                {detectingGps ? (
+                  <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                ) : (
+                  <LocateFixed className="size-3.5" aria-hidden="true" />
+                )}
+                {detectingGps ? 'Detecting GPS…' : 'Use My Current Location (Lat & Lng)'}
+              </button>
             </div>
-          </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div>
-              <label htmlFor="biz-country" className="block text-xs font-semibold text-foreground">
-                Country
-              </label>
-              <select
-                id="biz-country"
-                value={country}
-                onChange={(e) =>
-                  handleCountryChange(e.target.value as Exclude<LaunchCountry, 'All'>)
-                }
-                className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:border-brand focus:outline-none"
+            {gpsStatus && (
+              <p
+                className={`rounded-lg border px-3 py-2 text-xs font-medium ${
+                  gpsStatus.type === 'ok'
+                    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                    : 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                }`}
               >
-                {LAUNCH_COUNTRIES.filter((c): c is Exclude<LaunchCountry, 'All'> => c !== 'All').map(
-                  (c) => (
+                {gpsStatus.text}
+              </p>
+            )}
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div>
+                <label htmlFor="biz-country" className="block text-xs font-semibold text-foreground">
+                  Country
+                </label>
+                <select
+                  id="biz-country"
+                  value={country}
+                  onChange={(e) =>
+                    handleCountryChange(e.target.value as Exclude<LaunchCountry, 'All'>)
+                  }
+                  className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:border-brand focus:outline-none"
+                >
+                  {LAUNCH_COUNTRIES.filter((c) => c !== 'All').map((c) => (
                     <option key={c} value={c}>
                       {c}
                     </option>
-                  )
-                )}
-              </select>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="biz-state" className="block text-xs font-semibold text-foreground">
+                  {COUNTRY_REGION_LABEL[country]}
+                </label>
+                <select
+                  id="biz-state"
+                  value={stateName}
+                  onChange={(e) => handleStateChange(e.target.value)}
+                  className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:border-brand focus:outline-none"
+                >
+                  {statesForCountry.map((st) => (
+                    <option key={st.name} value={st.name}>
+                      {st.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="biz-city" className="block text-xs font-semibold text-foreground">
+                  City
+                </label>
+                <input
+                  id="biz-city"
+                  type="text"
+                  required
+                  value={city}
+                  onChange={(e) => handleCityChange(e.target.value)}
+                  placeholder="Hyderabad"
+                  className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:border-brand focus:outline-none"
+                />
+              </div>
+              <div>
+                <label htmlFor="biz-area" className="block text-xs font-semibold text-foreground">
+                  Area / Locality
+                </label>
+                <input
+                  id="biz-area"
+                  type="text"
+                  value={area}
+                  onChange={(e) => setArea(e.target.value)}
+                  placeholder="Kompally / Jubilee Hills"
+                  className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:border-brand focus:outline-none"
+                />
+              </div>
             </div>
-            <div>
-              <label htmlFor="biz-state" className="block text-xs font-semibold text-foreground">
-                {COUNTRY_REGION_LABEL[country]}
-              </label>
-              <select
-                id="biz-state"
-                value={stateName}
-                onChange={(e) => handleStateChange(e.target.value)}
-                className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:border-brand focus:outline-none"
-              >
-                {statesForCountry.map((st) => (
-                  <option key={st.name} value={st.name}>
-                    {st.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label htmlFor="biz-city" className="block text-xs font-semibold text-foreground">
-                City
-              </label>
-              <input
-                id="biz-city"
-                type="text"
-                required
-                value={city}
-                onChange={(e) => setCity(e.target.value)}
-                placeholder="City"
-                className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:border-brand focus:outline-none"
-              />
-            </div>
-            <div>
-              <label htmlFor="biz-area" className="block text-xs font-semibold text-foreground">
-                Area / Locality
-              </label>
-              <input
-                id="biz-area"
-                type="text"
-                value={area}
-                onChange={(e) => setArea(e.target.value)}
-                placeholder="e.g. Bandra West / Marina"
-                className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:border-brand focus:outline-none"
-              />
+
+            <div className="space-y-3 rounded-xl border border-border bg-muted/30 p-3.5">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div>
+                  <label htmlFor="biz-lat" className="block text-xs font-semibold text-foreground">
+                    Latitude (Lat)
+                  </label>
+                  <input
+                    id="biz-lat"
+                    type="number"
+                    step="any"
+                    min={-90}
+                    max={90}
+                    required
+                    value={latInput}
+                    onChange={(e) => setLatInput(e.target.value)}
+                    placeholder="17.3850"
+                    className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-xs text-foreground focus:border-brand focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="biz-lng" className="block text-xs font-semibold text-foreground">
+                    Longitude (Lng)
+                  </label>
+                  <input
+                    id="biz-lng"
+                    type="number"
+                    step="any"
+                    min={-180}
+                    max={180}
+                    required
+                    value={lngInput}
+                    onChange={(e) => setLngInput(e.target.value)}
+                    placeholder="78.4867"
+                    className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-xs text-foreground focus:border-brand focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label
+                    htmlFor="biz-maps-paste"
+                    className="block text-xs font-semibold text-foreground"
+                  >
+                    Or Paste Google Maps Link
+                  </label>
+                  <input
+                    id="biz-maps-paste"
+                    type="text"
+                    value={mapsPaste}
+                    onChange={(e) => handleMapsLinkPaste(e.target.value)}
+                    placeholder="Paste Maps URL or 17.53, 78.48"
+                    className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-xs text-foreground focus:border-brand focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-2.5 text-[11px] text-muted-foreground">
+                <span>
+                  Click once to auto-capture your exact storefront GPS coordinates for Near Me
+                  search.
+                </span>
+                <button
+                  type="button"
+                  disabled={detectingGps}
+                  onClick={() => void handleDetectVendorGps()}
+                  className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-brand bg-brand-soft/60 px-3 py-1.5 text-xs font-bold text-brand hover:bg-brand-soft disabled:opacity-60"
+                >
+                  {detectingGps ? (
+                    <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <LocateFixed className="size-3.5" aria-hidden="true" />
+                  )}
+                  {detectingGps ? 'Getting Coordinates…' : 'Get Lat & Lng Now'}
+                </button>
+              </div>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <div>
-              <label
-                htmlFor="biz-whatsapp"
-                className="flex items-center gap-1 text-xs font-semibold text-foreground"
-              >
-                <MessageCircle className="size-3.5 text-[#25D366]" aria-hidden="true" />
-                WhatsApp Number
-              </label>
-              <input
-                id="biz-whatsapp"
-                type="tel"
-                required
-                value={whatsappNumber}
-                onChange={(e) => setWhatsappNumber(e.target.value)}
-                placeholder="919820112233"
-                className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2.5 font-mono text-sm text-foreground focus:border-brand focus:outline-none"
-              />
-            </div>
-            <div>
-              <label htmlFor="biz-product" className="block text-xs font-semibold text-foreground">
-                Featured Product / Package
-              </label>
-              <input
-                id="biz-product"
-                type="text"
-                value={productName}
-                onChange={(e) => setProductName(e.target.value)}
-                placeholder="e.g. Live Chaat Counter (100 pax)"
-                className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:border-brand focus:outline-none"
-              />
-            </div>
-            <div>
-              <label htmlFor="biz-price" className="block text-xs font-semibold text-foreground">
-                Starting Price (USD eq.)
-              </label>
-              <input
-                id="biz-price"
-                type="number"
-                min={15}
-                max={50000}
-                required
-                value={startingPriceUsd}
-                onChange={(e) => setStartingPriceUsd(Number(e.target.value) || 100)}
-                className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2.5 font-mono text-sm tabular-nums text-foreground focus:border-brand focus:outline-none"
-              />
+          {/* 4. Storefront Logo & Cover Banner Upload */}
+          <div className="space-y-3 border-t border-border pt-5">
+            <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+              4. Storefront Branding — Logo &amp; Cover Photo
+            </p>
+            {uploadError && (
+              <p className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-600 dark:text-red-400">
+                {uploadError}
+              </p>
+            )}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-12">
+              {/* Logo Upload */}
+              <div className="rounded-xl border border-border bg-background p-3.5 sm:col-span-4">
+                <p className="text-xs font-semibold text-foreground">Business Logo</p>
+                <p className="text-[11px] text-muted-foreground">Square PNG / JPG</p>
+                <div className="mt-2.5 flex items-center gap-3">
+                  <div className="relative grid size-16 shrink-0 place-items-center overflow-hidden rounded-xl border border-dashed border-border bg-muted">
+                    {logoDataUrl ? (
+                      <img
+                        src={logoDataUrl}
+                        alt="Business logo preview"
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <Upload className="size-5 text-muted-foreground" aria-hidden="true" />
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground hover:border-brand hover:text-brand">
+                      <ImagePlus className="size-3.5" aria-hidden="true" />
+                      {logoDataUrl ? 'Change' : 'Upload Logo'}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => void handleLogoUpload(e)}
+                        className="hidden"
+                      />
+                    </label>
+                    {logoDataUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setLogoDataUrl('')}
+                        className="cursor-pointer text-left text-[11px] text-muted-foreground hover:text-red-500"
+                      >
+                        Remove logo
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Cover Banner Upload */}
+              <div className="rounded-xl border border-border bg-background p-3.5 sm:col-span-8">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <p className="text-xs font-semibold text-foreground">Storefront Cover Banner</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      Shown at the top of your mini-website &amp; marketplace card
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground hover:border-brand hover:text-brand whitespace-nowrap">
+                      <ImagePlus className="size-3.5" aria-hidden="true" />
+                      {coverDataUrl ? 'Change Cover' : 'Upload Cover'}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => void handleCoverUpload(e)}
+                        className="hidden"
+                      />
+                    </label>
+                    {coverDataUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setCoverDataUrl('')}
+                        className="cursor-pointer text-xs text-muted-foreground hover:text-red-500"
+                      >
+                        Reset
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div className="mt-2.5 h-24 w-full overflow-hidden rounded-lg border border-border bg-muted">
+                  <img
+                    src={coverDataUrl || defaultCover}
+                    alt="Storefront cover preview"
+                    className="h-full w-full object-cover"
+                  />
+                </div>
+              </div>
             </div>
           </div>
 
-          <div>
-            <label htmlFor="biz-tagline" className="block text-xs font-semibold text-foreground">
-              Short Storefront Headline &amp; Specialties
-            </label>
-            <textarea
-              id="biz-tagline"
-              rows={2}
-              required
-              value={tagline}
-              onChange={(e) => setTagline(e.target.value)}
-              placeholder="e.g. Custom eggless wedding cakes, live dessert counters, and birthday snack boxes with same-week delivery."
-              className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:border-brand focus:outline-none"
-            />
+          {/* 5. Products / Packages with Local Currency & Product Images */}
+          <div className="space-y-3 border-t border-border pt-5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                  5. Products &amp; Packages ({currencyMeta.code} {currencyMeta.symbol.trim()})
+                </p>
+                <p className="text-[11px] text-muted-foreground">
+                  Add your cakes, counters, snack boxes or decor packages with photos &amp; local prices
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={addDraftProduct}
+                disabled={products.length >= 10}
+                className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-brand bg-brand-soft/60 px-3 py-1.5 text-xs font-bold text-brand hover:bg-brand-soft disabled:opacity-50"
+              >
+                <Plus className="size-3.5" aria-hidden="true" />
+                Add Product
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {products.map((prod, index) => (
+                <div
+                  key={prod.id}
+                  className="rounded-xl border border-border bg-background p-3.5"
+                >
+                  <div className="flex items-start gap-3">
+                    {/* Product Photo Upload */}
+                    <div className="shrink-0">
+                      <label className="group relative block size-20 cursor-pointer overflow-hidden rounded-xl border border-dashed border-border bg-muted">
+                        {prod.image ? (
+                          <img
+                            src={prod.image}
+                            alt={prod.name || `Product ${index + 1}`}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-full w-full flex-col items-center justify-center p-1 text-center text-[10px] font-semibold text-muted-foreground group-hover:text-brand">
+                            <ImagePlus className="size-4" aria-hidden="true" />
+                            <span className="mt-1">Photo</span>
+                          </div>
+                        )}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => void handleProductImageUpload(prod.id, e)}
+                          className="hidden"
+                        />
+                      </label>
+                    </div>
+
+                    <div className="min-w-0 flex-1 space-y-2">
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                        <input
+                          type="text"
+                          required={index === 0}
+                          value={prod.name}
+                          onChange={(e) => updateProductField(prod.id, 'name', e.target.value)}
+                          placeholder={
+                            index === 0
+                              ? 'Product Name (e.g. Hyderabadi Biryani Box)'
+                              : `Product ${index + 1} Name`
+                          }
+                          className="rounded-lg border border-border bg-card px-3 py-2 text-xs font-medium text-foreground focus:border-brand focus:outline-none sm:col-span-2"
+                        />
+                        <div className="relative">
+                          <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 font-mono text-xs font-bold text-muted-foreground">
+                            {currencyMeta.symbol.trim()}
+                          </span>
+                          <input
+                            type="number"
+                            min={1}
+                            max={50000000}
+                            required
+                            value={prod.priceLocal}
+                            onChange={(e) =>
+                              updateProductField(
+                                prod.id,
+                                'priceLocal',
+                                Math.max(0, Number(e.target.value) || 0)
+                              )
+                            }
+                            aria-label={`Price in ${currencyMeta.code}`}
+                            className="w-full rounded-lg border border-border bg-card py-2 pl-10 pr-2.5 font-mono text-xs font-semibold text-foreground focus:border-brand focus:outline-none"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                        <input
+                          type="text"
+                          value={prod.serves}
+                          onChange={(e) => updateProductField(prod.id, 'serves', e.target.value)}
+                          placeholder="Serves (e.g. 1 kg / 50 pax)"
+                          className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-foreground focus:border-brand focus:outline-none"
+                        />
+                        <input
+                          type="text"
+                          value={prod.description}
+                          onChange={(e) =>
+                            updateProductField(prod.id, 'description', e.target.value)
+                          }
+                          placeholder="Short description / flavors / inclusions"
+                          className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-foreground focus:border-brand focus:outline-none sm:col-span-2"
+                        />
+                      </div>
+                    </div>
+
+                    {products.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removeDraftProduct(prod.id)}
+                        aria-label="Remove product"
+                        className="cursor-pointer rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-red-500"
+                      >
+                        <Trash2 className="size-4" aria-hidden="true" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
 
           {isPaidPlan && (
@@ -543,12 +1098,12 @@ export function ListBusinessModal({
                 <RefreshCw className="mt-0.5 size-4 shrink-0 text-brand" aria-hidden="true" />
                 <div className="flex-1 text-xs">
                   <p className="font-bold text-foreground">
-                    {selectedPlanMeta.name} —{' '}
-                    {formatPlanPrice(selectedPlanMeta, currency)}/month auto-pay
+                    {selectedPlanMeta.name} — {formatPlanPrice(selectedPlanMeta, formCurrency)}/month
+                    auto-pay
                   </p>
                   <p className="mt-0.5 text-muted-foreground">
-                    Your listing immediately ranks above Free listings in {city} &amp; Near Me results.
-                    Auto-renews monthly; cancel anytime in one click with zero booking commission.
+                    Your listing immediately ranks above Free listings in {city} &amp; Near Me
+                    results. Auto-renews monthly; cancel anytime with zero booking commission.
                   </p>
                   <label className="mt-2.5 inline-flex cursor-pointer items-center gap-2 font-semibold text-foreground">
                     <input

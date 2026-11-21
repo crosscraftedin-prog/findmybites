@@ -285,7 +285,14 @@ export function VendorWebsiteView({
               </span>
             </div>
 
-            <div className="mt-3 flex items-center gap-2.5">
+            <div className="mt-3 flex items-center gap-3">
+              {vendor.logo && (
+                <img
+                  src={vendor.logo}
+                  alt={`${vendor.name} logo`}
+                  className="size-14 shrink-0 rounded-2xl border-2 border-white/30 bg-white object-cover shadow-lg sm:size-16"
+                />
+              )}
               <h1 className="text-3xl font-extrabold tracking-tight text-white sm:text-4xl lg:text-5xl">
                 {vendor.name}
               </h1>

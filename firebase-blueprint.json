@@ -138,8 +138,13 @@
         "image": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 500,
-          "description": "Hero cover image URL or local asset path."
+          "maxLength": 150000,
+          "description": "Hero cover image URL, asset path, or compressed data URL."
+        },
+        "logo": {
+          "type": "string",
+          "maxLength": 70000,
+          "description": "Optional business logo image URL or compressed data URL."
         },
         "products": {
           "type": "array",

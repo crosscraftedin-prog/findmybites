@@ -1,11 +1,12 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { MapPin, Navigation, Search, X } from 'lucide-react';
+import { Loader2, LocateFixed, MapPin, Navigation, Search, X } from 'lucide-react';
 import {
   COUNTRY_REGION_LABEL,
   LAUNCH_COUNTRIES,
   LaunchCountry,
   STATES_BY_COUNTRY,
 } from '../data/vendors';
+import { requestBrowserGpsLocation, resolveRegionFromCoords } from '../utils/geolocation';
 
 export interface SelectedLocation {
   country: Exclude<LaunchCountry, 'All'>;
@@ -34,6 +35,8 @@ export function LocationPickerModal({
   const [selectedStateName, setSelectedStateName] = useState<string>(statesForCountry[0].name);
   const [selectedCity, setSelectedCity] = useState<string>(statesForCountry[0].cities[0]);
   const [customArea, setCustomArea] = useState('');
+  const [locatingGps, setLocatingGps] = useState(false);
+  const [gpsError, setGpsError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -42,6 +45,7 @@ export function LocationPickerModal({
     setSelectedStateName(initialStates[0].name);
     setSelectedCity(initialStates[0].cities[0]);
     setCustomArea('');
+    setGpsError(null);
   }, [isOpen, defaultCountry]);
 
   useEffect(() => {
@@ -88,6 +92,32 @@ export function LocationPickerModal({
     onClose();
   };
 
+  const handleUseLiveGps = async () => {
+    setLocatingGps(true);
+    setGpsError(null);
+    try {
+      const coords = await requestBrowserGpsLocation();
+      const resolved = await resolveRegionFromCoords(coords.lat, coords.lng);
+      onSelectLocation({
+        country: resolved.country,
+        state: resolved.state,
+        city: resolved.city,
+        lat: coords.lat,
+        lng: coords.lng,
+        label: resolved.label,
+      });
+      onClose();
+    } catch (err) {
+      setGpsError(
+        err instanceof Error
+          ? err.message
+          : 'Could not read GPS location. Choose your country and city below.'
+      );
+    } finally {
+      setLocatingGps(false);
+    }
+  };
+
   const regionLabel = COUNTRY_REGION_LABEL[country];
 
   return (
@@ -127,6 +157,37 @@ export function LocationPickerModal({
         </div>
 
         <form onSubmit={handleConfirm} className="space-y-5 p-6">
+          {/* Quick GPS Option */}
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-brand-border bg-brand-soft/50 p-3.5">
+            <div className="flex items-center gap-2.5 text-xs">
+              <LocateFixed className="size-4 shrink-0 text-brand" aria-hidden="true" />
+              <div>
+                <p className="font-bold text-foreground">Detect my exact GPS location</p>
+                <p className="text-[11px] text-muted-foreground">
+                  Uses browser location to find the closest vendors near you
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              disabled={locatingGps}
+              onClick={() => void handleUseLiveGps()}
+              className="inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-brand px-4 py-2 text-xs font-bold text-brand-foreground shadow-xs hover:bg-brand-hover disabled:opacity-60"
+            >
+              {locatingGps ? (
+                <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+              ) : (
+                <Navigation className="size-3.5" aria-hidden="true" />
+              )}
+              {locatingGps ? 'Locating…' : 'Allow Location'}
+            </button>
+          </div>
+          {gpsError && (
+            <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+              {gpsError}
+            </p>
+          )}
+
           {/* Step 1: Country */}
           <div>
             <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">

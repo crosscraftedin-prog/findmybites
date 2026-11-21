@@ -1,12 +1,13 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { ChangeEvent, FormEvent, useEffect, useState } from 'react';
 import type { User } from 'firebase/auth';
 import {
   CheckCircle2,
   Crown,
   ExternalLink,
+  ImagePlus,
+  LocateFixed,
   LogIn,
   LogOut,
-  MessageCircle,
   PauseCircle,
   PlayCircle,
   Plus,
@@ -17,17 +18,22 @@ import {
 } from 'lucide-react';
 import {
   BookingEnquiry,
+  CURRENCIES,
   CurrencyCode,
   PlanTier,
   Vendor,
   VendorProduct,
   formatMoney,
+  localToUsd,
+  usdToLocal,
 } from '../data/vendors';
 import {
   deleteVendorInCloud,
   updateBookingStatusInCloud,
   updateVendorInCloud,
 } from '../services/firestoreService';
+import { compressImageFile } from '../utils/imageUpload';
+import { requestBrowserGpsLocation } from '../utils/geolocation';
 import { QrPosterModal } from './QrPosterModal';
 
 interface VendorDashboardModalProps {
@@ -61,10 +67,15 @@ export function VendorDashboardModal({
   const [addingProductForId, setAddingProductForId] = useState<string | null>(null);
   const [prodName, setProdName] = useState('');
   const [prodServes, setProdServes] = useState('Custom / 50 pax');
-  const [prodPriceUsd, setProdPriceUsd] = useState(65);
+  const [prodPriceLocal, setProdPriceLocal] = useState(usdToLocal(40, currency));
   const [prodDesc, setProdDesc] = useState('');
+  const [prodImage, setProdImage] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
   const [qrVendor, setQrVendor] = useState<Vendor | null>(null);
+
+  useEffect(() => {
+    setProdPriceLocal(usdToLocal(40, currency));
+  }, [currency]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -76,6 +87,24 @@ export function VendorDashboardModal({
   }, [isOpen, qrVendor, onClose]);
 
   if (!isOpen) return null;
+
+  const currencyMeta = CURRENCIES[currency];
+
+  const handleProductPhotoUpload = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const dataUrl = await compressImageFile(file, {
+        maxWidth: 640,
+        maxHeight: 480,
+        quality: 0.72,
+        maxChars: 90000,
+      });
+      setProdImage(dataUrl);
+    } catch {
+      onNotify('Could not read product photo. Please try a JPG or PNG.');
+    }
+  };
 
   const handleToggleStatus = async (vendor: Vendor) => {
     const nextStatus = vendor.status === 'paused' ? 'active' : 'paused';
@@ -101,15 +130,16 @@ export function VendorDashboardModal({
         id: `prod-${Date.now()}`,
         name: prodName.trim().slice(0, 100),
         serves: prodServes.trim().slice(0, 60) || 'Custom',
-        priceUsd: Math.max(1, Number(prodPriceUsd) || 50),
+        priceUsd: Math.max(1, localToUsd(prodPriceLocal, currency)),
         description: prodDesc.trim().slice(0, 400) || prodName.trim(),
-        image: vendor.image,
+        image: prodImage || vendor.image,
       };
       await updateVendorInCloud(vendor.id, {
         products: [...vendor.products, nextProd],
       });
       setProdName('');
       setProdDesc('');
+      setProdImage('');
       setAddingProductForId(null);
       onNotify(`Added "${nextProd.name}" to ${vendor.name} in the cloud!`);
     } finally {
@@ -138,6 +168,23 @@ export function VendorDashboardModal({
     try {
       await deleteVendorInCloud(vendor.id);
       onNotify(`${vendor.name} removed from cloud directory.`);
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleUpdateVendorGps = async (vendor: Vendor) => {
+    setBusyId(vendor.id);
+    try {
+      const coords = await requestBrowserGpsLocation();
+      await updateVendorInCloud(vendor.id, { lat: coords.lat, lng: coords.lng });
+      onNotify(`Updated ${vendor.name} GPS pin to ${coords.lat}, ${coords.lng}.`);
+    } catch (err) {
+      onNotify(
+        err instanceof Error
+          ? err.message
+          : 'Could not read GPS location. Allow location permission and try again.'
+      );
     } finally {
       setBusyId(null);
     }
@@ -356,6 +403,16 @@ export function VendorDashboardModal({
                               <button
                                 type="button"
                                 disabled={isBusy}
+                                onClick={() => void handleUpdateVendorGps(v)}
+                                title={`Current pin: ${v.lat}, ${v.lng}`}
+                                className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs font-semibold text-foreground hover:border-brand hover:text-brand disabled:opacity-50"
+                              >
+                                <LocateFixed className="size-3.5 text-brand" aria-hidden="true" />
+                                Set GPS
+                              </button>
+                              <button
+                                type="button"
+                                disabled={isBusy}
                                 onClick={() => void handleToggleStatus(v)}
                                 className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs font-semibold text-foreground hover:bg-accent disabled:opacity-50"
                               >
@@ -433,47 +490,69 @@ export function VendorDashboardModal({
                             {addingProductForId === v.id && (
                               <form
                                 onSubmit={(e) => void handleAddProduct(e, v)}
-                                className="mt-3 grid grid-cols-1 gap-2 rounded-xl border border-brand-border bg-brand-soft/30 p-3 sm:grid-cols-3"
+                                className="mt-3 space-y-2 rounded-xl border border-brand-border bg-brand-soft/30 p-3"
                               >
-                                <input
-                                  type="text"
-                                  required
-                                  value={prodName}
-                                  onChange={(e) => setProdName(e.target.value)}
-                                  placeholder="Product / Package Name"
-                                  className="rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs text-foreground"
-                                />
-                                <input
-                                  type="text"
-                                  value={prodServes}
-                                  onChange={(e) => setProdServes(e.target.value)}
-                                  placeholder="Serves (e.g. 2kg / 50 pax)"
-                                  className="rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs text-foreground"
-                                />
-                                <input
-                                  type="number"
-                                  min={1}
-                                  max={50000}
-                                  required
-                                  value={prodPriceUsd}
-                                  onChange={(e) => setProdPriceUsd(Number(e.target.value) || 25)}
-                                  placeholder="Price (USD eq.)"
-                                  className="rounded-lg border border-border bg-background px-2.5 py-1.5 font-mono text-xs text-foreground"
-                                />
-                                <input
-                                  type="text"
-                                  value={prodDesc}
-                                  onChange={(e) => setProdDesc(e.target.value)}
-                                  placeholder="Short description (flavors, inclusions...)"
-                                  className="rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs text-foreground sm:col-span-2"
-                                />
-                                <button
-                                  type="submit"
-                                  disabled={isBusy}
-                                  className="cursor-pointer rounded-lg bg-brand px-3 py-1.5 text-xs font-bold text-brand-foreground hover:bg-brand-hover disabled:opacity-50"
-                                >
-                                  Save to Cloud
-                                </button>
+                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                                  <input
+                                    type="text"
+                                    required
+                                    value={prodName}
+                                    onChange={(e) => setProdName(e.target.value)}
+                                    placeholder="Product / Package Name"
+                                    className="rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs text-foreground"
+                                  />
+                                  <input
+                                    type="text"
+                                    value={prodServes}
+                                    onChange={(e) => setProdServes(e.target.value)}
+                                    placeholder="Serves (e.g. 2kg / 50 pax)"
+                                    className="rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs text-foreground"
+                                  />
+                                  <div className="relative">
+                                    <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 font-mono text-xs font-bold text-muted-foreground">
+                                      {currencyMeta.symbol.trim()}
+                                    </span>
+                                    <input
+                                      type="number"
+                                      min={1}
+                                      max={50000000}
+                                      required
+                                      value={prodPriceLocal}
+                                      onChange={(e) =>
+                                        setProdPriceLocal(Math.max(1, Number(e.target.value) || 0))
+                                      }
+                                      placeholder={`Price (${currencyMeta.code})`}
+                                      className="w-full rounded-lg border border-border bg-background py-1.5 pl-9 pr-2.5 font-mono text-xs text-foreground"
+                                    />
+                                  </div>
+                                </div>
+
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-semibold text-foreground hover:border-brand hover:text-brand">
+                                    <ImagePlus className="size-3.5" aria-hidden="true" />
+                                    {prodImage ? 'Photo Ready ✓' : 'Upload Product Photo'}
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      onChange={(e) => void handleProductPhotoUpload(e)}
+                                      className="hidden"
+                                    />
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={prodDesc}
+                                    onChange={(e) => setProdDesc(e.target.value)}
+                                    placeholder="Short description (flavors, inclusions...)"
+                                    className="min-w-0 flex-1 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs text-foreground"
+                                  />
+                                  <button
+                                    type="submit"
+                                    disabled={isBusy}
+                                    className="cursor-pointer rounded-lg bg-brand px-3.5 py-1.5 text-xs font-bold text-brand-foreground hover:bg-brand-hover disabled:opacity-50"
+                                  >
+                                    Save to Cloud
+                                  </button>
+                                </div>
                               </form>
                             )}
                           </div>

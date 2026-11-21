@@ -1,6 +1,6 @@
 {
   "name": "FindMyBites × PimpMyParty",
   "description": "Find bakers, live counters, catering, mocktail bars, snack boxes, gifting & wedding decor near you in India, Dubai, Sri Lanka, Pakistan, Bangladesh & Nepal.",
-  "requestFramePermissions": [],
+  "requestFramePermissions": ["geolocation"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

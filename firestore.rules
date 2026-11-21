@@ -69,7 +69,7 @@ service cloud.firestore {
           'whatsappNumber', 'planTier', 'monthlyAutoPay', 'priceTier',
           'startingPriceUsd', 'rating', 'reviewCount', 'responseTime',
           'verified', 'status', 'tagline', 'description',
-          'serviceAreas', 'specialties', 'image', 'products',
+          'serviceAreas', 'specialties', 'image', 'logo', 'products',
           'createdAt', 'updatedAt'
         ]) &&
         isValidId(data.ownerId) &&
@@ -97,7 +97,8 @@ service cloud.firestore {
         data.description is string && data.description.size() >= 5 && data.description.size() <= 1200 &&
         isValidStringList(data.serviceAreas, 10) &&
         isValidStringList(data.specialties, 10) &&
-        data.image is string && data.image.size() >= 1 && data.image.size() <= 500 &&
+        data.image is string && data.image.size() >= 1 && data.image.size() <= 150000 &&
+        (!('logo' in data) || (data.logo is string && data.logo.size() <= 70000)) &&
         isValidProductsList(data.products) &&
         data.createdAt is timestamp &&
         data.updatedAt is timestamp;
@@ -191,7 +192,7 @@ service cloud.firestore {
               'lat', 'lng', 'whatsappNumber', 'planTier', 'monthlyAutoPay',
               'priceTier', 'startingPriceUsd', 'responseTime', 'status',
               'tagline', 'description', 'serviceAreas', 'specialties',
-              'image', 'products', 'updatedAt'
+              'image', 'logo', 'products', 'updatedAt'
             ])
           ) ||
           // Tier 2: Admin verification & moderation

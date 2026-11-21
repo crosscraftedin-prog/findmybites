@@ -31,6 +31,25 @@ export const CURRENCIES: Record<CurrencyCode, CurrencyConfig> = {
   USD: { code: 'USD', symbol: '$', rate: 1 },
 };
 
+export const COUNTRY_DEFAULT_CURRENCY: Record<Exclude<LaunchCountry, 'All'>, CurrencyCode> = {
+  India: 'INR',
+  'Dubai / UAE': 'AED',
+  'Sri Lanka': 'LKR',
+  Pakistan: 'PKR',
+  Bangladesh: 'BDT',
+  Nepal: 'NPR',
+};
+
+export function localToUsd(localAmount: number, currency: CurrencyCode): number {
+  const rate = CURRENCIES[currency].rate || 1;
+  return Number((Math.max(0, localAmount) / rate).toFixed(2));
+}
+
+export function usdToLocal(usdAmount: number, currency: CurrencyCode): number {
+  const rate = CURRENCIES[currency].rate || 1;
+  return Math.round(Math.max(0, usdAmount) * rate);
+}
+
 export interface StateRegion {
   name: string;
   cities: string[];
@@ -173,6 +192,7 @@ export interface Vendor {
   serviceAreas: string[];
   specialties: string[];
   image: string;
+  logo?: string;
   products: VendorProduct[];
   reviews: VendorReview[];
 }

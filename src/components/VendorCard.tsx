@@ -114,10 +114,19 @@ export function VendorCard({
           }}
           className="cursor-pointer focus-visible:outline-2"
         >
-          <div className="flex items-start justify-between gap-2">
-            <h3 className="line-clamp-1 text-base font-bold leading-tight text-foreground transition-colors group-hover:text-brand">
-              {vendor.name}
-            </h3>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-2">
+              {vendor.logo && (
+                <img
+                  src={vendor.logo}
+                  alt={`${vendor.name} logo`}
+                  className="size-7 shrink-0 rounded-lg border border-border object-cover"
+                />
+              )}
+              <h3 className="line-clamp-1 text-base font-bold leading-tight text-foreground transition-colors group-hover:text-brand">
+                {vendor.name}
+              </h3>
+            </div>
             {vendor.verified && (
               <BadgeCheck className="size-4 shrink-0 text-brand" aria-label="Verified vendor" />
             )}

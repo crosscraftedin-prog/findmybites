@@ -53,7 +53,12 @@ function sanitizeProducts(products: VendorProduct[]): VendorProduct[] {
     serves: clampStr(p.serves || 'Custom', 1, 60, 'Custom'),
     priceUsd: Math.max(0, Math.min(100000, Number(p.priceUsd) || 0)),
     description: clampStr(p.description || p.name, 2, 400, 'Custom package'),
-    image: clampStr(p.image || '/src/assets/images/cat-bakers.png', 1, 500, '/src/assets/images/cat-bakers.png'),
+    image: clampStr(
+      p.image || '/src/assets/images/cat-bakers.png',
+      1,
+      110000,
+      '/src/assets/images/cat-bakers.png'
+    ),
     ...(p.tag ? { tag: p.tag.trim().slice(0, 40) } : {}),
   }));
   return list.length > 0
@@ -101,6 +106,7 @@ function docToVendor(id: string, data: Record<string, unknown>): Vendor {
     serviceAreas: Array.isArray(data.serviceAreas) ? (data.serviceAreas as string[]) : [],
     specialties: Array.isArray(data.specialties) ? (data.specialties as string[]) : [],
     image: typeof data.image === 'string' ? data.image : '/src/assets/images/cat-bakers.png',
+    logo: typeof data.logo === 'string' && data.logo.length > 0 ? data.logo : undefined,
     products,
     reviews: [],
   };
@@ -222,7 +228,10 @@ export async function createVendorInCloud(
     description: clampStr(vendor.description || vendor.tagline, 5, 1200, 'Local event specialist.'),
     serviceAreas: serviceAreas.length > 0 ? serviceAreas : [vendor.city],
     specialties: specialties.length > 0 ? specialties : [vendor.category],
-    image: clampStr(vendor.image, 1, 500, '/src/assets/images/cat-bakers.png'),
+    image: clampStr(vendor.image, 1, 150000, '/src/assets/images/cat-bakers.png'),
+    ...(vendor.logo && vendor.logo.trim().length > 0
+      ? { logo: vendor.logo.trim().slice(0, 70000) }
+      : {}),
     products: cleanProducts,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
@@ -238,6 +247,8 @@ export async function createVendorInCloud(
       status: 'active',
       verified: payload.verified,
       reviewCount: 0,
+      image: payload.image,
+      logo: payload.logo,
       products: cleanProducts,
     };
   } catch (error) {
@@ -256,6 +267,10 @@ export async function updateVendorInCloud(
     monthlyAutoPay: boolean;
     startingPriceUsd: number;
     status: 'active' | 'paused';
+    image: string;
+    logo: string;
+    lat: number;
+    lng: number;
     products: VendorProduct[];
   }>
 ): Promise<void> {
@@ -274,6 +289,11 @@ export async function updateVendorInCloud(
   if (updates.startingPriceUsd !== undefined)
     clean.startingPriceUsd = Math.max(0, Math.min(100000, Number(updates.startingPriceUsd) || 0));
   if (updates.status !== undefined) clean.status = updates.status;
+  if (updates.image !== undefined)
+    clean.image = clampStr(updates.image, 1, 150000, '/src/assets/images/cat-bakers.png');
+  if (updates.logo !== undefined) clean.logo = updates.logo.trim().slice(0, 70000);
+  if (updates.lat !== undefined) clean.lat = Math.max(-90, Math.min(90, Number(updates.lat) || 0));
+  if (updates.lng !== undefined) clean.lng = Math.max(-180, Math.min(180, Number(updates.lng) || 0));
   if (updates.products !== undefined) clean.products = sanitizeProducts(updates.products);
 
   try {

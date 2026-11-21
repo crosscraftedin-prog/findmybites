@@ -12,6 +12,7 @@ import {
   Globe2,
   Heart,
   Home,
+  Loader2,
   Mail,
   MapPin,
   MessageCircle,
@@ -29,6 +30,7 @@ import {
   User,
   Users,
   UtensilsCrossed,
+  X,
 } from 'lucide-react';
 import { onAuthStateChanged, type User as FirebaseUser } from 'firebase/auth';
 import { Ecosystem, Header } from './components/Header';
@@ -78,6 +80,7 @@ import {
   syncSavedVendorsToCloud,
   updateBookingStatusInCloud,
 } from './services/firestoreService';
+import { requestBrowserGpsLocation, resolveRegionFromCoords } from './utils/geolocation';
 
 function slugifySeo(text: string): string {
   return text
@@ -314,6 +317,11 @@ const HOW_IT_WORKS_STEPS = [
 const HERO_META = {
   FINDMYBITES: {
     eyebrow: 'FindMyBites · 12 Food, Live Counter, Catering, Bar, Mithai & Gifting Categories',
+    headlineLead: 'Every baker, live counter &',
+    headlineAccent: 'catering artisan near you',
+    subtitle:
+      'Press Near Me for local bakers, custom cakes, live chaat counters, catering, mocktail bars, snack boxes, mithai & gifting hampers across India, Dubai, Sri Lanka, Pakistan, Bangladesh & Nepal — chat straight on WhatsApp.',
+    searchPlaceholder: 'Search cakes, live chaat, caterers, mocktail bars, snack boxes…',
     image: HERO_FOOD_IMAGE,
     overlay: 'from-amber-950/85 via-orange-950/70 to-rose-950/45',
     chips: [
@@ -328,6 +336,11 @@ const HERO_META = {
   },
   PIMPMYPARTY: {
     eyebrow: 'PimpMyParty · 12 Decor, Balloon, Venue, DJ, Photo Booth & Celebration Categories',
+    headlineLead: 'Every wedding decor, DJ &',
+    headlineAccent: 'party professional near you',
+    subtitle:
+      'Press Near Me for wedding decor, balloon birthday themes, farmhouses, DJs, photographers, 360 photo booths, mehendi artists & event planners across India, Dubai, Sri Lanka, Pakistan, Bangladesh & Nepal — chat straight on WhatsApp.',
+    searchPlaceholder: 'Search wedding decor, balloon themes, DJs, venues, 360 booths…',
     image: HERO_PARTY_IMAGE,
     overlay: 'from-fuchsia-950/85 via-purple-950/70 to-pink-950/45',
     chips: [
@@ -410,6 +423,14 @@ export default function App() {
   const [nearMeRadiusKm, setNearMeRadiusKm] = useState<RadiusOption>(0);
   const [nearMeAllEcosystems, setNearMeAllEcosystems] = useState(false);
   const [locationPickerOpen, setLocationPickerOpen] = useState(false);
+  const [gpsDetecting, setGpsDetecting] = useState(false);
+  const [locationBannerDismissed, setLocationBannerDismissed] = useState(() => {
+    try {
+      return sessionStorage.getItem('fmb_loc_banner_dismissed') === '1';
+    } catch {
+      return false;
+    }
+  });
   const [heroImgFailed, setHeroImgFailed] = useState(false);
 
   const [activeVendor, setActiveVendor] = useState<Vendor | null>(null);
@@ -700,9 +721,61 @@ export default function App() {
     setNearMeRadiusKm(0);
     setNearMeAllEcosystems(true);
     setSortBy('nearest');
+    setLocationBannerDismissed(true);
     setNotice(`Showing vendors in ${loc.label}, ${loc.country} (Paid partners on top).`);
     document.getElementById('explore')?.scrollIntoView({ behavior: 'smooth' });
   };
+
+  const handleRequestLiveLocation = async (options?: { silentError?: boolean; scroll?: boolean }) => {
+    setGpsDetecting(true);
+    try {
+      const coords = await requestBrowserGpsLocation();
+      const resolved = await resolveRegionFromCoords(coords.lat, coords.lng);
+      setUserCoords({
+        lat: coords.lat,
+        lng: coords.lng,
+        label: resolved.label,
+      });
+      if (resolved.exactCountryMatched) {
+        setSelectedCountry(resolved.country);
+        setSelectedState(resolved.state);
+      }
+      setNearMeRadiusKm(0);
+      setNearMeAllEcosystems(true);
+      setSortBy('nearest');
+      setLocationBannerDismissed(true);
+      setNotice(`Location detected: ${resolved.label} — showing vendors near you.`);
+      if (options?.scroll) {
+        document.getElementById('explore')?.scrollIntoView({ behavior: 'smooth' });
+      }
+    } catch (err) {
+      if (!options?.silentError) {
+        setNotice(
+          err instanceof Error
+            ? err.message
+            : 'Location access blocked. Click "Search by City instead" to pick your area.'
+        );
+      }
+    } finally {
+      setGpsDetecting(false);
+    }
+  };
+
+  // Trigger browser's native "Allow location" prompt once when a visitor opens the website
+  useEffect(() => {
+    if (typeof window === 'undefined' || !navigator.geolocation) return;
+    try {
+      if (sessionStorage.getItem('fmb_geo_auto_prompted') === '1') return;
+      sessionStorage.setItem('fmb_geo_auto_prompted', '1');
+    } catch {
+      // ignore storage errors
+    }
+    const timer = window.setTimeout(() => {
+      void handleRequestLiveLocation({ silentError: true, scroll: false });
+    }, 650);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleNearMe = () => {
     setLocationPickerOpen(true);
@@ -830,7 +903,11 @@ export default function App() {
       setNotice(`Signed in as ${user.displayName || user.email}. Cloud sync is active!`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Sign-in cancelled.';
-      if (!msg.includes('popup-closed-by-user')) {
+      if (msg.includes('unauthorized-domain')) {
+        setNotice(
+          `Add "${window.location.hostname}" in Firebase Console → Authentication → Settings → Authorized domains to enable Google Sign-In on this domain.`
+        );
+      } else if (!msg.includes('popup-closed-by-user')) {
         setNotice('Could not complete Google Sign-In. Please allow popups and try again.');
       }
     }
@@ -965,6 +1042,56 @@ export default function App() {
         onSignIn={() => void handleSignIn()}
       />
 
+      {/* Location Access Banner — matches live website Allow Location + Search by City bar */}
+      {!userCoords && !locationBannerDismissed && (
+        <div className="border-b border-brand-border bg-brand-soft/70 backdrop-blur-sm">
+          <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2.5 px-4 py-2.5 sm:px-6 lg:px-8">
+            <div className="flex items-center gap-2 text-xs font-semibold text-brand-soft-foreground sm:text-sm">
+              <MapPin className="size-4 shrink-0 text-brand" aria-hidden="true" />
+              <span>Allow location access to find vendors near you</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={gpsDetecting}
+                onClick={() => void handleRequestLiveLocation({ scroll: true })}
+                className="inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-brand px-4 py-1.5 text-xs font-bold text-brand-foreground shadow-xs transition-colors hover:bg-brand-hover disabled:opacity-60"
+              >
+                {gpsDetecting ? (
+                  <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Navigation className="size-3.5" aria-hidden="true" />
+                )}
+                {gpsDetecting ? 'Locating…' : 'Allow Location'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setLocationPickerOpen(true)}
+                className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-border bg-card px-3.5 py-1.5 text-xs font-semibold text-foreground transition-colors hover:border-brand hover:text-brand"
+              >
+                <Search className="size-3.5" aria-hidden="true" />
+                Search by City instead
+              </button>
+              <button
+                type="button"
+                aria-label="Dismiss location bar"
+                onClick={() => {
+                  setLocationBannerDismissed(true);
+                  try {
+                    sessionStorage.setItem('fmb_loc_banner_dismissed', '1');
+                  } catch {
+                    // ignore
+                  }
+                }}
+                className="grid size-7 cursor-pointer place-items-center rounded-full text-muted-foreground hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10"
+              >
+                <X className="size-3.5" aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {notice && (
         <div
           role="status"
@@ -1008,7 +1135,7 @@ export default function App() {
               </span>
 
               <h1 className="mt-4 text-4xl font-extrabold leading-[1.08] tracking-tight text-white sm:text-5xl lg:text-6xl">
-                Every baker, live counter &amp;{' '}
+                {hero.headlineLead}{' '}
                 <span
                   className={`bg-gradient-to-r bg-clip-text text-transparent ${
                     ecosystem === 'FINDMYBITES'
@@ -1016,14 +1143,12 @@ export default function App() {
                       : 'from-fuchsia-300 via-pink-300 to-amber-200'
                   }`}
                 >
-                  event vendor near you
+                  {hero.headlineAccent}
                 </span>
               </h1>
 
               <p className="mx-auto mt-4 max-w-2xl text-base text-white/85 sm:text-lg">
-                Press Near Me for local bakers, catering, live counters, bars, snack boxes, gifting
-                &amp; wedding decor across India, Dubai, Sri Lanka, Pakistan, Bangladesh &amp; Nepal —
-                chat straight on WhatsApp or let AI plan your entire event.
+                {hero.subtitle}
               </p>
 
               {/* 4-segment frosted white search box matching findmybites.com */}
@@ -1037,7 +1162,7 @@ export default function App() {
                     <input
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="Search cakes, live chaat, decor, mocktail bar, snack boxes…"
+                      placeholder={hero.searchPlaceholder}
                       aria-label="Search vendors"
                       className="h-12 w-full rounded-xl bg-transparent pl-10 pr-3 text-sm font-medium text-foreground placeholder:text-muted-foreground focus:outline-none"
                     />
