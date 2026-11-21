@@ -44,6 +44,7 @@ import {
   PRODUCT_UNIT_OPTIONS,
   PlanTier,
   PriceTier,
+  ProductFoodType,
   ProductUnitType,
   SAAS_PLANS,
   STATES_BY_COUNTRY,
@@ -56,6 +57,7 @@ import {
 } from '../data/vendors';
 import { compressImageFile, parseCoordsFromMapsLink } from '../utils/imageUpload';
 import { requestBrowserGpsLocation, resolveRegionFromCoords } from '../utils/geolocation';
+import { FoodTypeIcon } from './FoodTypeBadge';
 
 interface ListBusinessModalProps {
   isOpen: boolean;
@@ -74,6 +76,7 @@ interface DraftProduct {
   unitQuantity: string;
   unitType: ProductUnitType;
   serves: string;
+  foodType: ProductFoodType | '';
   dietaryTags: string[];
   priceLocal: number;
   description: string;
@@ -165,6 +168,7 @@ export function ListBusinessModal({
       unitQuantity: '1',
       unitType: 'kg',
       serves: '1 kg',
+      foodType: '',
       dietaryTags: [],
       priceLocal: usdToLocal(35, currency || 'INR'),
       description: '',
@@ -405,6 +409,7 @@ export function ListBusinessModal({
         unitQuantity: '1',
         unitType: 'kg',
         serves: '1 kg',
+        foodType: '',
         dietaryTags: [],
         priceLocal: usdToLocal(50, formCurrency),
         description: '',
@@ -474,6 +479,7 @@ export function ListBusinessModal({
         serves: formattedServes,
         ...(p.unitType !== 'custom' ? { unitQuantity: p.unitQuantity.trim() || '1' } : {}),
         unitType: p.unitType,
+        ...(p.foodType ? { foodType: p.foodType } : {}),
         ...(p.dietaryTags.length > 0 ? { dietaryTags: p.dietaryTags } : {}),
         priceUsd,
         description:
@@ -539,6 +545,7 @@ export function ListBusinessModal({
           unitQuantity: '1',
           unitType: 'kg',
           serves: '1 kg',
+          foodType: '',
           dietaryTags: [],
           priceLocal: usdToLocal(35, formCurrency),
           description: '',
@@ -1159,8 +1166,45 @@ export function ListBusinessModal({
                         />
                       </div>
 
-                      {/* Sweetener & Dietary Options */}
-                      <div className="flex flex-wrap items-center gap-1">
+                      {/* Veg / Non-Veg + Sweetener & Dietary Options */}
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateProductField(
+                              prod.id,
+                              'foodType',
+                              prod.foodType === 'veg' ? '' : 'veg'
+                            )
+                          }
+                          className={`inline-flex cursor-pointer items-center gap-1 rounded-md border px-2 py-0.5 text-[10px] font-bold transition-colors ${
+                            prod.foodType === 'veg'
+                              ? 'border-emerald-600 bg-emerald-600 text-white'
+                              : 'border-emerald-600/35 bg-card text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-950/40'
+                          }`}
+                        >
+                          <FoodTypeIcon foodType="veg" size="xs" />
+                          Veg
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateProductField(
+                              prod.id,
+                              'foodType',
+                              prod.foodType === 'non-veg' ? '' : 'non-veg'
+                            )
+                          }
+                          className={`inline-flex cursor-pointer items-center gap-1 rounded-md border px-2 py-0.5 text-[10px] font-bold transition-colors ${
+                            prod.foodType === 'non-veg'
+                              ? 'border-red-600 bg-red-600 text-white'
+                              : 'border-red-600/35 bg-card text-red-700 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-950/40'
+                          }`}
+                        >
+                          <FoodTypeIcon foodType="non-veg" size="xs" />
+                          Non-Veg
+                        </button>
+                        <span className="mx-0.5 h-3.5 w-px bg-border" aria-hidden="true" />
                         {PRODUCT_DIETARY_OPTIONS.map((opt) => {
                           const selected = prod.dietaryTags.includes(opt);
                           return (

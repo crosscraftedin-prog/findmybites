@@ -41,6 +41,7 @@ import {
   PRODUCT_DIETARY_OPTIONS,
   PRODUCT_UNIT_OPTIONS,
   PlanTier,
+  ProductFoodType,
   ProductUnitType,
   SAAS_PLANS,
   Vendor,
@@ -63,6 +64,7 @@ import {
 } from '../services/firestoreService';
 import { requestBrowserGpsLocation } from '../utils/geolocation';
 import { compressImageFile } from '../utils/imageUpload';
+import { FoodTypeBadge, FoodTypeIcon } from './FoodTypeBadge';
 import { PromoCardModal } from './PromoCardModal';
 import { QrPosterModal } from './QrPosterModal';
 
@@ -196,6 +198,7 @@ export function VendorDashboardModal({
   const [prodUnitQty, setProdUnitQty] = useState('1');
   const [prodUnitType, setProdUnitType] = useState<ProductUnitType>('kg');
   const [prodServes, setProdServes] = useState('1 kg');
+  const [prodFoodType, setProdFoodType] = useState<ProductFoodType | ''>('');
   const [prodDietaryTags, setProdDietaryTags] = useState<string[]>([]);
   const [prodPriceLocal, setProdPriceLocal] = useState(usdToLocal(40, currency));
   const [prodDesc, setProdDesc] = useState('');
@@ -467,6 +470,7 @@ export function VendorDashboardModal({
     setProdUnitQty('1');
     setProdUnitType('kg');
     setProdServes('1 kg');
+    setProdFoodType('');
     setProdDietaryTags([]);
     setProdPriceLocal(usdToLocal(40, currency));
     setProdDesc('');
@@ -498,6 +502,7 @@ export function VendorDashboardModal({
     setProdUnitQty(parsed.qty);
     setProdUnitType(parsed.unit);
     setProdServes(parsed.custom);
+    setProdFoodType(product.foodType || '');
     setProdDietaryTags(product.dietaryTags ? [...product.dietaryTags] : []);
     setProdPriceLocal(Math.max(1, usdToLocal(product.priceUsd, currency)));
     setProdDesc(product.description || '');
@@ -522,13 +527,16 @@ export function VendorDashboardModal({
         serves: formattedServes.slice(0, 60),
         ...(prodUnitType !== 'custom' ? { unitQuantity: prodUnitQty.trim() || '1' } : {}),
         unitType: prodUnitType,
+        ...(prodFoodType ? { foodType: prodFoodType } : {}),
         ...(prodDietaryTags.length > 0 ? { dietaryTags: prodDietaryTags } : {}),
         priceUsd: Math.max(1, localToUsd(prodPriceLocal, currency)),
         description: prodDesc.trim().slice(0, 400) || prodName.trim(),
         image: prodImage || vendor.image,
       };
       const updatedProducts = editingProductId
-        ? vendor.products.map((p) => (p.id === editingProductId ? { ...p, ...nextProd } : p))
+        ? vendor.products.map((p) =>
+            p.id === editingProductId ? { ...nextProd, ...(p.tag ? { tag: p.tag } : {}) } : p
+          )
         : [...vendor.products, nextProd];
       const nextStartingUsd =
         updatedProducts.length > 0
@@ -1359,9 +1367,12 @@ export function VendorDashboardModal({
                                           </div>
                                         )}
                                         <div className="min-w-0 flex-1">
-                                          <p className="truncate font-semibold text-foreground">
-                                            {p.name}
-                                          </p>
+                                          <div className="flex flex-wrap items-center gap-1.5">
+                                            <p className="truncate font-semibold text-foreground">
+                                              {p.name}
+                                            </p>
+                                            <FoodTypeBadge foodType={p.foodType} size="xs" />
+                                          </div>
                                           <p className="font-mono text-[11px] tabular-nums text-muted-foreground">
                                             {formatMoney(p.priceUsd, currency)} · {p.serves}
                                           </p>
@@ -1544,6 +1555,52 @@ export function VendorDashboardModal({
                                       </button>
                                     );
                                   })}
+                                </div>
+
+                                {/* Veg / Non-Veg Food Type Selector */}
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  <span className="text-[11px] font-semibold text-muted-foreground">
+                                    Food Type:
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setProdFoodType((prev) => (prev === 'veg' ? '' : 'veg'))
+                                    }
+                                    className={`inline-flex cursor-pointer items-center gap-1.5 rounded-md border px-2.5 py-1 text-[11px] font-bold transition-colors ${
+                                      prodFoodType === 'veg'
+                                        ? 'border-emerald-600 bg-emerald-600 text-white'
+                                        : 'border-emerald-600/35 bg-background text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-950/40'
+                                    }`}
+                                  >
+                                    <FoodTypeIcon foodType="veg" size="xs" />
+                                    Veg
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setProdFoodType((prev) =>
+                                        prev === 'non-veg' ? '' : 'non-veg'
+                                      )
+                                    }
+                                    className={`inline-flex cursor-pointer items-center gap-1.5 rounded-md border px-2.5 py-1 text-[11px] font-bold transition-colors ${
+                                      prodFoodType === 'non-veg'
+                                        ? 'border-red-600 bg-red-600 text-white'
+                                        : 'border-red-600/35 bg-background text-red-700 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-950/40'
+                                    }`}
+                                  >
+                                    <FoodTypeIcon foodType="non-veg" size="xs" />
+                                    Non-Veg
+                                  </button>
+                                  {prodFoodType && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setProdFoodType('')}
+                                      className="cursor-pointer rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+                                    >
+                                      Clear
+                                    </button>
+                                  )}
                                 </div>
 
                                 {/* Sweetener & Dietary Options (Sugar-Free, Jaggery, Stevia, Eggless, etc.) */}

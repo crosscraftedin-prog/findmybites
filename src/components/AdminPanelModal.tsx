@@ -41,6 +41,7 @@ import {
   LAUNCH_COUNTRIES,
   LaunchCountry,
   PlanTier,
+  ProductFoodType,
   STATES_BY_COUNTRY,
   SiteSettings,
   StoreClaim,
@@ -59,6 +60,7 @@ import {
   adminRevokeTransfer,
 } from '../services/firestoreService';
 import { compressImageFile } from '../utils/imageUpload';
+import { FoodTypeIcon } from './FoodTypeBadge';
 import {
   AdminApprovalsTab,
   AdminCampaignsTab,
@@ -101,6 +103,7 @@ interface DraftProductRow {
   name: string;
   priceLocal: string;
   serves: string;
+  foodType: ProductFoodType | '';
   tag: string;
   description: string;
   image: string;
@@ -120,6 +123,7 @@ const BIRTHDAY_CAKE_PRESETS: Array<Omit<DraftProductRow, 'id' | 'image'>> = [
     name: 'Belgian Chocolate Truffle Cake',
     priceLocal: '1450',
     serves: '1 kg · Serves 8–10',
+    foodType: 'veg',
     tag: 'Bestseller',
     description: 'Rich dark Belgian chocolate ganache layered over moist sponge, customizable with name topper.',
   },
@@ -127,6 +131,7 @@ const BIRTHDAY_CAKE_PRESETS: Array<Omit<DraftProductRow, 'id' | 'image'>> = [
     name: 'Custom Theme Birthday Cake',
     priceLocal: '2200',
     serves: '1.5 kg · Serves 14–16',
+    foodType: 'veg',
     tag: 'Eggless Available',
     description: 'Hand-piped buttercream or fondant birthday cake crafted to your party colors and flavor choice.',
   },
@@ -134,6 +139,7 @@ const BIRTHDAY_CAKE_PRESETS: Array<Omit<DraftProductRow, 'id' | 'image'>> = [
     name: 'Assorted Gourmet Cupcake Box (12 pcs)',
     priceLocal: '950',
     serves: 'Box of 12',
+    foodType: 'veg',
     tag: 'Party Favorite',
     description: 'Red velvet, lotus biscoff, Nutella hazelnut & vanilla berry swirl cupcakes freshly baked to order.',
   },
@@ -144,6 +150,7 @@ const CHRISTMAS_CAKE_PRESETS: Array<Omit<DraftProductRow, 'id' | 'image'>> = [
     name: 'Rich Spiced Christmas Plum Cake',
     priceLocal: '1250',
     serves: '1 kg · Gift Tin',
+    foodType: 'veg',
     tag: 'Christmas Special',
     description: 'Traditional slow-matured dry fruit & warm spice plum cake (rum-soaked & alcohol-free options).',
   },
@@ -151,6 +158,7 @@ const CHRISTMAS_CAKE_PRESETS: Array<Omit<DraftProductRow, 'id' | 'image'>> = [
     name: 'Chocolate Hazelnut Yule Log (Bûche de Noël)',
     priceLocal: '1850',
     serves: '1.2 kg · Serves 10',
+    foodType: 'veg',
     tag: 'Limited Edition',
     description: 'Rolled cocoa sponge filled with praline cream and textured dark chocolate bark.',
   },
@@ -158,6 +166,7 @@ const CHRISTMAS_CAKE_PRESETS: Array<Omit<DraftProductRow, 'id' | 'image'>> = [
     name: 'Festive Christmas Hamper Box',
     priceLocal: '1600',
     serves: 'Gift Box · 6 Treats',
+    foodType: 'veg',
     tag: 'Corporate & Gifting',
     description: 'Mini plum cake, gingerbread cookies, fudge brownies, spiced nuts & festive ribbon packaging.',
   },
@@ -205,6 +214,7 @@ function makeEmptyProduct(defaultImg: string): DraftProductRow {
     name: '',
     priceLocal: '',
     serves: '1 kg · Serves 8',
+    foodType: '',
     tag: 'Bestseller',
     description: '',
     image: defaultImg,
@@ -483,6 +493,7 @@ export function AdminPanelModal({
           id: p.id || `prod-${idx + 1}`,
           name: p.name.trim().slice(0, 100),
           serves: p.serves.trim().slice(0, 60) || 'Custom',
+          ...(p.foodType ? { foodType: p.foodType } : {}),
           priceUsd: Math.max(1, localToUsd(localNum > 0 ? localNum : 500, formCurrency)),
           description:
             p.description.trim().slice(0, 400) ||
@@ -1383,6 +1394,55 @@ export function AdminPanelModal({
                                 placeholder="Badge (e.g. Eggless)"
                                 className="w-full rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs text-foreground focus:border-brand focus:outline-none"
                               />
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-1.5 sm:col-span-4">
+                              <span className="text-[11px] font-semibold text-muted-foreground">
+                                Food Type:
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setProducts((prev) =>
+                                    prev.map((p) =>
+                                      p.id === prod.id
+                                        ? { ...p, foodType: p.foodType === 'veg' ? '' : 'veg' }
+                                        : p
+                                    )
+                                  )
+                                }
+                                className={`inline-flex cursor-pointer items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-bold transition-colors ${
+                                  prod.foodType === 'veg'
+                                    ? 'border-emerald-600 bg-emerald-600 text-white'
+                                    : 'border-emerald-600/35 bg-card text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-950/40'
+                                }`}
+                              >
+                                <FoodTypeIcon foodType="veg" size="xs" />
+                                Veg
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setProducts((prev) =>
+                                    prev.map((p) =>
+                                      p.id === prod.id
+                                        ? {
+                                            ...p,
+                                            foodType: p.foodType === 'non-veg' ? '' : 'non-veg',
+                                          }
+                                        : p
+                                    )
+                                  )
+                                }
+                                className={`inline-flex cursor-pointer items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-bold transition-colors ${
+                                  prod.foodType === 'non-veg'
+                                    ? 'border-red-600 bg-red-600 text-white'
+                                    : 'border-red-600/35 bg-card text-red-700 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-950/40'
+                                }`}
+                              >
+                                <FoodTypeIcon foodType="non-veg" size="xs" />
+                                Non-Veg
+                              </button>
                             </div>
                           </div>
                         </div>

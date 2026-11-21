@@ -43,6 +43,7 @@ import {
   subscribeVendorMetric,
   subscribeVendorReviews,
 } from '../services/firestoreService';
+import { FoodTypeBadge, FoodTypeIcon } from './FoodTypeBadge';
 import { PromoCardModal } from './PromoCardModal';
 import { QrPosterModal } from './QrPosterModal';
 
@@ -87,6 +88,7 @@ export function VendorWebsiteView({
   onTrackShare,
 }: VendorWebsiteViewProps) {
   const [selectedProductId, setSelectedProductId] = useState<string>('');
+  const [foodFilter, setFoodFilter] = useState<'all' | 'veg' | 'non-veg'>('all');
   const [basket, setBasket] = useState<Record<string, number>>({});
   const [basketExpanded, setBasketExpanded] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
@@ -112,6 +114,7 @@ export function VendorWebsiteView({
   useEffect(() => {
     if (vendor) {
       setSelectedProductId(vendor.products[0]?.id ?? '');
+      setFoodFilter('all');
       setBasket({});
       setBasketExpanded(false);
       setQrOpen(false);
@@ -186,10 +189,15 @@ export function VendorWebsiteView({
   };
 
   const buildBasketWhatsAppMessage = () => {
-    const lines = basketItems.map(
-      ({ product, qty }) =>
-        `• ${qty}× ${product.name} (${formatMoney(product.priceUsd * qty, currency)})`
-    );
+    const lines = basketItems.map(({ product, qty }) => {
+      const foodLabel =
+        product.foodType === 'veg'
+          ? ' [Veg]'
+          : product.foodType === 'non-veg'
+            ? ' [Non-Veg]'
+            : '';
+      return `• ${qty}× ${product.name}${foodLabel} (${formatMoney(product.priceUsd * qty, currency)})`;
+    });
     return [
       `Hi ${vendor.name}, I'd like to order from your FindMyBites storefront (${shareUrl}):`,
       '',
@@ -605,76 +613,149 @@ export function VendorWebsiteView({
 
         {/* Full Product Catalog Grid with Multi-Item WhatsApp Basket */}
         <section id="vendor-products">
-          <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-end">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wide text-brand">
-                One-Page Product Catalog &amp; WhatsApp Order Basket
-              </p>
-              <h2 className="mt-1 text-2xl font-extrabold tracking-tight text-foreground sm:text-3xl">
-                Products, Counters &amp; Packages
-              </h2>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Add multiple items to your WhatsApp Order Basket or enquire on any single item.
-            </p>
-          </div>
+          {(() => {
+            const vegCount = vendor.products.filter((p) => p.foodType === 'veg').length;
+            const nonVegCount = vendor.products.filter((p) => p.foodType === 'non-veg').length;
+            const hasFoodTypeTags = vegCount > 0 || nonVegCount > 0;
+            const displayedProducts =
+              foodFilter === 'all'
+                ? vendor.products
+                : vendor.products.filter((p) => p.foodType === foodFilter);
 
-          <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {vendor.products.map((product) => {
-              const isSelected = activeProduct?.id === product.id;
-              const qty = basket[product.id] ?? 0;
-              const dietarySuffix =
-                product.dietaryTags && product.dietaryTags.length > 0
-                  ? ` [${product.dietaryTags.join(', ')}]`
-                  : '';
-              const productWaText = `Hi ${vendor.name}, I saw "${product.name}" (${formatMoney(product.priceUsd, currency)} · ${product.serves}${dietarySuffix}) on your FindMyBites page (${shareUrl}). Is it available for my upcoming event?`;
-
-              return (
-                <div
-                  key={product.id}
-                  className={`flex flex-col overflow-hidden rounded-2xl border bg-card transition-all ${
-                    qty > 0
-                      ? 'border-[#25D366] ring-2 ring-[#25D366]/20'
-                      : isSelected
-                        ? 'border-brand ring-2 ring-brand/20'
-                        : 'border-border'
-                  }`}
-                >
-                  <div className="relative flex aspect-[4/3] w-full items-center justify-center overflow-hidden border-b border-border/60 bg-white dark:bg-neutral-900">
-                    <img
-                      src={product.image}
-                      alt={product.name}
-                      referrerPolicy="no-referrer"
-                      className="h-full w-full object-contain object-center"
-                    />
-                    {product.tag && (
-                      <span className="absolute left-3 top-3 rounded-full bg-black/75 px-2.5 py-1 text-[11px] font-semibold text-white backdrop-blur-md">
-                        {product.tag}
-                      </span>
-                    )}
-                    <span className="absolute bottom-3 right-3 rounded-full bg-black/75 px-3 py-1 font-mono text-xs font-bold tabular-nums text-white backdrop-blur-md">
-                      {formatMoney(product.priceUsd, currency)}
-                    </span>
+            return (
+              <>
+                <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wide text-brand">
+                      One-Page Product Catalog &amp; WhatsApp Order Basket
+                    </p>
+                    <h2 className="mt-1 text-2xl font-extrabold tracking-tight text-foreground sm:text-3xl">
+                      Products, Counters &amp; Packages
+                    </h2>
                   </div>
 
-                  <div className="flex flex-1 flex-col p-5">
-                    <p className="text-xs font-medium text-muted-foreground">{product.serves}</p>
-                    <h3 className="mt-1 text-base font-bold text-foreground">{product.name}</h3>
-                    {product.dietaryTags && product.dietaryTags.length > 0 && (
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        {product.dietaryTags.map((tag) => (
-                          <span
-                            key={tag}
-                            className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300"
-                          >
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                    <p className="mt-2 flex-1 text-sm leading-relaxed text-muted-foreground">
-                      {product.description}
+                  {hasFoodTypeTags ? (
+                    <div
+                      className="flex flex-wrap items-center gap-1.5"
+                      role="group"
+                      aria-label="Filter menu by Veg or Non-Veg"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => setFoodFilter('all')}
+                        className={`cursor-pointer rounded-lg border px-3 py-1.5 text-xs font-bold transition-colors ${
+                          foodFilter === 'all'
+                            ? 'border-foreground bg-foreground text-background'
+                            : 'border-border bg-card text-muted-foreground hover:text-foreground'
+                        }`}
+                      >
+                        All ({vendor.products.length})
+                      </button>
+                      {vegCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setFoodFilter('veg')}
+                          className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold transition-colors ${
+                            foodFilter === 'veg'
+                              ? 'border-emerald-600 bg-emerald-600 text-white'
+                              : 'border-emerald-600/35 bg-card text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-950/40'
+                          }`}
+                        >
+                          <FoodTypeIcon foodType="veg" size="xs" />
+                          Veg ({vegCount})
+                        </button>
+                      )}
+                      {nonVegCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setFoodFilter('non-veg')}
+                          className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold transition-colors ${
+                            foodFilter === 'non-veg'
+                              ? 'border-red-600 bg-red-600 text-white'
+                              : 'border-red-600/35 bg-card text-red-700 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-950/40'
+                          }`}
+                        >
+                          <FoodTypeIcon foodType="non-veg" size="xs" />
+                          Non-Veg ({nonVegCount})
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Add multiple items to your WhatsApp Order Basket or enquire on any single item.
                     </p>
+                  )}
+                </div>
+
+                <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+                  {displayedProducts.map((product) => {
+                    const isSelected = activeProduct?.id === product.id;
+                    const qty = basket[product.id] ?? 0;
+                    const foodTypeText =
+                      product.foodType === 'veg'
+                        ? ' · Veg'
+                        : product.foodType === 'non-veg'
+                          ? ' · Non-Veg'
+                          : '';
+                    const dietarySuffix =
+                      product.dietaryTags && product.dietaryTags.length > 0
+                        ? ` [${product.dietaryTags.join(', ')}]`
+                        : '';
+                    const productWaText = `Hi ${vendor.name}, I saw "${product.name}" (${formatMoney(product.priceUsd, currency)} · ${product.serves}${foodTypeText}${dietarySuffix}) on your FindMyBites page (${shareUrl}). Is it available for my upcoming event?`;
+
+                    return (
+                      <div
+                        key={product.id}
+                        className={`flex flex-col overflow-hidden rounded-2xl border bg-card transition-all ${
+                          qty > 0
+                            ? 'border-[#25D366] ring-2 ring-[#25D366]/20'
+                            : isSelected
+                              ? 'border-brand ring-2 ring-brand/20'
+                              : 'border-border'
+                        }`}
+                      >
+                        <div className="relative flex aspect-[4/3] w-full items-center justify-center overflow-hidden border-b border-border/60 bg-white dark:bg-neutral-900">
+                          <img
+                            src={product.image}
+                            alt={product.name}
+                            referrerPolicy="no-referrer"
+                            className="h-full w-full object-contain object-center"
+                          />
+                          {product.tag && (
+                            <span className="absolute left-3 top-3 rounded-full bg-black/75 px-2.5 py-1 text-[11px] font-semibold text-white backdrop-blur-md">
+                              {product.tag}
+                            </span>
+                          )}
+                          <span className="absolute bottom-3 right-3 rounded-full bg-black/75 px-3 py-1 font-mono text-xs font-bold tabular-nums text-white backdrop-blur-md">
+                            {formatMoney(product.priceUsd, currency)}
+                          </span>
+                        </div>
+
+                        <div className="flex flex-1 flex-col p-5">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <p className="text-xs font-medium text-muted-foreground">
+                              {product.serves}
+                            </p>
+                            <FoodTypeBadge foodType={product.foodType} size="sm" />
+                          </div>
+                          <h3 className="mt-1.5 text-base font-bold text-foreground">
+                            {product.name}
+                          </h3>
+                          {product.dietaryTags && product.dietaryTags.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              {product.dietaryTags.map((tag) => (
+                                <span
+                                  key={tag}
+                                  className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300"
+                                >
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          <p className="mt-2 flex-1 text-sm leading-relaxed text-muted-foreground">
+                            {product.description}
+                          </p>
 
                     <div className="mt-4 flex items-center gap-2 border-t border-border pt-4">
                       {qty > 0 ? (
@@ -724,11 +805,14 @@ export function VendorWebsiteView({
                         Ask
                       </a>
                     </div>
-                  </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
-          </div>
+              </>
+            );
+          })()}
         </section>
 
         {/* Booking Form + Verified Reviews side-by-side */}

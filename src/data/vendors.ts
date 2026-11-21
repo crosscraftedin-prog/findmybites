@@ -217,12 +217,15 @@ export function parseProductUnitFromServes(
   return { qty: '1', unit: 'custom', custom: s || 'Custom' };
 }
 
+export type ProductFoodType = 'veg' | 'non-veg';
+
 export interface VendorProduct {
   id: string;
   name: string;
   serves: string;
   unitQuantity?: string;
   unitType?: ProductUnitType;
+  foodType?: ProductFoodType;
   dietaryTags?: string[];
   priceUsd: number;
   description: string;

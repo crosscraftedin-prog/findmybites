@@ -31,6 +31,7 @@ import {
   getVendorBioHandle,
   sanitizeSafeHttpUrl,
 } from '../data/vendors';
+import { FoodTypeBadge } from './FoodTypeBadge';
 import { PromoCardModal } from './PromoCardModal';
 import { QrPosterModal } from './QrPosterModal';
 
@@ -419,7 +420,7 @@ export function VendorBioLinkView({
                     key={prod.id}
                     href={buildWhatsAppUrl(
                       vendor,
-                      `Hi ${vendor.name}! I'm interested in "${prod.name}" (${prod.serves}${prod.dietaryTags?.length ? ` · ${prod.dietaryTags.join(', ')}` : ''} · ${formatMoney(prod.priceUsd, currency)}) from your FindMyBites bio link.`
+                      `Hi ${vendor.name}! I'm interested in "${prod.name}" (${prod.serves}${prod.foodType === 'veg' ? ' · Veg' : prod.foodType === 'non-veg' ? ' · Non-Veg' : ''}${prod.dietaryTags?.length ? ` · ${prod.dietaryTags.join(', ')}` : ''} · ${formatMoney(prod.priceUsd, currency)}) from your FindMyBites bio link.`
                     )}
                     target="_blank"
                     rel="noopener noreferrer"
@@ -435,7 +436,10 @@ export function VendorBioLinkView({
                       />
                     </div>
                     <div className="min-w-0 flex-1 text-left">
-                      <p className="truncate text-xs font-bold">{prod.name}</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="truncate text-xs font-bold">{prod.name}</p>
+                        <FoodTypeBadge foodType={prod.foodType} size="xs" />
+                      </div>
                       <p className="truncate text-[11px] opacity-70">
                         {prod.serves}
                         {prod.dietaryTags && prod.dietaryTags.length > 0

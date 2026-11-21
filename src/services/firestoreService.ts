@@ -77,6 +77,8 @@ function sanitizeProducts(products: VendorProduct[], allowEmpty = false): Vendor
       typeof p.unitQuantity === 'string' && p.unitQuantity.trim()
         ? p.unitQuantity.trim().slice(0, 16)
         : undefined;
+    const foodType =
+      p.foodType === 'veg' || p.foodType === 'non-veg' ? p.foodType : undefined;
 
     return {
       id: sanitizeId(p.id || `prod-${idx + 1}`),
@@ -84,6 +86,7 @@ function sanitizeProducts(products: VendorProduct[], allowEmpty = false): Vendor
       serves: clampStr(p.serves || 'Custom', 1, 60, 'Custom'),
       ...(unitQuantity ? { unitQuantity } : {}),
       ...(unitType ? { unitType } : {}),
+      ...(foodType ? { foodType } : {}),
       ...(cleanDietary.length > 0 ? { dietaryTags: cleanDietary } : {}),
       priceUsd: Math.max(0, Math.min(100000, Number(p.priceUsd) || 0)),
       description: clampStr(p.description || p.name, 2, 400, 'Custom package'),
