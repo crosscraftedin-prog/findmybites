@@ -1,8 +1,10 @@
 import type { User } from 'firebase/auth';
 import {
+  KeyRound,
   LogIn,
   Moon,
   PartyPopper,
+  ShieldCheck,
   Snowflake,
   Sparkles,
   Store,
@@ -20,11 +22,15 @@ interface HeaderProps {
   savedCount: number;
   bookingsCount: number;
   user: User | null;
+  isAdmin?: boolean;
+  pendingTransferCount?: number;
   myVendorCount: number;
   onOpenSaved: () => void;
   onOpenBookings: () => void;
   onOpenListBusiness: () => void;
   onOpenDashboard: () => void;
+  onOpenAdminPanel?: () => void;
+  onOpenClaimStore?: () => void;
   onSignIn: () => void;
 }
 
@@ -36,11 +42,15 @@ export function Header({
   savedCount,
   bookingsCount,
   user,
+  isAdmin,
+  pendingTransferCount = 0,
   myVendorCount,
   onOpenSaved,
   onOpenBookings,
   onOpenListBusiness,
   onOpenDashboard,
+  onOpenAdminPanel,
+  onOpenClaimStore,
   onSignIn,
 }: HeaderProps) {
   return (
@@ -164,6 +174,24 @@ export function Header({
             )}
           </button>
 
+          {isAdmin && onOpenAdminPanel && (
+            <button
+              type="button"
+              onClick={onOpenAdminPanel}
+              className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border border-amber-500/40 bg-neutral-950 px-2.5 text-xs font-extrabold text-amber-300 shadow-sm transition-colors hover:bg-neutral-900 dark:bg-amber-500/15 dark:text-amber-300 whitespace-nowrap shrink-0"
+              title="Open Admin Concierge Panel to create & transfer baker stores"
+            >
+              <ShieldCheck className="size-3.5 shrink-0" aria-hidden="true" />
+              <span className="hidden md:inline">Admin Panel</span>
+              <span className="md:hidden">Admin</span>
+              {pendingTransferCount > 0 && (
+                <span className="rounded-full bg-amber-500 px-1.5 py-0.5 font-mono text-[10px] font-black leading-none text-neutral-950">
+                  {pendingTransferCount}
+                </span>
+              )}
+            </button>
+          )}
+
           {user ? (
             <button
               type="button"
@@ -186,14 +214,27 @@ export function Header({
               </span>
             </button>
           ) : (
-            <button
-              type="button"
-              onClick={onSignIn}
-              className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-card px-3 text-xs font-semibold text-foreground transition-colors hover:border-brand hover:text-brand whitespace-nowrap shrink-0"
-            >
-              <LogIn className="size-3.5" aria-hidden="true" />
-              <span className="hidden md:inline">Sign in</span>
-            </button>
+            <>
+              {onOpenClaimStore && (
+                <button
+                  type="button"
+                  onClick={onOpenClaimStore}
+                  className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-2.5 text-xs font-bold text-emerald-700 transition-colors hover:bg-emerald-500/20 dark:text-emerald-300 whitespace-nowrap shrink-0"
+                  title="Enter your passcode to claim your pre-built storefront"
+                >
+                  <KeyRound className="size-3.5" aria-hidden="true" />
+                  <span className="hidden md:inline">Claim Store</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={onSignIn}
+                className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-card px-3 text-xs font-semibold text-foreground transition-colors hover:border-brand hover:text-brand whitespace-nowrap shrink-0"
+              >
+                <LogIn className="size-3.5" aria-hidden="true" />
+                <span className="hidden md:inline">Sign in</span>
+              </button>
+            </>
           )}
 
           <button

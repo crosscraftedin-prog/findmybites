@@ -35,7 +35,9 @@ import {
   X,
 } from 'lucide-react';
 import { onAuthStateChanged, type User as FirebaseUser } from 'firebase/auth';
+import { AdminPanelModal } from './components/AdminPanelModal';
 import { ChristmasSpotlightSection } from './components/ChristmasSpotlightSection';
+import { ClaimModalInitialTab, ClaimStoreModal } from './components/ClaimStoreModal';
 import { Ecosystem, Header } from './components/Header';
 import { JoshPlannerDrawer } from './components/JoshPlannerDrawer';
 import { ListBusinessModal } from './components/ListBusinessModal';
@@ -48,6 +50,7 @@ import { VendorCard } from './components/VendorCard';
 import { VendorDashboardModal } from './components/VendorDashboardModal';
 import { VendorMetrics, VendorWebsiteView } from './components/VendorWebsiteView';
 import {
+  AdminTransferRecord,
   BookingEnquiry,
   CATEGORY_CARDS,
   COUNTRY_REGION_LABEL,
@@ -68,6 +71,7 @@ import {
   QuickFilterTag,
   SAAS_PLANS,
   STATES_BY_COUNTRY,
+  StoreClaim,
   Vendor,
   formatPlanPrice,
   getVendorBioHandle,
@@ -83,6 +87,8 @@ import {
   ensureUserProfile,
   incrementVendorMetricInCloud,
   subscribeActiveVendors,
+  subscribeAdminStoreClaims,
+  subscribeAdminTransfers,
   subscribeMyBookings,
   subscribeMyEventRequests,
   subscribeMyVendors,
@@ -454,6 +460,10 @@ export default function App() {
   const [listModalChristmas, setListModalChristmas] = useState(false);
   const [snowEnabled, setSnowEnabled] = useState(true);
   const [dashboardOpen, setDashboardOpen] = useState(false);
+  const [adminPanelOpen, setAdminPanelOpen] = useState(false);
+  const [claimModalOpen, setClaimModalOpen] = useState(false);
+  const [claimModalTab, setClaimModalTab] = useState<ClaimModalInitialTab>('claim');
+  const [claimHintSlug, setClaimHintSlug] = useState<string | null>(null);
   const [editVendorId, setEditVendorId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -466,6 +476,8 @@ export default function App() {
   const [vendorLeads, setVendorLeads] = useState<BookingEnquiry[]>([]);
   const [myEventRequests, setMyEventRequests] = useState<EventRequest[]>([]);
   const [openEventRequests, setOpenEventRequests] = useState<EventRequest[]>([]);
+  const [adminTransfers, setAdminTransfers] = useState<AdminTransferRecord[]>([]);
+  const [adminStoreClaims, setAdminStoreClaims] = useState<StoreClaim[]>([]);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
@@ -623,8 +635,33 @@ export default function App() {
   }, [bioVendor, allVendors]);
 
   const isAdminUser = Boolean(
-    authUser?.email && authUser.email.toLowerCase() === ADMIN_EMAIL.toLowerCase()
+    authUser?.emailVerified &&
+      authUser?.email &&
+      authUser.email.toLowerCase() === ADMIN_EMAIL.toLowerCase()
   );
+
+  useEffect(() => {
+    if (!authReady || !isAdminUser) {
+      setAdminTransfers([]);
+      setAdminStoreClaims([]);
+      return;
+    }
+    const unsubTransfers = subscribeAdminTransfers(setAdminTransfers);
+    const unsubClaims = subscribeAdminStoreClaims(setAdminStoreClaims);
+    return () => {
+      unsubTransfers();
+      unsubClaims();
+    };
+  }, [authReady, isAdminUser]);
+
+  const pendingTransferCount = useMemo(() => {
+    const claimedIds = new Set(
+      adminStoreClaims.filter((c) => c.status === 'claimed').map((c) => c.id)
+    );
+    return adminTransfers.filter(
+      (t) => t.status === 'pending' && !claimedIds.has(t.claimId)
+    ).length;
+  }, [adminTransfers, adminStoreClaims]);
 
   const dashboardVendors = useMemo(() => {
     if (!isAdminUser) return myCloudVendors;
@@ -692,7 +729,16 @@ export default function App() {
 
     const syncRouteFromUrl = (fromPopState: boolean) => {
       const pathname = window.location.pathname;
-      if (pathname.startsWith('/fmb/')) {
+      if (pathname === '/claim' || pathname.startsWith('/claim/')) {
+        const slugPart = pathname.startsWith('/claim/')
+          ? decodeURIComponent(pathname.slice(7)).replace(/\/$/, '').toLowerCase()
+          : '';
+        setActiveVendor(null);
+        setBioVendor(null);
+        setClaimHintSlug(slugPart || null);
+        setClaimModalTab('claim');
+        setClaimModalOpen(true);
+      } else if (pathname.startsWith('/fmb/')) {
         const handle = decodeURIComponent(pathname.slice(5)).replace(/\/$/, '').toLowerCase();
         const matched = findByBioHandleOrSlug(handle);
         if (matched) {
@@ -716,6 +762,7 @@ export default function App() {
       } else if (fromPopState) {
         setActiveVendor(null);
         setBioVendor(null);
+        setClaimModalOpen(false);
       }
     };
 
@@ -1198,12 +1245,24 @@ export default function App() {
         savedCount={savedIds.length}
         bookingsCount={effectiveBookings.length}
         user={authUser}
+        isAdmin={isAdminUser}
+        pendingTransferCount={pendingTransferCount}
         myVendorCount={dashboardVendors.length}
         onOpenSaved={() => setDrawerTab('saved')}
         onOpenBookings={() => setDrawerTab('bookings')}
         onOpenListBusiness={() => handleOpenListModal('free')}
         onOpenDashboard={() => setDashboardOpen(true)}
-        onSignIn={() => void handleSignIn()}
+        onOpenAdminPanel={() => setAdminPanelOpen(true)}
+        onOpenClaimStore={() => {
+          setClaimHintSlug(null);
+          setClaimModalTab('claim');
+          setClaimModalOpen(true);
+        }}
+        onSignIn={() => {
+          setClaimHintSlug(null);
+          setClaimModalTab('login');
+          setClaimModalOpen(true);
+        }}
       />
 
       {/* Location Access Banner — matches live website Allow Location + Search by City bar */}
@@ -2839,6 +2898,64 @@ export default function App() {
         defaultCountry={detectDefaultCountry()}
         onClose={() => setLocationPickerOpen(false)}
         onSelectLocation={handleSelectLocation}
+      />
+
+      {/* Admin Concierge Panel: Build Baker Stores, Add Products & Generate Phone Passcode Transfers */}
+      {isAdminUser && authUser && (
+        <AdminPanelModal
+          open={adminPanelOpen}
+          onClose={() => setAdminPanelOpen(false)}
+          adminUser={authUser}
+          cloudVendors={cloudVendors}
+          transfers={adminTransfers}
+          claims={adminStoreClaims}
+          currency={currency}
+          onEditVendor={handleEditStorefront}
+          onPreviewVendor={setActiveVendor}
+          onToast={setNotice}
+        />
+      )}
+
+      {/* Baker Store Claim (Passcode + Set Password) & Phone/Google Login Modal */}
+      <ClaimStoreModal
+        open={claimModalOpen}
+        onClose={() => {
+          setClaimModalOpen(false);
+          if (window.location.pathname.startsWith('/claim')) {
+            try {
+              window.history.pushState({}, '', '/');
+            } catch {
+              // ignore history restrictions
+            }
+          }
+        }}
+        initialTab={claimModalTab}
+        hintVendorName={
+          claimHintSlug
+            ? allVendors.find((v) => v.slug.toLowerCase() === claimHintSlug)?.name
+            : undefined
+        }
+        currentUser={authUser}
+        isAdminUser={isAdminUser}
+        onClaimSuccess={(claimedVendorId, claimedVendorName) => {
+          setNotice(
+            `Welcome! You now own "${claimedVendorName}". Opening your Storefront Editor so you can customize anything.`
+          );
+          setEditVendorId(claimedVendorId);
+          setDashboardOpen(true);
+          if (window.location.pathname.startsWith('/claim')) {
+            try {
+              window.history.pushState({}, '', '/');
+            } catch {
+              // ignore
+            }
+          }
+        }}
+        onLoginSuccess={(loggedInUser) => {
+          setNotice(
+            `Signed in as ${loggedInUser.displayName || loggedInUser.email}. Cloud sync is active!`
+          );
+        }}
       />
 
       {/* Festive Winter Snowfall Overlay + On/Off Toggle */}

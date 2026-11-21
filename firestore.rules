@@ -24,18 +24,37 @@ service cloud.firestore {
       return isSignedIn() && request.auth.token.email_verified == true;
     }
 
+    // Password-authenticated vendor accounts created via Admin Concierge Store Claim
+    function isPasswordUser() {
+      return isSignedIn() &&
+        request.auth.token.firebase.sign_in_provider == 'password';
+    }
+
+    function isAuthenticatedUser() {
+      return isVerifiedUser() || isPasswordUser();
+    }
+
     function isOwner(uid) {
-      return isVerifiedUser() && request.auth.uid == uid;
+      return isAuthenticatedUser() && request.auth.uid == uid;
     }
 
     function isValidId(id) {
       return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
+    function isValidSha256Id(id) {
+      return id is string && id.size() == 64 && id.matches('^[a-f0-9]{64}$');
+    }
+
+    // Root admin token check (no DB lookup, strictly enforces email_verified == true to prevent spoofing)
+    function isRootAdminToken() {
+      return isVerifiedUser() && request.auth.token.email == 'crosscraftedin@gmail.com';
+    }
+
     function isAdmin() {
       return isVerifiedUser() && (
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
-        request.auth.token.email == 'crosscraftedin@gmail.com'
+        request.auth.token.email == 'crosscraftedin@gmail.com' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
       );
     }
 
@@ -87,6 +106,7 @@ service cloud.firestore {
           'christmasSpecial', 'christmasOffer',
           'bioHandle', 'bioTheme', 'instagramHandle', 'customLinks',
           'serviceAreas', 'specialties', 'image', 'logo', 'gallery', 'products',
+          'claimStatus', 'claimedByToken',
           'createdAt', 'updatedAt'
         ]) &&
         isValidId(data.ownerId) &&
@@ -119,6 +139,8 @@ service cloud.firestore {
         (!('bioTheme' in data) || data.bioTheme in ['saffron', 'midnight', 'party', 'cream']) &&
         (!('instagramHandle' in data) || (data.instagramHandle is string && data.instagramHandle.size() <= 80)) &&
         (!('customLinks' in data) || isValidCustomLinksList(data.customLinks)) &&
+        (!('claimStatus' in data) || data.claimStatus in ['none', 'pending', 'claimed']) &&
+        (!('claimedByToken' in data) || isValidSha256Id(data.claimedByToken)) &&
         isValidStringList(data.serviceAreas, 10, 100) &&
         isValidStringList(data.specialties, 10, 100) &&
         data.image is string && data.image.size() >= 1 && data.image.size() <= 150000 &&
@@ -259,6 +281,48 @@ service cloud.firestore {
         data.grantedAt is timestamp;
     }
 
+    function isValidStoreClaim(data) {
+      return data.keys().hasAll([
+          'vendorId', 'vendorSlug', 'vendorName', 'phoneLast4',
+          'status', 'createdBy', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'vendorId', 'vendorSlug', 'vendorName', 'phoneLast4',
+          'status', 'createdBy', 'claimedBy', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.vendorId) &&
+        data.vendorSlug is string && data.vendorSlug.size() >= 2 && data.vendorSlug.size() <= 100 && data.vendorSlug.matches('^[a-z0-9\\-]+$') &&
+        data.vendorName is string && data.vendorName.size() >= 2 && data.vendorName.size() <= 100 &&
+        data.phoneLast4 is string && data.phoneLast4.size() == 4 && data.phoneLast4.matches('^[0-9]{4}$') &&
+        data.status in ['pending', 'claimed', 'revoked'] &&
+        isValidId(data.createdBy) &&
+        (!('claimedBy' in data) || isValidId(data.claimedBy)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidAdminTransfer(data, vendorId) {
+      return data.keys().hasAll([
+          'vendorId', 'vendorName', 'vendorSlug', 'targetPhone',
+          'passcode', 'claimId', 'status', 'createdBy', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'vendorId', 'vendorName', 'vendorSlug', 'targetPhone',
+          'passcode', 'claimId', 'status', 'createdBy', 'createdAt', 'updatedAt'
+        ]) &&
+        data.vendorId == vendorId &&
+        isValidId(data.vendorId) &&
+        data.vendorName is string && data.vendorName.size() >= 2 && data.vendorName.size() <= 100 &&
+        data.vendorSlug is string && data.vendorSlug.size() >= 2 && data.vendorSlug.size() <= 100 && data.vendorSlug.matches('^[a-z0-9\\-]+$') &&
+        data.targetPhone is string && data.targetPhone.size() >= 7 && data.targetPhone.size() <= 18 && data.targetPhone.matches('^[0-9]+$') &&
+        data.passcode is string && data.passcode.size() >= 6 && data.passcode.size() <= 24 && data.passcode.matches('^[A-Z0-9\\-]+$') &&
+        isValidSha256Id(data.claimId) &&
+        data.status in ['pending', 'claimed', 'revoked'] &&
+        isValidId(data.createdBy) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
     // --- Collection: /vendors/{vendorId} ---
     match /vendors/{vendorId} {
       allow get: if isValidId(vendorId) && (
@@ -268,24 +332,27 @@ service cloud.firestore {
       );
 
       allow list: if existing().status == 'active' ||
-        (isVerifiedUser() && existing().ownerId == request.auth.uid);
+        (isAuthenticatedUser() && existing().ownerId == request.auth.uid) ||
+        isRootAdminToken();
 
-      allow create: if isVerifiedUser() &&
+      allow create: if isAuthenticatedUser() &&
         isValidId(vendorId) &&
         isValidVendor(incoming()) &&
         incoming().ownerId == request.auth.uid &&
+        !('claimedByToken' in incoming()) &&
+        (!('claimStatus' in incoming()) || incoming().claimStatus == 'none' || (incoming().claimStatus == 'pending' && isAdmin())) &&
         incoming().createdAt == request.time &&
         incoming().updatedAt == request.time &&
         ((incoming().verified == false && incoming().reviewCount == 0) || isAdmin());
 
-      allow update: if isVerifiedUser() &&
+      allow update: if isAuthenticatedUser() &&
         isValidId(vendorId) &&
         isValidVendor(incoming()) &&
-        incoming().ownerId == existing().ownerId &&
         incoming().createdAt == existing().createdAt &&
         incoming().updatedAt == request.time && (
           // Tier 1: Owner editing storefront details, Christmas promo, bio-link settings, gallery, products, or plan
           (
+            incoming().ownerId == existing().ownerId &&
             isOwner(existing().ownerId) &&
             incoming().verified == existing().verified &&
             incoming().rating == existing().rating &&
@@ -300,19 +367,118 @@ service cloud.firestore {
               'specialties', 'image', 'logo', 'gallery', 'products', 'updatedAt'
             ])
           ) ||
-          // Tier 2: Admin verification, moderation & Christmas spotlight promotion
+          // Tier 2: Admin verification, moderation, Christmas promotion, concierge product setup & handover status
           (
+            incoming().ownerId == existing().ownerId &&
             isAdmin() &&
             incoming().diff(existing()).affectedKeys().hasOnly([
-              'verified', 'status', 'planTier', 'monthlyAutoPay',
-              'christmasSpecial', 'christmasOffer', 'updatedAt'
+              'name', 'category', 'country', 'state', 'city', 'area',
+              'lat', 'lng', 'whatsappNumber', 'verified', 'status',
+              'planTier', 'monthlyAutoPay', 'priceTier', 'startingPriceUsd',
+              'tagline', 'description', 'promoBanner', 'christmasSpecial',
+              'christmasOffer', 'bioHandle', 'bioTheme', 'instagramHandle',
+              'customLinks', 'serviceAreas', 'specialties', 'image', 'logo',
+              'gallery', 'products', 'claimStatus', 'updatedAt'
             ])
+          ) ||
+          // Tier 3: Atomic Baker Store Claim Transfer using a valid SHA-256 /storeClaims/{claimId} ticket
+          (
+            existing().claimStatus == 'pending' &&
+            incoming().ownerId == request.auth.uid &&
+            incoming().claimStatus == 'claimed' &&
+            isValidSha256Id(incoming().claimedByToken) &&
+            incoming().verified == existing().verified &&
+            incoming().rating == existing().rating &&
+            incoming().reviewCount == existing().reviewCount &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'ownerId', 'claimStatus', 'claimedByToken', 'updatedAt'
+            ]) &&
+            get(/databases/$(database)/documents/storeClaims/$(incoming().claimedByToken)).data.status == 'pending' &&
+            get(/databases/$(database)/documents/storeClaims/$(incoming().claimedByToken)).data.vendorId == vendorId &&
+            getAfter(/databases/$(database)/documents/storeClaims/$(incoming().claimedByToken)).data.status == 'claimed' &&
+            getAfter(/databases/$(database)/documents/storeClaims/$(incoming().claimedByToken)).data.claimedBy == request.auth.uid
           )
         );
 
-      allow delete: if isVerifiedUser() &&
+      allow delete: if isAuthenticatedUser() &&
         isValidId(vendorId) &&
         (isOwner(existing().ownerId) || isAdmin());
+    }
+
+    // --- Collection: /storeClaims/{claimId} (Zero-PII Cryptographic Store Handover Tickets) ---
+    match /storeClaims/{claimId} {
+      // Proof-of-knowledge lookup: caller must know exact SHA-256(phone + passcode)
+      allow get: if isValidSha256Id(claimId);
+
+      // Strictly admin-only listing (O(1) token check, zero get()/exists() cost)
+      allow list: if isRootAdminToken() || (isVerifiedUser() && existing().createdBy == request.auth.uid);
+
+      allow create: if isAdmin() &&
+        isValidSha256Id(claimId) &&
+        isValidStoreClaim(incoming()) &&
+        incoming().createdBy == request.auth.uid &&
+        incoming().status == 'pending' &&
+        !('claimedBy' in incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        existsAfter(/databases/$(database)/documents/vendors/$(incoming().vendorId));
+
+      allow update: if isAuthenticatedUser() &&
+        isValidSha256Id(claimId) &&
+        isValidStoreClaim(incoming()) &&
+        incoming().vendorId == existing().vendorId &&
+        incoming().vendorSlug == existing().vendorSlug &&
+        incoming().vendorName == existing().vendorName &&
+        incoming().phoneLast4 == existing().phoneLast4 &&
+        incoming().createdBy == existing().createdBy &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          // Action 1: Baker redeems pending ticket atomically with /vendors/{vendorId} ownership transfer
+          (
+            existing().status == 'pending' &&
+            incoming().status == 'claimed' &&
+            incoming().claimedBy == request.auth.uid &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'claimedBy', 'updatedAt']) &&
+            getAfter(/databases/$(database)/documents/vendors/$(existing().vendorId)).data.ownerId == request.auth.uid &&
+            getAfter(/databases/$(database)/documents/vendors/$(existing().vendorId)).data.claimStatus == 'claimed' &&
+            getAfter(/databases/$(database)/documents/vendors/$(existing().vendorId)).data.claimedByToken == claimId
+          ) ||
+          // Action 2: Admin revokes a pending ticket (terminal)
+          (
+            isAdmin() &&
+            existing().status == 'pending' &&
+            incoming().status == 'revoked' &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+          )
+        );
+
+      allow delete: if isAdmin() && isValidSha256Id(claimId);
+    }
+
+    // --- Collection: /adminTransfers/{vendorId} (Admin-Only Handover Log with Phone & Passcode) ---
+    match /adminTransfers/{vendorId} {
+      allow get: if isAdmin() && isValidId(vendorId);
+      allow list: if isRootAdminToken() || (isVerifiedUser() && existing().createdBy == request.auth.uid);
+
+      allow create: if isAdmin() &&
+        isValidId(vendorId) &&
+        isValidAdminTransfer(incoming(), vendorId) &&
+        incoming().createdBy == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isAdmin() &&
+        isValidId(vendorId) &&
+        isValidAdminTransfer(incoming(), vendorId) &&
+        incoming().vendorId == existing().vendorId &&
+        incoming().createdBy == existing().createdBy &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'vendorName', 'vendorSlug', 'targetPhone', 'passcode', 'claimId', 'status', 'updatedAt'
+        ]);
+
+      allow delete: if isAdmin() && isValidId(vendorId);
     }
 
     // --- Collection: /users/{userId} (Private PII & Saved Shortlist) ---
@@ -320,14 +486,14 @@ service cloud.firestore {
       allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
       allow list: if false;
 
-      allow create: if isVerifiedUser() &&
+      allow create: if isAuthenticatedUser() &&
         isValidId(userId) &&
         isOwner(userId) &&
         isValidUserProfile(incoming(), userId) &&
         incoming().createdAt == request.time &&
         incoming().updatedAt == request.time;
 
-      allow update: if isVerifiedUser() &&
+      allow update: if isAuthenticatedUser() &&
         isValidId(userId) &&
         isValidUserProfile(incoming(), userId) &&
         incoming().uid == existing().uid &&
@@ -347,23 +513,23 @@ service cloud.firestore {
           )
         );
 
-      allow delete: if isVerifiedUser() && isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow delete: if isAuthenticatedUser() && isValidId(userId) && (isOwner(userId) || isAdmin());
     }
 
     // --- Collection: /bookings/{bookingId} (Private Customer <-> Vendor Enquiries) ---
     match /bookings/{bookingId} {
-      allow get: if isValidId(bookingId) && isVerifiedUser() && (
+      allow get: if isValidId(bookingId) && isAuthenticatedUser() && (
         existing().customerId == request.auth.uid ||
         existing().vendorOwnerId == request.auth.uid ||
         isAdmin()
       );
 
-      allow list: if isVerifiedUser() && (
+      allow list: if isAuthenticatedUser() && (
         existing().customerId == request.auth.uid ||
         existing().vendorOwnerId == request.auth.uid
       );
 
-      allow create: if isVerifiedUser() &&
+      allow create: if isAuthenticatedUser() &&
         isValidId(bookingId) &&
         isValidBooking(incoming()) &&
         incoming().customerId == request.auth.uid &&
@@ -371,7 +537,7 @@ service cloud.firestore {
         incoming().createdAt == request.time &&
         incoming().updatedAt == request.time;
 
-      allow update: if isVerifiedUser() &&
+      allow update: if isAuthenticatedUser() &&
         isValidId(bookingId) &&
         isValidBooking(incoming()) &&
         incoming().customerId == existing().customerId &&
@@ -401,7 +567,7 @@ service cloud.firestore {
           )
         );
 
-      allow delete: if isVerifiedUser() &&
+      allow delete: if isAuthenticatedUser() &&
         isValidId(bookingId) &&
         (existing().customerId == request.auth.uid || isAdmin());
     }
@@ -411,7 +577,7 @@ service cloud.firestore {
       allow get: if isValidId(reviewId);
       allow list: if existing().rating >= 1 && existing().rating <= 5;
 
-      allow create: if isVerifiedUser() &&
+      allow create: if isAuthenticatedUser() &&
         isValidId(reviewId) &&
         isValidReview(incoming()) &&
         incoming().authorId == request.auth.uid &&
@@ -419,25 +585,25 @@ service cloud.firestore {
 
       allow update: if false;
 
-      allow delete: if isVerifiedUser() &&
+      allow delete: if isAuthenticatedUser() &&
         isValidId(reviewId) &&
         (existing().authorId == request.auth.uid || isAdmin());
     }
 
     // --- Collection: /eventRequests/{requestId} (Broadcast Event Leads — No PII) ---
     match /eventRequests/{requestId} {
-      allow get: if isValidId(requestId) && isVerifiedUser() && (
+      allow get: if isValidId(requestId) && isAuthenticatedUser() && (
         existing().status == 'open' ||
         existing().customerId == request.auth.uid ||
         isAdmin()
       );
 
-      allow list: if isVerifiedUser() && (
+      allow list: if isAuthenticatedUser() && (
         existing().status == 'open' ||
         existing().customerId == request.auth.uid
       );
 
-      allow create: if isVerifiedUser() &&
+      allow create: if isAuthenticatedUser() &&
         isValidId(requestId) &&
         isValidEventRequest(incoming()) &&
         incoming().customerId == request.auth.uid &&
@@ -445,7 +611,7 @@ service cloud.firestore {
         incoming().createdAt == request.time &&
         incoming().updatedAt == request.time;
 
-      allow update: if isVerifiedUser() &&
+      allow update: if isAuthenticatedUser() &&
         isValidId(requestId) &&
         isValidEventRequest(incoming()) &&
         incoming().customerId == existing().customerId &&
@@ -465,25 +631,25 @@ service cloud.firestore {
           )
         );
 
-      allow delete: if isVerifiedUser() &&
+      allow delete: if isAuthenticatedUser() &&
         isValidId(requestId) &&
         (existing().customerId == request.auth.uid || isAdmin());
 
       // --- Subcollection: /eventRequests/{requestId}/quotes/{quoteId} (Master Gate) ---
       match /quotes/{quoteId} {
-        allow get: if isValidId(requestId) && isValidId(quoteId) && isVerifiedUser() && (
+        allow get: if isValidId(requestId) && isValidId(quoteId) && isAuthenticatedUser() && (
           existing().vendorOwnerId == request.auth.uid ||
           existing().requestCustomerId == request.auth.uid ||
           get(/databases/$(database)/documents/eventRequests/$(requestId)).data.customerId == request.auth.uid ||
           isAdmin()
         );
 
-        allow list: if isVerifiedUser() && (
+        allow list: if isAuthenticatedUser() && (
           existing().vendorOwnerId == request.auth.uid ||
           existing().requestCustomerId == request.auth.uid
         );
 
-        allow create: if isVerifiedUser() &&
+        allow create: if isAuthenticatedUser() &&
           isValidId(requestId) &&
           isValidId(quoteId) &&
           isValidEventQuote(incoming(), requestId) &&
@@ -495,7 +661,7 @@ service cloud.firestore {
 
         allow update: if false;
 
-        allow delete: if isVerifiedUser() &&
+        allow delete: if isAuthenticatedUser() &&
           isValidId(requestId) &&
           isValidId(quoteId) &&
           (existing().vendorOwnerId == request.auth.uid || isAdmin());
@@ -507,7 +673,7 @@ service cloud.firestore {
       allow get: if isValidId(vendorId);
       allow list: if false;
 
-      allow create: if isVerifiedUser() &&
+      allow create: if isAuthenticatedUser() &&
         isValidId(vendorId) &&
         isValidVendorMetric(incoming(), vendorId) &&
         incoming().views <= 1 &&
@@ -515,7 +681,7 @@ service cloud.firestore {
         incoming().shares <= 1 &&
         incoming().updatedAt == request.time;
 
-      allow update: if isVerifiedUser() &&
+      allow update: if isAuthenticatedUser() &&
         isValidId(vendorId) &&
         isValidVendorMetric(incoming(), vendorId) &&
         incoming().vendorId == existing().vendorId &&

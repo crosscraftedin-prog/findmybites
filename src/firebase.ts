@@ -1,9 +1,12 @@
 import { initializeApp } from 'firebase/app';
 import {
   GoogleAuthProvider,
+  createUserWithEmailAndPassword,
   getAuth,
+  signInWithEmailAndPassword,
   signInWithPopup,
   signOut,
+  updateProfile,
   type User,
 } from 'firebase/auth';
 import { doc, getDocFromServer, getFirestore } from 'firebase/firestore';
@@ -82,6 +85,73 @@ void testConnection();
 export async function signInWithGoogle(): Promise<User> {
   const result = await signInWithPopup(auth, googleProvider);
   return result.user;
+}
+
+export function phoneToVendorAuthEmail(phoneDigits: string): string {
+  const digits = phoneDigits.replace(/\D/g, '').slice(0, 18);
+  return `v${digits}@phone.findmybites.com`;
+}
+
+export async function registerVendorWithPhonePassword(
+  phoneDigits: string,
+  password: string,
+  displayName: string
+): Promise<User> {
+  const email = phoneToVendorAuthEmail(phoneDigits);
+  const credential = await createUserWithEmailAndPassword(auth, email, password);
+  if (displayName.trim()) {
+    try {
+      await updateProfile(credential.user, { displayName: displayName.trim().slice(0, 80) });
+    } catch {
+      // Non-fatal profile name update
+    }
+  }
+  return credential.user;
+}
+
+export async function signInVendorWithPhonePassword(
+  phoneDigits: string,
+  password: string
+): Promise<User> {
+  const email = phoneToVendorAuthEmail(phoneDigits);
+  const credential = await signInWithEmailAndPassword(auth, email, password);
+  return credential.user;
+}
+
+export function mapAuthErrorMessage(err: unknown): string {
+  const code =
+    typeof err === 'object' && err !== null && 'code' in err
+      ? String((err as { code?: unknown }).code || '')
+      : '';
+  const msg = err instanceof Error ? err.message : String(err);
+
+  if (
+    code === 'auth/operation-not-allowed' ||
+    code === 'auth/configuration-not-found' ||
+    msg.includes('operation-not-allowed')
+  ) {
+    return 'Email/Password login is not enabled yet in Firebase Console (Authentication → Sign-in method → Email/Password). Enable it once, or click "Claim with Google" below for instant access.';
+  }
+  if (code === 'auth/email-already-in-use') {
+    return 'An account for this phone number already exists. Enter your existing password or switch to Vendor Login.';
+  }
+  if (code === 'auth/weak-password') {
+    return 'Password must be at least 6 characters long.';
+  }
+  if (
+    code === 'auth/invalid-credential' ||
+    code === 'auth/wrong-password' ||
+    code === 'auth/user-not-found'
+  ) {
+    return 'Incorrect phone number or password. Please check your country code and try again.';
+  }
+  if (code === 'auth/too-many-requests') {
+    return 'Too many attempts. Please wait a minute and try again.';
+  }
+  if (code === 'auth/popup-closed-by-user') {
+    return 'Sign-in popup was closed before completing.';
+  }
+  return msg || 'Authentication failed. Please try again.';
 }
 
 export async function signOutUser(): Promise<void> {

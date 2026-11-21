@@ -214,6 +214,71 @@ export interface Vendor {
   gallery?: string[];
   products: VendorProduct[];
   reviews: VendorReview[];
+  claimStatus?: 'none' | 'pending' | 'claimed';
+  claimedByToken?: string;
+}
+
+export interface StoreClaim {
+  id: string; // 64-char SHA-256 hex digest of phone + passcode
+  vendorId: string;
+  vendorSlug: string;
+  vendorName: string;
+  phoneLast4: string;
+  status: 'pending' | 'claimed' | 'revoked';
+  createdBy: string;
+  claimedBy?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminTransferRecord {
+  vendorId: string;
+  vendorName: string;
+  vendorSlug: string;
+  targetPhone: string;
+  passcode: string;
+  claimId: string;
+  status: 'pending' | 'claimed' | 'revoked';
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export function normalizePhoneDigits(raw: string): string {
+  return raw.replace(/\D/g, '').slice(0, 18);
+}
+
+export function normalizePasscode(raw: string): string {
+  return raw
+    .toUpperCase()
+    .replace(/[^A-Z0-9-]/g, '')
+    .slice(0, 24);
+}
+
+export function generateTransferPasscode(prefix = 'FMB'): string {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const bytes = new Uint8Array(6);
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+    crypto.getRandomValues(bytes);
+  } else {
+    for (let i = 0; i < bytes.length; i += 1) {
+      bytes[i] = Math.floor(Math.random() * 256);
+    }
+  }
+  const code = Array.from(bytes, (b) => alphabet[b % alphabet.length]).join('');
+  const cleanPrefix = prefix.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4) || 'FMB';
+  return `${cleanPrefix}-${code}`;
+}
+
+export async function computeClaimId(phoneRaw: string, passcodeRaw: string): Promise<string> {
+  const phone = normalizePhoneDigits(phoneRaw);
+  const passcode = normalizePasscode(passcodeRaw).replace(/-/g, '');
+  const material = `fmb-claim-v1:${phone}:${passcode}`;
+  const encoded = new TextEncoder().encode(material);
+  const digest = await crypto.subtle.digest('SHA-256', encoded);
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
 }
 
 export function isChristmasVendor(vendor: Vendor): boolean {

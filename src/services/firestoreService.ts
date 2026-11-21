@@ -11,8 +11,10 @@ import {
   Timestamp,
   updateDoc,
   where,
+  writeBatch,
 } from 'firebase/firestore';
 import {
+  AdminTransferRecord,
   BioTheme,
   BookingEnquiry,
   CloudVendorMetric,
@@ -21,10 +23,14 @@ import {
   LaunchCountry,
   PlanTier,
   PriceTier,
+  StoreClaim,
   Vendor,
   VendorBioLink,
   VendorProduct,
   VendorReview,
+  computeClaimId,
+  normalizePasscode,
+  normalizePhoneDigits,
   sanitizeSafeHttpUrl,
 } from '../data/vendors';
 import { auth, db, handleFirestoreError, OperationType } from '../firebase';
@@ -173,6 +179,14 @@ function docToVendor(id: string, data: Record<string, unknown>): Vendor {
       : undefined,
     products,
     reviews: [],
+    claimStatus:
+      data.claimStatus === 'pending' || data.claimStatus === 'claimed' || data.claimStatus === 'none'
+        ? data.claimStatus
+        : undefined,
+    claimedByToken:
+      typeof data.claimedByToken === 'string' && data.claimedByToken.length === 64
+        ? data.claimedByToken
+        : undefined,
   };
 }
 
@@ -805,7 +819,7 @@ export async function incrementVendorMetricInCloud(
   field: 'views' | 'whatsappClicks' | 'shares'
 ): Promise<void> {
   const currentUser = auth.currentUser;
-  if (!currentUser || !currentUser.emailVerified) return;
+  if (!currentUser) return;
 
   const safeId = sanitizeId(vendorId);
   const ref = doc(db, 'vendorMetrics', safeId);
@@ -862,3 +876,412 @@ export function subscribeVendorMetric(
     }
   );
 }
+
+// ============================================================================
+// ADMIN CONCIERGE STORE BUILDER & CRYPTOGRAPHIC PASSCODE TRANSFER
+// ============================================================================
+
+function docToStoreClaim(id: string, data: Record<string, unknown>): StoreClaim {
+  return {
+    id,
+    vendorId: typeof data.vendorId === 'string' ? data.vendorId : '',
+    vendorSlug: typeof data.vendorSlug === 'string' ? data.vendorSlug : '',
+    vendorName: typeof data.vendorName === 'string' ? data.vendorName : 'Storefront',
+    phoneLast4: typeof data.phoneLast4 === 'string' ? data.phoneLast4 : '0000',
+    status:
+      data.status === 'claimed' || data.status === 'revoked' ? data.status : 'pending',
+    createdBy: typeof data.createdBy === 'string' ? data.createdBy : '',
+    claimedBy: typeof data.claimedBy === 'string' ? data.claimedBy : undefined,
+    createdAt: formatTs(data.createdAt),
+    updatedAt: formatTs(data.updatedAt),
+  };
+}
+
+function docToAdminTransfer(id: string, data: Record<string, unknown>): AdminTransferRecord {
+  return {
+    vendorId: typeof data.vendorId === 'string' ? data.vendorId : id,
+    vendorName: typeof data.vendorName === 'string' ? data.vendorName : 'Storefront',
+    vendorSlug: typeof data.vendorSlug === 'string' ? data.vendorSlug : '',
+    targetPhone: typeof data.targetPhone === 'string' ? data.targetPhone : '',
+    passcode: typeof data.passcode === 'string' ? data.passcode : '',
+    claimId: typeof data.claimId === 'string' ? data.claimId : '',
+    status:
+      data.status === 'claimed' || data.status === 'revoked' ? data.status : 'pending',
+    createdBy: typeof data.createdBy === 'string' ? data.createdBy : '',
+    createdAt: formatTs(data.createdAt),
+    updatedAt: formatTs(data.updatedAt),
+  };
+}
+
+export interface AdminCreateStoreTransferResult {
+  vendor: Vendor;
+  transfer: AdminTransferRecord;
+}
+
+export async function adminCreateStoreWithTransfer(
+  vendor: Vendor,
+  adminUid: string,
+  targetPhoneRaw: string,
+  passcodeRaw: string
+): Promise<AdminCreateStoreTransferResult> {
+  const targetPhone = normalizePhoneDigits(targetPhoneRaw);
+  if (targetPhone.length < 7) {
+    throw new Error('Please enter a valid baker phone number with country code (at least 7 digits).');
+  }
+  const cleanPasscode = normalizePasscode(passcodeRaw);
+  if (cleanPasscode.length < 6) {
+    throw new Error('Passcode must be at least 6 characters (letters/numbers).');
+  }
+
+  const vendorId = sanitizeId(vendor.id || `${vendor.slug}-${Date.now().toString().slice(-4)}`);
+  const slug = sanitizeSlug(vendor.slug || vendor.name);
+  const name = clampStr(vendor.name, 2, 100, 'My Bakery Studio');
+  const cleanProducts = sanitizeProducts(vendor.products);
+  const serviceAreas = vendor.serviceAreas
+    .map((s) => s.trim().slice(0, 100))
+    .filter(Boolean)
+    .slice(0, 10);
+  const specialties = vendor.specialties
+    .map((s) => s.trim().slice(0, 100))
+    .filter(Boolean)
+    .slice(0, 10);
+  const cleanBioHandle = vendor.bioHandle ? sanitizeBioHandle(vendor.bioHandle) : undefined;
+
+  const claimId = await computeClaimId(targetPhone, cleanPasscode);
+  const phoneLast4 = targetPhone.slice(-4).padStart(4, '0');
+
+  const vendorPayload = {
+    ownerId: adminUid,
+    slug,
+    name,
+    marketplace: vendor.marketplace === 'party' ? 'party' : 'food',
+    category: clampStr(vendor.category, 2, 80, 'Bakers & Cakes'),
+    country: vendor.country,
+    state: clampStr(vendor.state, 2, 80, 'Maharashtra'),
+    city: clampStr(vendor.city, 2, 80, 'Mumbai'),
+    area: clampStr(vendor.area || vendor.city, 2, 100, vendor.city),
+    lat: Math.max(-90, Math.min(90, Number(vendor.lat) || 19.076)),
+    lng: Math.max(-180, Math.min(180, Number(vendor.lng) || 72.8777)),
+    whatsappNumber: targetPhone,
+    planTier: vendor.planTier,
+    monthlyAutoPay: Boolean(vendor.monthlyAutoPay),
+    priceTier: vendor.priceTier,
+    startingPriceUsd: Math.max(0, Math.min(100000, Number(vendor.startingPriceUsd) || 0)),
+    rating: 5.0,
+    reviewCount: 0,
+    responseTime: clampStr(
+      vendor.responseTime || 'Replies within 15 mins on WhatsApp',
+      2,
+      60,
+      'Replies within 15 mins on WhatsApp'
+    ),
+    verified: Boolean(vendor.verified),
+    status: 'active' as const,
+    tagline: clampStr(vendor.tagline, 3, 180, 'Artisan cakes & custom local orders'),
+    description: clampStr(
+      vendor.description || vendor.tagline,
+      5,
+      1200,
+      'Freshly handcrafted local cakes, desserts and custom event orders.'
+    ),
+    ...(vendor.promoBanner && vendor.promoBanner.trim().length > 0
+      ? { promoBanner: vendor.promoBanner.trim().slice(0, 120) }
+      : {}),
+    ...(vendor.christmasSpecial !== undefined
+      ? { christmasSpecial: Boolean(vendor.christmasSpecial) }
+      : {}),
+    ...(vendor.christmasOffer && vendor.christmasOffer.trim().length > 0
+      ? { christmasOffer: vendor.christmasOffer.trim().slice(0, 140) }
+      : {}),
+    ...(cleanBioHandle ? { bioHandle: cleanBioHandle } : {}),
+    serviceAreas: serviceAreas.length > 0 ? serviceAreas : [vendor.city],
+    specialties: specialties.length > 0 ? specialties : [vendor.category],
+    image: clampStr(vendor.image, 1, 150000, '/src/assets/images/cat-bakers.png'),
+    ...(vendor.logo && vendor.logo.trim().length > 0
+      ? { logo: vendor.logo.trim().slice(0, 70000) }
+      : {}),
+    products: cleanProducts,
+    claimStatus: 'pending' as const,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  };
+
+  const claimPayload = {
+    vendorId,
+    vendorSlug: slug,
+    vendorName: name,
+    phoneLast4,
+    status: 'pending' as const,
+    createdBy: adminUid,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  };
+
+  const transferPayload = {
+    vendorId,
+    vendorName: name,
+    vendorSlug: slug,
+    targetPhone,
+    passcode: cleanPasscode,
+    claimId,
+    status: 'pending' as const,
+    createdBy: adminUid,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  };
+
+  try {
+    const batch = writeBatch(db);
+    batch.set(doc(db, 'vendors', vendorId), vendorPayload);
+    batch.set(doc(db, 'storeClaims', claimId), claimPayload);
+    batch.set(doc(db, 'adminTransfers', vendorId), transferPayload);
+    await batch.commit();
+
+    const nowLabel = new Date().toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+
+    return {
+      vendor: {
+        ...vendor,
+        id: vendorId,
+        ownerId: adminUid,
+        slug,
+        name,
+        whatsappNumber: targetPhone,
+        status: 'active',
+        verified: vendorPayload.verified,
+        reviewCount: 0,
+        products: cleanProducts,
+        bioHandle: cleanBioHandle,
+        claimStatus: 'pending',
+      },
+      transfer: {
+        vendorId,
+        vendorName: name,
+        vendorSlug: slug,
+        targetPhone,
+        passcode: cleanPasscode,
+        claimId,
+        status: 'pending',
+        createdBy: adminUid,
+        createdAt: nowLabel,
+        updatedAt: nowLabel,
+      },
+    };
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `vendors/${vendorId}`);
+  }
+}
+
+export async function adminIssueTransferForExistingStore(
+  vendor: Vendor,
+  adminUid: string,
+  targetPhoneRaw: string,
+  passcodeRaw: string,
+  previousClaimId?: string
+): Promise<AdminTransferRecord> {
+  const targetPhone = normalizePhoneDigits(targetPhoneRaw);
+  if (targetPhone.length < 7) {
+    throw new Error('Please enter a valid baker phone number with country code (at least 7 digits).');
+  }
+  const cleanPasscode = normalizePasscode(passcodeRaw);
+  if (cleanPasscode.length < 6) {
+    throw new Error('Passcode must be at least 6 characters.');
+  }
+
+  const vendorId = sanitizeId(vendor.id);
+  const claimId = await computeClaimId(targetPhone, cleanPasscode);
+  const phoneLast4 = targetPhone.slice(-4).padStart(4, '0');
+  const slug = sanitizeSlug(vendor.slug || vendor.name);
+  const name = clampStr(vendor.name, 2, 100, 'Storefront');
+
+  try {
+    const batch = writeBatch(db);
+    if (previousClaimId && previousClaimId !== claimId && previousClaimId.length === 64) {
+      const prevSnap = await getDoc(doc(db, 'storeClaims', previousClaimId));
+      if (prevSnap.exists() && prevSnap.data()?.status === 'pending') {
+        batch.update(doc(db, 'storeClaims', previousClaimId), {
+          status: 'revoked',
+          updatedAt: serverTimestamp(),
+        });
+      }
+    }
+
+    batch.update(doc(db, 'vendors', vendorId), {
+      whatsappNumber: targetPhone,
+      claimStatus: 'pending',
+      updatedAt: serverTimestamp(),
+    });
+
+    batch.set(doc(db, 'storeClaims', claimId), {
+      vendorId,
+      vendorSlug: slug,
+      vendorName: name,
+      phoneLast4,
+      status: 'pending',
+      createdBy: adminUid,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+
+    const existingTransfer = await getDoc(doc(db, 'adminTransfers', vendorId));
+    if (existingTransfer.exists()) {
+      batch.update(doc(db, 'adminTransfers', vendorId), {
+        vendorName: name,
+        vendorSlug: slug,
+        targetPhone,
+        passcode: cleanPasscode,
+        claimId,
+        status: 'pending',
+        updatedAt: serverTimestamp(),
+      });
+    } else {
+      batch.set(doc(db, 'adminTransfers', vendorId), {
+        vendorId,
+        vendorName: name,
+        vendorSlug: slug,
+        targetPhone,
+        passcode: cleanPasscode,
+        claimId,
+        status: 'pending',
+        createdBy: adminUid,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    }
+
+    await batch.commit();
+
+    const nowLabel = new Date().toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+
+    return {
+      vendorId,
+      vendorName: name,
+      vendorSlug: slug,
+      targetPhone,
+      passcode: cleanPasscode,
+      claimId,
+      status: 'pending',
+      createdBy: adminUid,
+      createdAt: nowLabel,
+      updatedAt: nowLabel,
+    };
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `adminTransfers/${vendorId}`);
+  }
+}
+
+export async function adminRevokeTransfer(
+  vendorId: string,
+  claimId: string
+): Promise<void> {
+  const safeVendorId = sanitizeId(vendorId);
+  try {
+    const batch = writeBatch(db);
+    if (claimId && claimId.length === 64) {
+      const snap = await getDoc(doc(db, 'storeClaims', claimId));
+      if (snap.exists() && snap.data()?.status === 'pending') {
+        batch.update(doc(db, 'storeClaims', claimId), {
+          status: 'revoked',
+          updatedAt: serverTimestamp(),
+        });
+      }
+    }
+    batch.update(doc(db, 'vendors', safeVendorId), {
+      claimStatus: 'none',
+      updatedAt: serverTimestamp(),
+    });
+    batch.update(doc(db, 'adminTransfers', safeVendorId), {
+      status: 'revoked',
+      updatedAt: serverTimestamp(),
+    });
+    await batch.commit();
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `adminTransfers/${safeVendorId}`);
+  }
+}
+
+export function subscribeAdminTransfers(
+  onData: (records: AdminTransferRecord[]) => void
+): () => void {
+  const q = query(collection(db, 'adminTransfers'));
+  return onSnapshot(
+    q,
+    (snap) => {
+      onData(snap.docs.map((d) => docToAdminTransfer(d.id, d.data())));
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'adminTransfers');
+    }
+  );
+}
+
+export function subscribeAdminStoreClaims(
+  onData: (claims: StoreClaim[]) => void
+): () => void {
+  const q = query(collection(db, 'storeClaims'));
+  return onSnapshot(
+    q,
+    (snap) => {
+      onData(snap.docs.map((d) => docToStoreClaim(d.id, d.data())));
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'storeClaims');
+    }
+  );
+}
+
+export async function lookupStoreClaim(
+  phoneRaw: string,
+  passcodeRaw: string
+): Promise<{ claim: StoreClaim; claimId: string } | null> {
+  const phone = normalizePhoneDigits(phoneRaw);
+  const passcode = normalizePasscode(passcodeRaw);
+  if (phone.length < 7 || passcode.length < 6) {
+    return null;
+  }
+  const claimId = await computeClaimId(phone, passcode);
+  try {
+    const snap = await getDoc(doc(db, 'storeClaims', claimId));
+    if (!snap.exists()) return null;
+    return {
+      claim: docToStoreClaim(snap.id, snap.data()),
+      claimId,
+    };
+  } catch (error) {
+    handleFirestoreError(error, OperationType.GET, `storeClaims/${claimId}`);
+  }
+}
+
+export async function redeemStoreClaim(
+  claimId: string,
+  vendorId: string,
+  bakerUid: string
+): Promise<void> {
+  const safeVendorId = sanitizeId(vendorId);
+  try {
+    const batch = writeBatch(db);
+    batch.update(doc(db, 'storeClaims', claimId), {
+      status: 'claimed',
+      claimedBy: bakerUid,
+      updatedAt: serverTimestamp(),
+    });
+    batch.update(doc(db, 'vendors', safeVendorId), {
+      ownerId: bakerUid,
+      claimStatus: 'claimed',
+      claimedByToken: claimId,
+      updatedAt: serverTimestamp(),
+    });
+    await batch.commit();
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `storeClaims/${claimId}`);
+  }
+}
+

@@ -189,6 +189,18 @@
           "type": "array",
           "description": "Up to 20 catalog products/packages displayed on the vendor mini-website."
         },
+        "claimStatus": {
+          "type": "string",
+          "enum": ["none", "pending", "claimed"],
+          "description": "Concierge store handover state: none (self-created), pending (awaiting baker claim), or claimed (ownership transferred)."
+        },
+        "claimedByToken": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64,
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "SHA-256 claim receipt ID recorded only after successful atomic transfer (never stored while pending)."
+        },
         "createdAt": {
           "type": "string",
           "format": "date-time",
@@ -675,12 +687,137 @@
         }
       },
       "required": ["uid", "grantedAt"]
+    },
+    "StoreClaim": {
+      "title": "StoreClaim",
+      "description": "Cryptographically addressed store handover ticket keyed by SHA-256(phone + passcode). Contains no raw phone number or passcode.",
+      "type": "object",
+      "properties": {
+        "vendorId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Target vendor document ID."
+        },
+        "vendorSlug": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 100,
+          "pattern": "^[a-z0-9\\-]+$",
+          "description": "Target vendor storefront slug."
+        },
+        "vendorName": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 100,
+          "description": "Public storefront display name."
+        },
+        "phoneLast4": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 4,
+          "pattern": "^[0-9]{4}$",
+          "description": "Last 4 digits of target phone for baker confirmation without exposing PII."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "claimed", "revoked"],
+          "description": "Transfer lifecycle state (claimed and revoked are terminal)."
+        },
+        "createdBy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Admin UID who issued this claim ticket."
+        },
+        "claimedBy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Vendor UID who redeemed the claim ticket."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp."
+        }
+      },
+      "required": ["vendorId", "vendorSlug", "vendorName", "phoneLast4", "status", "createdBy", "createdAt", "updatedAt"]
+    },
+    "AdminTransferRecord": {
+      "title": "AdminTransferRecord",
+      "description": "Admin-only private concierge transfer log storing target phone number and handover passcode for WhatsApp sharing.",
+      "type": "object",
+      "properties": {
+        "vendorId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "vendorName": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 100
+        },
+        "vendorSlug": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 100,
+          "pattern": "^[a-z0-9\\-]+$"
+        },
+        "targetPhone": {
+          "type": "string",
+          "minLength": 7,
+          "maxLength": 18,
+          "pattern": "^[0-9]+$"
+        },
+        "passcode": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 24,
+          "pattern": "^[A-Z0-9\\-]+$"
+        },
+        "claimId": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64,
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "claimed", "revoked"]
+        },
+        "createdBy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["vendorId", "vendorName", "vendorSlug", "targetPhone", "passcode", "claimId", "status", "createdBy", "createdAt", "updatedAt"]
     }
   },
   "firestore": {
     "/vendors/{vendorId}": {
       "schema": { "$ref": "#/entities/Vendor" },
-      "description": "Published vendor storefronts readable publicly when status is active; writable only by authenticated owner or admin."
+      "description": "Published vendor storefronts readable publicly when status is active; writable by authenticated owner, admin, or atomically transferred via valid StoreClaim."
     },
     "/users/{userId}": {
       "schema": { "$ref": "#/entities/UserProfile" },
@@ -696,7 +833,7 @@
     },
     "/eventRequests/{requestId}": {
       "schema": { "$ref": "#/entities/EventRequest" },
-      "description": "Broadcast customer event requests (no PII); open requests readable by verified users, editable only by request owner or admin."
+      "description": "Broadcast customer event requests (no PII); open requests readable by authenticated users, editable only by request owner or admin."
     },
     "/eventRequests/{requestId}/quotes/{quoteId}": {
       "schema": { "$ref": "#/entities/EventQuote" },
@@ -704,11 +841,19 @@
     },
     "/vendorMetrics/{vendorId}": {
       "schema": { "$ref": "#/entities/VendorMetric" },
-      "description": "Storefront views, WhatsApp clicks, and share counters; strictly monotonic increments (+0 or +1) by verified users."
+      "description": "Storefront views, WhatsApp clicks, and share counters; strictly monotonic increments (+0 or +1) by authenticated users."
     },
     "/admins/{adminId}": {
       "schema": { "$ref": "#/entities/AdminRecord" },
       "description": "Trusted admin directory managed strictly by existing admins."
+    },
+    "/storeClaims/{claimId}": {
+      "schema": { "$ref": "#/entities/StoreClaim" },
+      "description": "Cryptographically keyed store handover tickets (SHA-256 of phone + passcode); non-enumerable by public, atomic single-use redemption."
+    },
+    "/adminTransfers/{vendorId}": {
+      "schema": { "$ref": "#/entities/AdminTransferRecord" },
+      "description": "Admin-only private transfer log containing target phone and handover passcode for WhatsApp dispatch."
     }
   }
 }
