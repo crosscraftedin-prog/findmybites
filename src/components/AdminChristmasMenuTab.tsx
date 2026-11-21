@@ -12,12 +12,15 @@ import {
   Trash2,
   Upload,
   UtensilsCrossed,
+  Wine,
   X,
 } from 'lucide-react';
 import {
   BUILT_IN_CHRISTMAS_DISH_IDS,
   CHRISTMAS_BOOKING_PHONE_DISPLAY,
+  CHRISTMAS_PLATTER_PRESETS,
   CUSTOM_MENU_CATEGORIES,
+  ChristmasPresetId,
   CustomMenuCategoryId,
   CustomMenuDish,
   MIN_CHRISTMAS_GUESTS,
@@ -48,6 +51,7 @@ interface DishFormState {
   description: string;
   image: string;
   popular: boolean;
+  presets: ChristmasPresetId[];
 }
 
 const EMPTY_FORM: DishFormState = {
@@ -60,6 +64,7 @@ const EMPTY_FORM: DishFormState = {
   description: '',
   image: '',
   popular: false,
+  presets: [],
 };
 
 export function AdminChristmasMenuTab({
@@ -84,8 +89,10 @@ export function AdminChristmasMenuTab({
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<CustomMenuCategoryId | 'all'>('all');
   const [foodFilter, setFoodFilter] = useState<'all' | 'veg' | 'non-veg'>('all');
+  const [presetFilter, setPresetFilter] = useState<ChristmasPresetId | 'all' | 'unassigned'>('all');
   const [onlyMissingPhoto, setOnlyMissingPhoto] = useState(false);
   const [showHiddenDrawer, setShowHiddenDrawer] = useState(false);
+  const [togglingPresetKey, setTogglingPresetKey] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const formTopRef = useRef<HTMLDivElement | null>(null);
@@ -96,12 +103,25 @@ export function AdminChristmasMenuTab({
     return map;
   }, []);
 
+  const presetCounts = useMemo(() => {
+    const counts: Record<ChristmasPresetId, { count: number; perPlate: number }> = {
+      'christmas-veg': { count: 0, perPlate: 0 },
+      'christmas-non-veg': { count: 0, perPlate: 0 },
+      'cocktail-snacks': { count: 0, perPlate: 0 },
+    };
+    for (const dish of activeDishes) {
+      for (const pid of dish.presets ?? []) {
+        if (counts[pid]) {
+          counts[pid].count += 1;
+          counts[pid].perPlate += dish.priceInrPerGuest;
+        }
+      }
+    }
+    return counts;
+  }, [activeDishes]);
+
   const withPhotosCount = useMemo(
     () => activeDishes.filter((d) => Boolean(d.image)).length,
-    [activeDishes]
-  );
-  const customAddedCount = useMemo(
-    () => activeDishes.filter((d) => !BUILT_IN_CHRISTMAS_DISH_IDS.has(d.id)).length,
     [activeDishes]
   );
 
@@ -110,6 +130,11 @@ export function AdminChristmasMenuTab({
     return activeDishes.filter((d) => {
       if (categoryFilter !== 'all' && d.category !== categoryFilter) return false;
       if (foodFilter !== 'all' && d.foodType !== foodFilter) return false;
+      if (presetFilter === 'unassigned') {
+        if ((d.presets ?? []).length > 0) return false;
+      } else if (presetFilter !== 'all') {
+        if (!(d.presets ?? []).includes(presetFilter)) return false;
+      }
       if (onlyMissingPhoto && Boolean(d.image)) return false;
       if (q) {
         const hay = `${d.name} ${d.description} ${d.portion} ${categoryLabelMap.get(d.category) ?? ''}`.toLowerCase();
@@ -117,7 +142,15 @@ export function AdminChristmasMenuTab({
       }
       return true;
     });
-  }, [activeDishes, categoryFilter, foodFilter, onlyMissingPhoto, searchQuery, categoryLabelMap]);
+  }, [
+    activeDishes,
+    categoryFilter,
+    foodFilter,
+    presetFilter,
+    onlyMissingPhoto,
+    searchQuery,
+    categoryLabelMap,
+  ]);
 
   const startCreateNew = () => {
     setForm(EMPTY_FORM);
@@ -140,6 +173,7 @@ export function AdminChristmasMenuTab({
       description: dish.description,
       image: dish.image ?? '',
       popular: Boolean(dish.popular),
+      presets: [...(dish.presets ?? [])],
     });
     setFormError(null);
     setFormOpen(true);
@@ -147,6 +181,51 @@ export function AdminChristmasMenuTab({
     setTimeout(() => {
       formTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }, 50);
+  };
+
+  const toggleFormPreset = (presetId: ChristmasPresetId) => {
+    setForm((prev) => ({
+      ...prev,
+      presets: prev.presets.includes(presetId)
+        ? prev.presets.filter((p) => p !== presetId)
+        : [...prev.presets, presetId],
+    }));
+  };
+
+  const handleQuickToggleDishPreset = async (
+    dish: CustomMenuDish,
+    presetId: ChristmasPresetId
+  ) => {
+    const current = dish.presets ?? [];
+    const exists = current.includes(presetId);
+    const nextPresets = exists
+      ? current.filter((p) => p !== presetId)
+      : [...current, presetId];
+
+    const presetLabel =
+      CHRISTMAS_PLATTER_PRESETS.find((p) => p.id === presetId)?.title ?? presetId;
+    const key = `${dish.id}:${presetId}`;
+    setTogglingPresetKey(key);
+    try {
+      await adminSaveChristmasDish(
+        {
+          ...dish,
+          id: dish.id,
+          presets: nextPresets,
+          active: true,
+        },
+        adminUser.uid
+      );
+      onToast(
+        exists
+          ? `Removed "${dish.name}" from ${presetLabel}.`
+          : `Sent "${dish.name}" to ${presetLabel}!`
+      );
+    } catch (err) {
+      onToast(err instanceof Error ? err.message : 'Could not update menu preset.');
+    } finally {
+      setTogglingPresetKey(null);
+    }
   };
 
   const handleImageFileChange = async (file: File | null) => {
@@ -205,6 +284,7 @@ export function AdminChristmasMenuTab({
           description: form.description.trim(),
           image: form.image.trim() || undefined,
           popular: form.popular,
+          presets: form.presets,
           active: true,
         },
         adminUser.uid
@@ -285,32 +365,60 @@ export function AdminChristmasMenuTab({
         </button>
       </div>
 
-      {/* Quick Stats */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div className="rounded-xl border border-border bg-card p-3">
-          <p className="text-[11px] font-semibold text-muted-foreground">Live Menu Dishes</p>
-          <p className="mt-0.5 font-mono text-xl font-extrabold tabular-nums text-foreground">
-            {activeDishes.length}
-          </p>
-        </div>
-        <div className="rounded-xl border border-border bg-card p-3">
-          <p className="text-[11px] font-semibold text-muted-foreground">Dishes with Photos</p>
-          <p className="mt-0.5 font-mono text-xl font-extrabold tabular-nums text-emerald-600 dark:text-emerald-400">
-            {withPhotosCount}
-          </p>
-        </div>
-        <div className="rounded-xl border border-border bg-card p-3">
-          <p className="text-[11px] font-semibold text-muted-foreground">Custom Added</p>
-          <p className="mt-0.5 font-mono text-xl font-extrabold tabular-nums text-brand">
-            {customAddedCount}
-          </p>
-        </div>
-        <div className="rounded-xl border border-border bg-card p-3">
-          <p className="text-[11px] font-semibold text-muted-foreground">Hidden Defaults</p>
-          <p className="mt-0.5 font-mono text-xl font-extrabold tabular-nums text-muted-foreground">
-            {hiddenBuiltInDishes.length}
-          </p>
-        </div>
+      {/* Quick Stats + Live Preset Menus Overview (Tap any card to filter its dishes) */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {CHRISTMAS_PLATTER_PRESETS.map((preset) => {
+          const stats = presetCounts[preset.id];
+          const isFiltered = presetFilter === preset.id;
+          return (
+            <button
+              key={preset.id}
+              type="button"
+              onClick={() =>
+                setPresetFilter((curr) => (curr === preset.id ? 'all' : preset.id))
+              }
+              className={`flex cursor-pointer flex-col items-start rounded-xl border p-3.5 text-left transition-colors ${
+                isFiltered
+                  ? 'border-brand bg-brand-soft/60 shadow-xs'
+                  : 'border-border bg-card hover:border-brand/50'
+              }`}
+            >
+              <div className="flex w-full items-center justify-between gap-2">
+                <span className="flex items-center gap-1.5 text-xs font-extrabold text-foreground">
+                  {preset.foodBadge === 'veg' && <FoodTypeIcon foodType="veg" size="xs" />}
+                  {preset.foodBadge === 'non-veg' && <FoodTypeIcon foodType="non-veg" size="xs" />}
+                  {preset.foodBadge === 'cocktail' && (
+                    <Wine className="size-3.5 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+                  )}
+                  {preset.title}
+                </span>
+                <span className="font-mono text-xs font-extrabold tabular-nums text-brand">
+                  ₹{stats.perPlate}/p
+                </span>
+              </div>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                <span className="font-bold text-foreground">{stats.count} dishes assigned</span> ·{' '}
+                {isFiltered ? 'Showing assigned dishes (tap to clear)' : 'Tap to view dishes'}
+              </p>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+        <span>
+          <strong className="font-mono text-foreground">{activeDishes.length}</strong> live dishes
+        </span>
+        <span aria-hidden="true">·</span>
+        <span>
+          <strong className="font-mono text-emerald-600 dark:text-emerald-400">{withPhotosCount}</strong>{' '}
+          with 4:3 photos
+        </span>
+        <span aria-hidden="true">·</span>
+        <span>
+          <strong className="font-mono text-foreground">{hiddenBuiltInDishes.length}</strong> removed
+          defaults
+        </span>
       </div>
 
       {/* Add / Edit Dish Form */}
@@ -470,6 +578,43 @@ export function AdminChristmasMenuTab({
                   />
                 </div>
 
+                {/* Assign Dish to Quick-Start Menu Presets */}
+                <div className="rounded-xl border border-border bg-muted/30 p-3">
+                  <p className="text-xs font-bold text-foreground">
+                    Send Dish to Quick-Start Menu Option(s)
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">
+                    Choose which preset menu(s) include this dish when customers tap it.
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {CHRISTMAS_PLATTER_PRESETS.map((preset) => {
+                      const active = form.presets.includes(preset.id);
+                      return (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          onClick={() => toggleFormPreset(preset.id)}
+                          className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold transition-colors ${
+                            active
+                              ? 'border-brand bg-brand text-brand-foreground shadow-xs'
+                              : 'border-border bg-background text-foreground hover:border-brand/60'
+                          }`}
+                        >
+                          {preset.foodBadge === 'veg' && <FoodTypeIcon foodType="veg" size="xs" />}
+                          {preset.foodBadge === 'non-veg' && (
+                            <FoodTypeIcon foodType="non-veg" size="xs" />
+                          )}
+                          {preset.foodBadge === 'cocktail' && (
+                            <Wine className="size-3.5" aria-hidden="true" />
+                          )}
+                          <span>{preset.title}</span>
+                          {active && <Check className="size-3.5" aria-hidden="true" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-semibold text-foreground">
                   <input
                     type="checkbox"
@@ -616,6 +761,23 @@ export function AdminChristmasMenuTab({
           </select>
 
           <select
+            aria-label="Filter by Quick-Start Preset"
+            value={presetFilter}
+            onChange={(e) =>
+              setPresetFilter(e.target.value as ChristmasPresetId | 'all' | 'unassigned')
+            }
+            className="rounded-xl border border-border bg-background px-2.5 py-2 text-xs font-semibold text-foreground focus:border-brand focus:outline-none"
+          >
+            <option value="all">All Presets</option>
+            {CHRISTMAS_PLATTER_PRESETS.map((p) => (
+              <option key={p.id} value={p.id}>
+                In {p.title} ({presetCounts[p.id].count})
+              </option>
+            ))}
+            <option value="unassigned">Not in any preset</option>
+          </select>
+
+          <select
             aria-label="Filter by Veg or Non-Veg"
             value={foodFilter}
             onChange={(e) => setFoodFilter(e.target.value as 'all' | 'veg' | 'non-veg')}
@@ -651,6 +813,7 @@ export function AdminChristmasMenuTab({
               setSearchQuery('');
               setCategoryFilter('all');
               setFoodFilter('all');
+              setPresetFilter('all');
               setOnlyMissingPhoto(false);
             }}
             className="mt-2 cursor-pointer text-xs font-bold text-brand hover:underline"
@@ -732,6 +895,45 @@ export function AdminChristmasMenuTab({
                         Popular Pick
                       </span>
                     )}
+                  </div>
+
+                  {/* Quick 1-Click Send to Christmas Veg / Christmas Non-Veg / Cocktail Snacks */}
+                  <div className="mt-3 rounded-xl border border-border/80 bg-muted/30 p-2">
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                      Send to Preset Menu:
+                    </p>
+                    <div className="mt-1.5 flex flex-wrap gap-1">
+                      {CHRISTMAS_PLATTER_PRESETS.map((preset) => {
+                        const assigned = (dish.presets ?? []).includes(preset.id);
+                        const isToggling = togglingPresetKey === `${dish.id}:${preset.id}`;
+                        return (
+                          <button
+                            key={preset.id}
+                            type="button"
+                            disabled={isToggling || isBusy}
+                            onClick={() => void handleQuickToggleDishPreset(dish, preset.id)}
+                            className={`inline-flex cursor-pointer items-center gap-1 rounded-lg border px-2 py-1 text-[10px] font-bold transition-colors disabled:opacity-60 ${
+                              assigned
+                                ? preset.id === 'christmas-veg'
+                                  ? 'border-emerald-600 bg-emerald-600 text-white'
+                                  : preset.id === 'christmas-non-veg'
+                                    ? 'border-red-600 bg-red-600 text-white'
+                                    : 'border-amber-600 bg-amber-600 text-white'
+                                : 'border-border bg-background text-muted-foreground hover:border-brand hover:text-foreground'
+                            }`}
+                          >
+                            {isToggling ? (
+                              <Loader2 className="size-2.5 animate-spin" aria-hidden="true" />
+                            ) : assigned ? (
+                              <Check className="size-2.5" aria-hidden="true" />
+                            ) : (
+                              <Plus className="size-2.5" aria-hidden="true" />
+                            )}
+                            <span>{preset.title}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
 
                   {/* Actions */}

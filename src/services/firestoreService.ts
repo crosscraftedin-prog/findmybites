@@ -37,7 +37,9 @@ import {
   sanitizeSafeHttpUrl,
 } from '../data/vendors';
 import {
+  CHRISTMAS_PLATTER_PRESETS,
   CUSTOM_MENU_CATEGORIES,
+  ChristmasPresetId,
   CustomMenuCategoryId,
   CustomMenuDish,
 } from '../data/christmasMenu';
@@ -1618,6 +1620,21 @@ const VALID_CHRISTMAS_CATEGORIES = new Set<CustomMenuCategoryId>(
   CUSTOM_MENU_CATEGORIES.map((c) => c.id)
 );
 
+const VALID_CHRISTMAS_PRESETS = new Set<ChristmasPresetId>(
+  CHRISTMAS_PLATTER_PRESETS.map((p) => p.id)
+);
+
+function sanitizePresetsList(raw: unknown): ChristmasPresetId[] {
+  if (!Array.isArray(raw)) return [];
+  const unique = new Set<ChristmasPresetId>();
+  for (const item of raw) {
+    if (typeof item === 'string' && VALID_CHRISTMAS_PRESETS.has(item as ChristmasPresetId)) {
+      unique.add(item as ChristmasPresetId);
+    }
+  }
+  return Array.from(unique).slice(0, 3);
+}
+
 function docToChristmasDish(id: string, data: Record<string, unknown>): CustomMenuDish {
   const rawCat = typeof data.category === 'string' ? data.category : 'christmas-specials';
   const category: CustomMenuCategoryId = VALID_CHRISTMAS_CATEGORIES.has(
@@ -1625,6 +1642,8 @@ function docToChristmasDish(id: string, data: Record<string, unknown>): CustomMe
   )
     ? (rawCat as CustomMenuCategoryId)
     : 'christmas-specials';
+
+  const hasExplicitPresets = Array.isArray(data.presets);
 
   return {
     id,
@@ -1642,6 +1661,7 @@ function docToChristmasDish(id: string, data: Record<string, unknown>): CustomMe
         ? data.image.trim()
         : undefined,
     popular: Boolean(data.popular),
+    presets: hasExplicitPresets ? sanitizePresetsList(data.presets) : undefined,
     active: data.active !== false,
     sortOrder: typeof data.sortOrder === 'number' ? data.sortOrder : undefined,
     isCloudSaved: true,
@@ -1688,6 +1708,7 @@ export async function adminSaveChristmasDish(
       ? rawImage.slice(0, 150000)
       : (sanitizeSafeHttpUrl(rawImage) ?? '').slice(0, 150000);
   const popular = Boolean(dish.popular);
+  const presets = sanitizePresetsList(dish.presets);
   const active = dish.active !== false;
   const sortOrder =
     typeof dish.sortOrder === 'number' && Number.isFinite(dish.sortOrder)
@@ -1706,6 +1727,7 @@ export async function adminSaveChristmasDish(
     description,
     image: safeImage,
     popular,
+    presets,
     active,
     sortOrder,
     updatedBy: adminUid,
@@ -1733,6 +1755,7 @@ export async function adminSaveChristmasDish(
       description,
       image: safeImage || undefined,
       popular,
+      presets,
       active,
       sortOrder,
       isCloudSaved: true,

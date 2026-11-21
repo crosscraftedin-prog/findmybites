@@ -21,6 +21,8 @@ export interface CustomMenuCategory {
   label: string;
 }
 
+export type ChristmasPresetId = 'christmas-veg' | 'christmas-non-veg' | 'cocktail-snacks';
+
 export interface CustomMenuDish {
   id: string;
   name: string;
@@ -31,17 +33,18 @@ export interface CustomMenuDish {
   description: string;
   image?: string;
   popular?: boolean;
+  presets?: ChristmasPresetId[];
   active?: boolean;
   sortOrder?: number;
   isCloudSaved?: boolean;
 }
 
 export interface ChristmasPlatterPreset {
-  id: string;
+  id: ChristmasPresetId;
   title: string;
   subtitle: string;
-  foodBadge: 'veg' | 'non-veg' | 'mixed';
-  dishIds: string[];
+  foodBadge: 'veg' | 'non-veg' | 'cocktail';
+  defaultDishIds: string[];
 }
 
 export const HYDERABAD_LOCALITIES = [
@@ -545,11 +548,11 @@ export const CHRISTMAS_CUSTOM_DISHES: CustomMenuDish[] = [
 
 export const CHRISTMAS_PLATTER_PRESETS: ChristmasPlatterPreset[] = [
   {
-    id: 'preset-family-veg',
-    title: 'Christmas Family Veg Feast',
-    subtitle: '6 dishes · Cozy veg home lunch or dinner',
+    id: 'christmas-veg',
+    title: 'Christmas Veg',
+    subtitle: 'Curated vegetarian Christmas lunch & dinner feast',
     foodBadge: 'veg',
-    dishIds: [
+    defaultDishIds: [
       'sc-tomato-soup',
       'st-paneer-65',
       'br-veg-dum-biryani',
@@ -559,11 +562,11 @@ export const CHRISTMAS_PLATTER_PRESETS: ChristmasPlatterPreset[] = [
     ],
   },
   {
-    id: 'preset-classic-nonveg',
-    title: 'Classic Christmas Non-Veg Dinner',
-    subtitle: '7 dishes · Roast chicken + Hyderabadi biryani',
+    id: 'christmas-non-veg',
+    title: 'Christmas Non-Veg',
+    subtitle: 'Signature roasts, Hyderabadi biryani & festive spread',
     foodBadge: 'non-veg',
-    dishIds: [
+    defaultDishIds: [
       'xmas-roast-chicken',
       'st-chicken-65',
       'br-chicken-dum-biryani',
@@ -574,33 +577,18 @@ export const CHRISTMAS_PLATTER_PRESETS: ChristmasPlatterPreset[] = [
     ],
   },
   {
-    id: 'preset-office-lunch',
-    title: 'Office Christmas Lunch Platter',
-    subtitle: '5 dishes · Easy team lunch box or buffet',
-    foodBadge: 'veg',
-    dishIds: [
+    id: 'cocktail-snacks',
+    title: 'Cocktail Snacks',
+    subtitle: 'Party starters, kebabs, finger foods & festive drinks',
+    foodBadge: 'cocktail',
+    defaultDishIds: [
       'st-crispy-corn',
-      'st-spring-rolls',
-      'br-kaju-pulao',
-      'cu-dal-makhani',
-      'ds-fudge-brownie',
-    ],
-  },
-  {
-    id: 'preset-grand-mixed',
-    title: 'Grand Christmas House Party (Veg + Non-Veg)',
-    subtitle: '9 dishes · Full festive spread for mixed guests',
-    foodBadge: 'mixed',
-    dishIds: [
-      'xmas-roast-chicken',
+      'st-cheese-balls',
       'st-paneer-65',
+      'st-chicken-65',
+      'st-chicken-tikka',
       'st-apollo-fish',
-      'br-chicken-dum-biryani',
-      'br-veg-dum-biryani',
-      'cu-paneer-butter-masala',
-      'bd-butter-naan',
       'bv-christmas-punch',
-      'xmas-plum-cake-slice',
     ],
   },
 ];
@@ -609,9 +597,19 @@ export const BUILT_IN_CHRISTMAS_DISH_IDS = new Set(
   CHRISTMAS_CUSTOM_DISHES.map((d) => d.id)
 );
 
+export function getDefaultPresetsForDish(dishId: string): ChristmasPresetId[] {
+  const result: ChristmasPresetId[] = [];
+  for (const preset of CHRISTMAS_PLATTER_PRESETS) {
+    if (preset.defaultDishIds.includes(dishId)) {
+      result.push(preset.id);
+    }
+  }
+  return result;
+}
+
 /**
- * Merges the built-in 44 starter dishes with live Cloud Firestore overrides,
- * newly created admin dishes, and soft-hidden built-in defaults.
+ * Merges the built-in starter dishes with live Cloud Firestore overrides,
+ * newly created admin dishes, preset assignments, and soft-hidden built-in defaults.
  */
 export function mergeChristmasDishes(cloudDishes: CustomMenuDish[]): {
   activeDishes: CustomMenuDish[];
@@ -631,20 +629,27 @@ export function mergeChristmasDishes(cloudDishes: CustomMenuDish[]): {
     .sort((a, b) => (a.sortOrder ?? 9999) - (b.sortOrder ?? 9999));
 
   for (const dish of customCloudDishes) {
-    activeDishes.push({ ...dish, isCloudSaved: true });
+    activeDishes.push({
+      ...dish,
+      presets: dish.presets ?? [],
+      isCloudSaved: true,
+    });
   }
 
   // 2. Built-in starter dishes overlaid with any Cloud edits or soft-deletes
   for (const builtIn of CHRISTMAS_CUSTOM_DISHES) {
+    const defaultPresets = getDefaultPresetsForDish(builtIn.id);
     const override = cloudById.get(builtIn.id);
     if (override) {
+      const resolvedPresets =
+        override.presets !== undefined ? override.presets : defaultPresets;
       if (override.active === false) {
-        hiddenBuiltInDishes.push(override);
+        hiddenBuiltInDishes.push({ ...override, presets: resolvedPresets });
       } else {
-        activeDishes.push(override);
+        activeDishes.push({ ...override, presets: resolvedPresets });
       }
     } else {
-      activeDishes.push(builtIn);
+      activeDishes.push({ ...builtIn, presets: defaultPresets });
     }
   }
 

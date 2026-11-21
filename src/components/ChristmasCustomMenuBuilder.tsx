@@ -11,6 +11,7 @@ import {
   Trash2,
   Users,
   UtensilsCrossed,
+  Wine,
 } from 'lucide-react';
 import {
   CHRISTMAS_BOOKING_PHONE_DISPLAY,
@@ -344,15 +345,19 @@ export function ChristmasCustomMenuBuilder({
           </div>
         </div>
 
-        {/* 1-Click Pre-Set Christmas Feast Templates */}
+        {/* 1-Click Pre-Set Christmas Feast Templates (Admin-Managed: Veg, Non-Veg, Cocktail Snacks) */}
         <div className="mt-4 border-t border-border pt-4">
           <p className="text-xs font-bold text-muted-foreground">
-            Quick-Start Feast Presets (tap any preset to load, then customize any dish):
+            Quick-Start Feast Presets (tap any option to load its menu, then customize any dish):
           </p>
-          <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="mt-2 grid grid-cols-1 gap-2.5 sm:grid-cols-3">
             {CHRISTMAS_PLATTER_PRESETS.map((preset) => {
-              const presetPerPlate = preset.dishIds.reduce(
-                (sum, id) => sum + (dishesById.get(id)?.priceInrPerGuest ?? 0),
+              const presetDishes = catalogDishes.filter((d) =>
+                (d.presets ?? []).includes(preset.id)
+              );
+              const presetDishIds = presetDishes.map((d) => d.id);
+              const presetPerPlate = presetDishes.reduce(
+                (sum, d) => sum + d.priceInrPerGuest,
                 0
               );
               const isActive = activePresetId === preset.id;
@@ -360,32 +365,33 @@ export function ChristmasCustomMenuBuilder({
                 <button
                   key={preset.id}
                   type="button"
-                  onClick={() => applyPreset(preset.id, preset.dishIds)}
-                  className={`flex cursor-pointer flex-col items-start rounded-xl border p-3 text-left transition-colors ${
+                  disabled={presetDishIds.length === 0}
+                  onClick={() => applyPreset(preset.id, presetDishIds)}
+                  className={`flex cursor-pointer flex-col items-start rounded-xl border p-3.5 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
                     isActive
                       ? 'border-brand bg-brand-soft/60'
                       : 'border-border bg-background hover:border-brand/50'
                   }`}
                 >
                   <div className="flex w-full items-center justify-between gap-2">
-                    <span className="flex items-center gap-1.5 text-xs font-bold text-foreground">
+                    <span className="flex items-center gap-1.5 text-xs font-extrabold text-foreground sm:text-sm">
                       {preset.foodBadge === 'veg' && <FoodTypeIcon foodType="veg" size="xs" />}
                       {preset.foodBadge === 'non-veg' && (
                         <FoodTypeIcon foodType="non-veg" size="xs" />
                       )}
-                      {preset.foodBadge === 'mixed' && (
-                        <>
-                          <FoodTypeIcon foodType="veg" size="xs" />
-                          <FoodTypeIcon foodType="non-veg" size="xs" />
-                        </>
+                      {preset.foodBadge === 'cocktail' && (
+                        <Wine className="size-3.5 text-amber-600 dark:text-amber-400" aria-hidden="true" />
                       )}
                       <span className="line-clamp-1">{preset.title}</span>
                     </span>
                     <span className="shrink-0 font-mono text-xs font-extrabold tabular-nums text-brand">
-                      {formatInr(presetPerPlate)}/p
+                      {presetDishIds.length > 0 ? `${formatInr(presetPerPlate)}/p` : 'No items'}
                     </span>
                   </div>
-                  <span className="mt-1 text-[11px] text-muted-foreground">{preset.subtitle}</span>
+                  <span className="mt-1 text-[11px] text-muted-foreground">
+                    {presetDishIds.length} {presetDishIds.length === 1 ? 'dish' : 'dishes'} ·{' '}
+                    {preset.subtitle}
+                  </span>
                 </button>
               );
             })}

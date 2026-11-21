@@ -950,6 +950,10 @@
           "type": "boolean",
           "description": "Whether the dish is highlighted as a popular pick."
         },
+        "presets": {
+          "type": "array",
+          "description": "Up to 3 Quick-Start menu presets this dish belongs to (christmas-veg, christmas-non-veg, cocktail-snacks)."
+        },
         "active": {
           "type": "boolean",
           "description": "Whether the dish is visible on the live Hyderabad Christmas menu (false hides deleted built-in defaults)."

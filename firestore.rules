@@ -358,7 +358,7 @@ service cloud.firestore {
         ]) &&
         data.keys().hasOnly([
           'name', 'category', 'foodType', 'priceInrPerGuest',
-          'portion', 'description', 'image', 'popular', 'active',
+          'portion', 'description', 'image', 'popular', 'presets', 'active',
           'sortOrder', 'updatedBy', 'createdAt', 'updatedAt'
         ]) &&
         data.name is string && data.name.size() >= 2 && data.name.size() <= 120 &&
@@ -372,6 +372,11 @@ service cloud.firestore {
         data.description is string && data.description.size() <= 400 &&
         (!('image' in data) || (data.image is string && data.image.size() <= 150000)) &&
         data.popular is bool &&
+        (!('presets' in data) || (
+          data.presets is list &&
+          data.presets.size() <= 3 &&
+          data.presets.hasOnly(['christmas-veg', 'christmas-non-veg', 'cocktail-snacks'])
+        )) &&
         data.active is bool &&
         (!('sortOrder' in data) || (data.sortOrder is number && data.sortOrder >= 0 && data.sortOrder <= 10000)) &&
         isValidId(data.updatedBy) &&
@@ -589,7 +594,7 @@ service cloud.firestore {
         incoming().updatedAt == request.time &&
         incoming().diff(existing()).affectedKeys().hasOnly([
           'name', 'category', 'foodType', 'priceInrPerGuest',
-          'portion', 'description', 'image', 'popular', 'active',
+          'portion', 'description', 'image', 'popular', 'presets', 'active',
           'sortOrder', 'updatedBy', 'updatedAt'
         ]);
 
