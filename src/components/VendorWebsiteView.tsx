@@ -17,6 +17,7 @@ import {
   MapPin,
   MessageCircle,
   Minus,
+  Package,
   Plus,
   QrCode,
   ShieldCheck,
@@ -24,6 +25,7 @@ import {
   Sparkles,
   Star,
   Trash2,
+  UtensilsCrossed,
   X,
 } from 'lucide-react';
 import {
@@ -35,9 +37,11 @@ import {
   VendorReview,
   buildWhatsAppUrl,
   formatMoney,
+  getCustomBuilderModeConfig,
   getVendorCoverageLabel,
   getVendorCoveredStatesList,
   getVendorQuickTags,
+  suggestBuilderModeForCategory,
 } from '../data/vendors';
 import {
   createReviewInCloud,
@@ -48,6 +52,7 @@ import {
 import { FoodTypeBadge, FoodTypeIcon } from './FoodTypeBadge';
 import { PromoCardModal } from './PromoCardModal';
 import { QrPosterModal } from './QrPosterModal';
+import { VendorCustomBoxBuilder } from './VendorCustomBoxBuilder';
 
 export interface VendorMetrics {
   views: number;
@@ -92,6 +97,7 @@ export function VendorWebsiteView({
   onTrackShare,
 }: VendorWebsiteViewProps) {
   const [selectedProductId, setSelectedProductId] = useState<string>('');
+  const [catalogView, setCatalogView] = useState<'builder' | 'catalog'>('catalog');
   const [foodFilter, setFoodFilter] = useState<'all' | 'veg' | 'non-veg'>('all');
   const [basket, setBasket] = useState<Record<string, number>>({});
   const [basketExpanded, setBasketExpanded] = useState(false);
@@ -118,6 +124,9 @@ export function VendorWebsiteView({
   useEffect(() => {
     if (vendor) {
       setSelectedProductId(vendor.products[0]?.id ?? '');
+      setCatalogView(
+        vendor.customBuilderEnabled && vendor.products.length > 0 ? 'builder' : 'catalog'
+      );
       setFoodFilter('all');
       setBasket({});
       setBasketExpanded(false);
@@ -659,9 +668,17 @@ export function VendorWebsiteView({
           </section>
         )}
 
-        {/* Full Product Catalog Grid with Multi-Item WhatsApp Basket */}
+        {/* Full Product Catalog Grid & Optional Custom Plate / Snack Box Builder */}
         <section id="vendor-products">
           {(() => {
+            const hasCustomBuilder = Boolean(
+              vendor.customBuilderEnabled && vendor.products.length > 0
+            );
+            const builderMode =
+              vendor.customBuilderMode ?? suggestBuilderModeForCategory(vendor.category);
+            const builderModeConfig = getCustomBuilderModeConfig(builderMode);
+            const showBuilder = hasCustomBuilder && catalogView === 'builder';
+
             const vegCount = vendor.products.filter((p) => p.foodType === 'veg').length;
             const nonVegCount = vendor.products.filter((p) => p.foodType === 'non-veg').length;
             const hasFoodTypeTags = vegCount > 0 || nonVegCount > 0;
@@ -672,6 +689,56 @@ export function VendorWebsiteView({
 
             return (
               <>
+                {hasCustomBuilder && (
+                  <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-brand-border bg-brand-soft/35 p-3">
+                    <div className="inline-flex flex-wrap rounded-xl bg-background/80 p-1 ring-1 ring-border">
+                      <button
+                        type="button"
+                        onClick={() => setCatalogView('builder')}
+                        className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-extrabold transition-colors ${
+                          showBuilder
+                            ? 'bg-brand text-brand-foreground shadow-xs'
+                            : 'text-muted-foreground hover:text-foreground'
+                        }`}
+                      >
+                        {builderMode === 'catering' ? (
+                          <UtensilsCrossed className="size-3.5" aria-hidden="true" />
+                        ) : (
+                          <Package className="size-3.5" aria-hidden="true" />
+                        )}
+                        Build Your Own {builderModeConfig.label}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCatalogView('catalog')}
+                        className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-bold transition-colors ${
+                          !showBuilder
+                            ? 'bg-foreground text-background shadow-xs'
+                            : 'text-muted-foreground hover:text-foreground'
+                        }`}
+                      >
+                        <ShoppingBag className="size-3.5" aria-hidden="true" />
+                        Full Catalog &amp; Ready Packages ({vendor.products.length})
+                      </button>
+                    </div>
+                    <p className="text-xs font-medium text-muted-foreground">
+                      Min {Math.max(1, vendor.customBuilderMinQty ?? builderModeConfig.defaultMinQty)}{' '}
+                      {builderModeConfig.unitPlural} · Direct WhatsApp order
+                    </p>
+                  </div>
+                )}
+
+                {showBuilder ? (
+                  <VendorCustomBoxBuilder
+                    key={vendor.id}
+                    vendor={vendor}
+                    currency={currency}
+                    shareUrl={shareUrl}
+                    browsingLocation={browsingLocation}
+                    onTrackWhatsAppClick={(vendorId) => onTrackWhatsAppClick?.(vendorId)}
+                  />
+                ) : (
+                  <>
                 <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
                   <div>
                     <p className="text-xs font-bold uppercase tracking-wide text-brand">
@@ -861,6 +928,8 @@ export function VendorWebsiteView({
                     );
                   })}
                 </div>
+                  </>
+                )}
               </>
             );
           })()}

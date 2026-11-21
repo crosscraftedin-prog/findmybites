@@ -237,6 +237,149 @@ export function parseProductUnitFromServes(
 
 export type ProductFoodType = 'veg' | 'non-veg';
 
+export type CustomBuilderMode = 'snackbox' | 'mealbox' | 'catering';
+export type BuilderPresetId = 'veg' | 'non-veg' | 'party';
+
+export interface CustomBuilderModeConfig {
+  id: CustomBuilderMode;
+  label: string;
+  customerTitle: string;
+  subtitle: string;
+  unitSingular: string;
+  unitPlural: string;
+  defaultMinQty: number;
+  sections: string[];
+}
+
+export const CUSTOM_BUILDER_MODES: CustomBuilderModeConfig[] = [
+  {
+    id: 'snackbox',
+    label: 'Snack Box Builder',
+    customerTitle: 'Build Your Own Snack Box',
+    subtitle: 'Pick each snack, sandwich, sweet & drink to assemble your custom box.',
+    unitSingular: 'box',
+    unitPlural: 'boxes',
+    defaultMinQty: 10,
+    sections: [
+      'Savory Snacks',
+      'Sandwiches & Wraps',
+      'Samosas & Puffs',
+      'Sweets & Muffins',
+      'Drinks & Juices',
+      'Dips & Extras',
+    ],
+  },
+  {
+    id: 'mealbox',
+    label: 'Meal Box Builder',
+    customerTitle: 'Build Your Own Meal Box',
+    subtitle: 'Pick your starters, rice/biryani, curries, breads & dessert per meal box.',
+    unitSingular: 'meal box',
+    unitPlural: 'meal boxes',
+    defaultMinQty: 10,
+    sections: [
+      'Starters & Sides',
+      'Biryani & Rice',
+      'Main Curries & Dal',
+      'Breads & Rotis',
+      'Sweets & Desserts',
+      'Beverages',
+    ],
+  },
+  {
+    id: 'catering',
+    label: 'Catering Plate Builder',
+    customerTitle: 'Build Your Own Catering Plate',
+    subtitle: 'Select every starter, main course, bread & dessert with transparent per-plate pricing.',
+    unitSingular: 'plate',
+    unitPlural: 'plates',
+    defaultMinQty: 15,
+    sections: [
+      'Starters & Kebabs',
+      'Biryani & Rice',
+      'Curries & Dal',
+      'Breads',
+      'Soups & Chinese',
+      'Sweets & Desserts',
+      'Beverages & Sides',
+    ],
+  },
+];
+
+export const BUILDER_PRESET_OPTIONS: Array<{
+  id: BuilderPresetId;
+  shortLabel: string;
+  modeLabels: Record<CustomBuilderMode, string>;
+  modeSubtitles: Record<CustomBuilderMode, string>;
+}> = [
+  {
+    id: 'veg',
+    shortLabel: 'Veg',
+    modeLabels: {
+      snackbox: 'Veg Snack Box',
+      mealbox: 'Veg Meal Box',
+      catering: 'Veg Catering Plate',
+    },
+    modeSubtitles: {
+      snackbox: 'Curated all-veg snack box combo',
+      mealbox: 'Curated vegetarian meal box',
+      catering: 'Curated vegetarian catering plate',
+    },
+  },
+  {
+    id: 'non-veg',
+    shortLabel: 'Non-Veg',
+    modeLabels: {
+      snackbox: 'Non-Veg Snack Box',
+      mealbox: 'Non-Veg Meal Box',
+      catering: 'Non-Veg Catering Plate',
+    },
+    modeSubtitles: {
+      snackbox: 'Signature non-veg snack box combo',
+      mealbox: 'Signature non-veg meal box',
+      catering: 'Signature non-veg catering plate',
+    },
+  },
+  {
+    id: 'party',
+    shortLabel: 'Cocktail / Party',
+    modeLabels: {
+      snackbox: 'Cocktail / Party Box',
+      mealbox: 'Corporate / Party Box',
+      catering: 'Cocktail Snacks',
+    },
+    modeSubtitles: {
+      snackbox: 'Office tea, birthday & party favorites',
+      mealbox: 'Group event & corporate favorites',
+      catering: 'Party starters, finger foods & drinks',
+    },
+  },
+];
+
+export function getCustomBuilderModeConfig(mode?: CustomBuilderMode): CustomBuilderModeConfig {
+  return CUSTOM_BUILDER_MODES.find((m) => m.id === mode) ?? CUSTOM_BUILDER_MODES[0];
+}
+
+export function suggestBuilderModeForCategory(category: string): CustomBuilderMode {
+  const c = (category || '').toLowerCase();
+  if (c.includes('snack') || c.includes('platter') || c.includes('hamper')) return 'snackbox';
+  if (c.includes('cloud kitchen') || c.includes('healthy') || c.includes('diet')) return 'mealbox';
+  return 'catering';
+}
+
+export function isBuilderSuggestedCategory(category: string): boolean {
+  const c = (category || '').toLowerCase();
+  return (
+    c.includes('catering') ||
+    c.includes('snack') ||
+    c.includes('platter') ||
+    c.includes('cloud kitchen') ||
+    c.includes('private chef') ||
+    c.includes('live counter') ||
+    c.includes('food truck')
+  );
+}
+
 export interface VendorProduct {
   id: string;
   name: string;
@@ -245,6 +388,8 @@ export interface VendorProduct {
   unitType?: ProductUnitType;
   foodType?: ProductFoodType;
   dietaryTags?: string[];
+  builderSection?: string;
+  builderPresets?: BuilderPresetId[];
   priceUsd: number;
   description: string;
   image: string;
@@ -311,6 +456,10 @@ export interface Vendor {
   logo?: string;
   gallery?: string[];
   products: VendorProduct[];
+  customBuilderEnabled?: boolean;
+  customBuilderMode?: CustomBuilderMode;
+  customBuilderMinQty?: number;
+  customBuilderPackagingUsd?: number;
   reviews: VendorReview[];
   claimStatus?: 'none' | 'pending' | 'claimed';
   claimedByToken?: string;

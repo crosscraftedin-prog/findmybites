@@ -15,6 +15,7 @@ import {
   MessageCircle,
   MessageSquareWarning,
   Navigation,
+  Package,
   Plus,
   RefreshCw,
   Send,
@@ -30,13 +31,17 @@ import {
 import {
   ALL_CATEGORIES,
   AdminTransferRecord,
+  BUILDER_PRESET_OPTIONS,
   BookingEnquiry,
+  BuilderPresetId,
   CATEGORY_CARDS,
   COUNTRY_DEFAULT_CURRENCY,
   COUNTRY_REGION_LABEL,
   CURRENCIES,
+  CUSTOM_BUILDER_MODES,
   CloudVendorMetric,
   CurrencyCode,
+  CustomBuilderMode,
   EventRequest,
   FOOD_CATEGORIES,
   LAUNCH_COUNTRIES,
@@ -49,10 +54,13 @@ import {
   Vendor,
   VendorProduct,
   generateTransferPasscode,
+  getCustomBuilderModeConfig,
   getVendorBioHandle,
+  isBuilderSuggestedCategory,
   localToUsd,
   normalizePasscode,
   normalizePhoneDigits,
+  suggestBuilderModeForCategory,
 } from '../data/vendors';
 import {
   AdminReviewRecord,
@@ -110,6 +118,8 @@ interface DraftProductRow {
   priceLocal: string;
   serves: string;
   foodType: ProductFoodType | '';
+  builderSection?: string;
+  builderPresets?: BuilderPresetId[];
   tag: string;
   description: string;
   image: string;
@@ -221,6 +231,8 @@ function makeEmptyProduct(defaultImg: string): DraftProductRow {
     priceLocal: '',
     serves: '1 kg · Serves 8',
     foodType: '',
+    builderSection: '',
+    builderPresets: [],
     tag: 'Bestseller',
     description: '',
     image: defaultImg,
@@ -277,6 +289,10 @@ export function AdminPanelModal({
   const [christmasOffer, setChristmasOffer] = useState(
     'Christmas Plum Cakes, Yule Logs & Festive Gift Boxes · Pre-orders Open'
   );
+  const [customBuilderEnabled, setCustomBuilderEnabled] = useState(false);
+  const [customBuilderMode, setCustomBuilderMode] = useState<CustomBuilderMode>('snackbox');
+  const [customBuilderMinQty, setCustomBuilderMinQty] = useState(10);
+  const [customBuilderPackagingLocal, setCustomBuilderPackagingLocal] = useState(0);
   const [coverImage, setCoverImage] = useState('/src/assets/images/cat-bakers.png');
   const [passcode, setPasscode] = useState(() => generateTransferPasscode('CAKE'));
   const [products, setProducts] = useState<DraftProductRow[]>([
@@ -461,6 +477,8 @@ export function AdminPanelModal({
     setArea('');
     setAllStatesCoverage(false);
     setServiceStates([]);
+    setCustomBuilderEnabled(false);
+    setCustomBuilderPackagingLocal(0);
     setPhoneLocal('');
     setBioHandle('');
     setCoverImage(categoryDefaultImg);
@@ -511,6 +529,12 @@ export function AdminPanelModal({
           name: p.name.trim().slice(0, 100),
           serves: p.serves.trim().slice(0, 60) || 'Custom',
           ...(p.foodType ? { foodType: p.foodType } : {}),
+          ...(customBuilderEnabled && p.builderSection?.trim()
+            ? { builderSection: p.builderSection.trim().slice(0, 60) }
+            : {}),
+          ...(customBuilderEnabled && p.builderPresets && p.builderPresets.length > 0
+            ? { builderPresets: p.builderPresets }
+            : {}),
           priceUsd: Math.max(1, localToUsd(localNum > 0 ? localNum : 500, formCurrency)),
           description:
             p.description.trim().slice(0, 400) ||
@@ -560,6 +584,16 @@ export function AdminPanelModal({
         description.trim() || `Handcrafted ${category} serving ${area.trim() || city}, ${city}.`,
       christmasSpecial,
       christmasOffer: christmasSpecial ? christmasOffer.trim() : undefined,
+      customBuilderEnabled: isFood && customBuilderEnabled,
+      customBuilderMode: isFood && customBuilderEnabled ? customBuilderMode : undefined,
+      customBuilderMinQty:
+        isFood && customBuilderEnabled
+          ? Math.max(1, Math.min(5000, Math.round(customBuilderMinQty || 10)))
+          : undefined,
+      customBuilderPackagingUsd:
+        isFood && customBuilderEnabled && customBuilderPackagingLocal > 0
+          ? Math.max(0, Math.min(500, localToUsd(customBuilderPackagingLocal, formCurrency)))
+          : undefined,
       bioHandle: bioHandle.trim() || slugBase,
       serviceAreas: [area.trim() || city, city].filter(Boolean),
       allStatesCoverage,
@@ -1000,8 +1034,14 @@ export function AdminPanelModal({
                       <select
                         value={category}
                         onChange={(e) => {
-                          setCategory(e.target.value);
-                          const nextMeta = CATEGORY_CARDS.find((c) => c.label === e.target.value);
+                          const nextCat = e.target.value;
+                          setCategory(nextCat);
+                          const suggestedMode = suggestBuilderModeForCategory(nextCat);
+                          setCustomBuilderMode(suggestedMode);
+                          setCustomBuilderMinQty(
+                            getCustomBuilderModeConfig(suggestedMode).defaultMinQty
+                          );
+                          const nextMeta = CATEGORY_CARDS.find((c) => c.label === nextCat);
                           if (nextMeta && coverImage.startsWith('/src/assets/images/')) {
                             setCoverImage(nextMeta.image);
                           }
@@ -1257,6 +1297,98 @@ export function AdminPanelModal({
                       />
                     </div>
                   )}
+
+                  {/* Custom Plate / Snack Box / Meal Box Builder Setup */}
+                  {(FOOD_CATEGORIES as readonly string[]).includes(category) && (
+                    <div className="mt-3 rounded-xl border border-brand-border bg-brand-soft/25 p-3">
+                      <label className="flex cursor-pointer items-start gap-2.5 text-xs">
+                        <input
+                          type="checkbox"
+                          checked={customBuilderEnabled}
+                          onChange={(e) => setCustomBuilderEnabled(e.target.checked)}
+                          className="mt-0.5 size-4 accent-[#ef6c22]"
+                        />
+                        <div className="flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="inline-flex items-center gap-1.5 font-extrabold text-brand">
+                              <Package className="size-3.5" aria-hidden="true" />
+                              Enable Custom Plate / Snack Box / Meal Box Builder
+                            </span>
+                            {isBuilderSuggestedCategory(category) && (
+                              <span className="rounded bg-brand px-1.5 py-0.5 text-[10px] font-bold text-brand-foreground">
+                                Best for {category}
+                              </span>
+                            )}
+                          </div>
+                          <p className="mt-0.5 text-[11px] text-muted-foreground">
+                            Customers can add individual items from Section 2 below to build their own custom Snack Box, Meal Box, or Catering Plate and order on WhatsApp.
+                          </p>
+                        </div>
+                      </label>
+
+                      {customBuilderEnabled && (
+                        <div className="mt-3 grid grid-cols-1 gap-2.5 border-t border-brand-border/60 pt-3 sm:grid-cols-3">
+                          <div>
+                            <label className="block text-[11px] font-bold text-foreground">
+                              Builder Mode
+                            </label>
+                            <select
+                              value={customBuilderMode}
+                              onChange={(e) => {
+                                const nextMode = e.target.value as CustomBuilderMode;
+                                setCustomBuilderMode(nextMode);
+                                setCustomBuilderMinQty(
+                                  getCustomBuilderModeConfig(nextMode).defaultMinQty
+                                );
+                              }}
+                              className="mt-1 w-full rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-semibold text-foreground"
+                            >
+                              {CUSTOM_BUILDER_MODES.map((m) => (
+                                <option key={m.id} value={m.id}>
+                                  {m.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-[11px] font-bold text-foreground">
+                              Min {getCustomBuilderModeConfig(customBuilderMode).unitPlural}
+                            </label>
+                            <input
+                              type="number"
+                              min={1}
+                              max={5000}
+                              value={customBuilderMinQty}
+                              onChange={(e) =>
+                                setCustomBuilderMinQty(
+                                  Math.max(1, Math.min(5000, Number(e.target.value) || 1))
+                                )
+                              }
+                              className="mt-1 w-full rounded-lg border border-border bg-background px-2.5 py-1.5 font-mono text-xs text-foreground"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[11px] font-bold text-foreground">
+                              Box / Plate Fee ({currencySymbol.trim()}, optional)
+                            </label>
+                            <input
+                              type="number"
+                              min={0}
+                              max={50000}
+                              value={customBuilderPackagingLocal}
+                              onChange={(e) =>
+                                setCustomBuilderPackagingLocal(
+                                  Math.max(0, Number(e.target.value) || 0)
+                                )
+                              }
+                              placeholder="0"
+                              className="mt-1 w-full rounded-lg border border-border bg-background px-2.5 py-1.5 font-mono text-xs text-foreground"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Section 2: Products / Cakes Menu Builder */}
@@ -1264,7 +1396,7 @@ export function AdminPanelModal({
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <h3 className="text-sm font-extrabold text-foreground">
-                        2. Add Baker&apos;s Cakes &amp; Products ({products.length}/20)
+                        2. Add Baker&apos;s Cakes &amp; Products ({products.length}/50)
                       </h3>
                       <p className="text-xs text-muted-foreground">
                         Pre-fill their menu so their storefront looks complete the moment you send the link!
@@ -1289,7 +1421,7 @@ export function AdminPanelModal({
                       </button>
                       <button
                         type="button"
-                        disabled={products.length >= 20}
+                        disabled={products.length >= 50}
                         onClick={() =>
                           setProducts((prev) => [...prev, makeEmptyProduct(categoryDefaultImg)])
                         }
@@ -1485,6 +1617,71 @@ export function AdminPanelModal({
                                 Non-Veg
                               </button>
                             </div>
+
+                            {customBuilderEnabled && (
+                              <div className="flex flex-wrap items-center gap-2 rounded-lg border border-brand-border/60 bg-brand-soft/20 px-2.5 py-1.5 sm:col-span-4">
+                                <select
+                                  aria-label="Builder Section"
+                                  value={prod.builderSection || ''}
+                                  onChange={(e) =>
+                                    setProducts((prev) =>
+                                      prev.map((p) =>
+                                        p.id === prod.id
+                                          ? { ...p, builderSection: e.target.value }
+                                          : p
+                                      )
+                                    )
+                                  }
+                                  className="rounded-md border border-border bg-card px-2 py-1 text-[11px] font-semibold text-foreground"
+                                >
+                                  <option value="">
+                                    {getCustomBuilderModeConfig(customBuilderMode).label} Section
+                                  </option>
+                                  {getCustomBuilderModeConfig(customBuilderMode).sections.map(
+                                    (sec) => (
+                                      <option key={sec} value={sec}>
+                                        {sec}
+                                      </option>
+                                    )
+                                  )}
+                                </select>
+                                <span className="text-[10px] font-semibold text-muted-foreground">
+                                  Presets:
+                                </span>
+                                {BUILDER_PRESET_OPTIONS.map((preset) => {
+                                  const active = (prod.builderPresets || []).includes(preset.id);
+                                  return (
+                                    <button
+                                      key={preset.id}
+                                      type="button"
+                                      onClick={() =>
+                                        setProducts((prev) =>
+                                          prev.map((p) => {
+                                            if (p.id !== prod.id) return p;
+                                            const curr = p.builderPresets || [];
+                                            return {
+                                              ...p,
+                                              builderPresets: curr.includes(preset.id)
+                                                ? curr.filter((x) => x !== preset.id)
+                                                : [...curr, preset.id],
+                                            };
+                                          })
+                                        )
+                                      }
+                                      className={`cursor-pointer rounded-md border px-2 py-0.5 text-[10px] font-bold transition-colors ${
+                                        active
+                                          ? 'border-brand bg-brand text-brand-foreground'
+                                          : 'border-border bg-card text-muted-foreground hover:border-brand hover:text-foreground'
+                                      }`}
+                                    >
+                                      {active
+                                        ? `✓ ${preset.modeLabels[customBuilderMode]}`
+                                        : preset.modeLabels[customBuilderMode]}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>

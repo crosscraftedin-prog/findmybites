@@ -18,7 +18,9 @@ import {
   AdminTransferRecord,
   BioTheme,
   BookingEnquiry,
+  BuilderPresetId,
   CloudVendorMetric,
+  CustomBuilderMode,
   DEFAULT_SITE_SETTINGS,
   EventQuote,
   EventRequest,
@@ -71,7 +73,8 @@ function sanitizeDigits(raw: string): string {
 
 function sanitizeProducts(products: VendorProduct[], allowEmpty = false): VendorProduct[] {
   const validUnits = new Set(['kg', 'g', 'pcs', 'box', 'dozen', 'pax', 'custom']);
-  const list = products.slice(0, 20).map((p, idx) => {
+  const validPresets = new Set<BuilderPresetId>(['veg', 'non-veg', 'party']);
+  const list = products.slice(0, 50).map((p, idx) => {
     const cleanDietary = Array.isArray(p.dietaryTags)
       ? p.dietaryTags
           .map((t) => (typeof t === 'string' ? t.trim().slice(0, 32) : ''))
@@ -86,6 +89,20 @@ function sanitizeProducts(products: VendorProduct[], allowEmpty = false): Vendor
         : undefined;
     const foodType =
       p.foodType === 'veg' || p.foodType === 'non-veg' ? p.foodType : undefined;
+    const builderSection =
+      typeof p.builderSection === 'string' && p.builderSection.trim()
+        ? p.builderSection.trim().slice(0, 60)
+        : undefined;
+    const builderPresets = Array.isArray(p.builderPresets)
+      ? Array.from(
+          new Set(
+            p.builderPresets.filter(
+              (pr): pr is BuilderPresetId =>
+                typeof pr === 'string' && validPresets.has(pr as BuilderPresetId)
+            )
+          )
+        ).slice(0, 3)
+      : [];
 
     return {
       id: sanitizeId(p.id || `prod-${idx + 1}`),
@@ -95,6 +112,8 @@ function sanitizeProducts(products: VendorProduct[], allowEmpty = false): Vendor
       ...(unitType ? { unitType } : {}),
       ...(foodType ? { foodType } : {}),
       ...(cleanDietary.length > 0 ? { dietaryTags: cleanDietary } : {}),
+      ...(builderSection ? { builderSection } : {}),
+      ...(builderPresets.length > 0 ? { builderPresets } : {}),
       priceUsd: Math.max(0, Math.min(100000, Number(p.priceUsd) || 0)),
       description: clampStr(p.description || p.name, 2, 400, 'Custom package'),
       image: clampStr(
@@ -219,6 +238,22 @@ function docToVendor(id: string, data: Record<string, unknown>): Vendor {
       ? (data.gallery as string[]).filter((g) => typeof g === 'string' && g.length > 0).slice(0, 6)
       : undefined,
     products,
+    customBuilderEnabled: Boolean(data.customBuilderEnabled),
+    customBuilderMode:
+      data.customBuilderMode === 'snackbox' ||
+      data.customBuilderMode === 'mealbox' ||
+      data.customBuilderMode === 'catering'
+        ? data.customBuilderMode
+        : undefined,
+    customBuilderMinQty:
+      typeof data.customBuilderMinQty === 'number' && Number.isFinite(data.customBuilderMinQty)
+        ? Math.max(1, Math.min(5000, Math.round(data.customBuilderMinQty)))
+        : undefined,
+    customBuilderPackagingUsd:
+      typeof data.customBuilderPackagingUsd === 'number' &&
+      Number.isFinite(data.customBuilderPackagingUsd)
+        ? Math.max(0, Math.min(500, Number(data.customBuilderPackagingUsd)))
+        : undefined,
     reviews: [],
     claimStatus:
       data.claimStatus === 'pending' || data.claimStatus === 'claimed' || data.claimStatus === 'none'
@@ -394,6 +429,28 @@ export async function createVendorInCloud(
         }
       : {}),
     products: cleanProducts,
+    ...(vendor.customBuilderEnabled !== undefined
+      ? { customBuilderEnabled: Boolean(vendor.customBuilderEnabled) }
+      : {}),
+    ...(vendor.customBuilderMode
+      ? { customBuilderMode: vendor.customBuilderMode }
+      : {}),
+    ...(vendor.customBuilderMinQty !== undefined
+      ? {
+          customBuilderMinQty: Math.max(
+            1,
+            Math.min(5000, Math.round(Number(vendor.customBuilderMinQty) || 10))
+          ),
+        }
+      : {}),
+    ...(vendor.customBuilderPackagingUsd !== undefined
+      ? {
+          customBuilderPackagingUsd: Math.max(
+            0,
+            Math.min(500, Number(vendor.customBuilderPackagingUsd) || 0)
+          ),
+        }
+      : {}),
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   };
@@ -413,6 +470,10 @@ export async function createVendorInCloud(
       promoBanner: payload.promoBanner,
       gallery: payload.gallery,
       products: cleanProducts,
+      customBuilderEnabled: payload.customBuilderEnabled,
+      customBuilderMode: payload.customBuilderMode,
+      customBuilderMinQty: payload.customBuilderMinQty,
+      customBuilderPackagingUsd: payload.customBuilderPackagingUsd,
     };
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, docPath);
@@ -450,6 +511,10 @@ export async function updateVendorInCloud(
     lat: number;
     lng: number;
     products: VendorProduct[];
+    customBuilderEnabled: boolean;
+    customBuilderMode: CustomBuilderMode;
+    customBuilderMinQty: number;
+    customBuilderPackagingUsd: number;
   }>
 ): Promise<void> {
   const docPath = `vendors/${vendorId}`;
@@ -505,6 +570,27 @@ export async function updateVendorInCloud(
   if (updates.lat !== undefined) clean.lat = Math.max(-90, Math.min(90, Number(updates.lat) || 0));
   if (updates.lng !== undefined) clean.lng = Math.max(-180, Math.min(180, Number(updates.lng) || 0));
   if (updates.products !== undefined) clean.products = sanitizeProducts(updates.products, true);
+  if (updates.customBuilderEnabled !== undefined)
+    clean.customBuilderEnabled = Boolean(updates.customBuilderEnabled);
+  if (
+    updates.customBuilderMode === 'snackbox' ||
+    updates.customBuilderMode === 'mealbox' ||
+    updates.customBuilderMode === 'catering'
+  ) {
+    clean.customBuilderMode = updates.customBuilderMode;
+  }
+  if (updates.customBuilderMinQty !== undefined) {
+    clean.customBuilderMinQty = Math.max(
+      1,
+      Math.min(5000, Math.round(Number(updates.customBuilderMinQty) || 10))
+    );
+  }
+  if (updates.customBuilderPackagingUsd !== undefined) {
+    clean.customBuilderPackagingUsd = Math.max(
+      0,
+      Math.min(500, Number(updates.customBuilderPackagingUsd) || 0)
+    );
+  }
 
   try {
     await updateDoc(doc(db, 'vendors', vendorId), clean);
@@ -1096,6 +1182,28 @@ export async function adminCreateStoreWithTransfer(
       ? { logo: vendor.logo.trim().slice(0, 70000) }
       : {}),
     products: cleanProducts,
+    ...(vendor.customBuilderEnabled !== undefined
+      ? { customBuilderEnabled: Boolean(vendor.customBuilderEnabled) }
+      : {}),
+    ...(vendor.customBuilderMode
+      ? { customBuilderMode: vendor.customBuilderMode }
+      : {}),
+    ...(vendor.customBuilderMinQty !== undefined
+      ? {
+          customBuilderMinQty: Math.max(
+            1,
+            Math.min(5000, Math.round(Number(vendor.customBuilderMinQty) || 10))
+          ),
+        }
+      : {}),
+    ...(vendor.customBuilderPackagingUsd !== undefined
+      ? {
+          customBuilderPackagingUsd: Math.max(
+            0,
+            Math.min(500, Number(vendor.customBuilderPackagingUsd) || 0)
+          ),
+        }
+      : {}),
     claimStatus: 'pending' as const,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),

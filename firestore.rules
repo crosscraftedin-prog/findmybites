@@ -76,7 +76,7 @@ service cloud.firestore {
 
     function isValidProductsList(listVal) {
       return listVal is list &&
-        listVal.size() <= 30 &&
+        listVal.size() <= 50 &&
         (listVal.size() == 0 || listVal[0] is map);
     }
 
@@ -102,6 +102,7 @@ service cloud.firestore {
           'bioHandle', 'bioTheme', 'instagramHandle', 'customLinks',
           'serviceAreas', 'allStatesCoverage', 'serviceStates',
           'specialties', 'image', 'logo', 'gallery', 'products',
+          'customBuilderEnabled', 'customBuilderMode', 'customBuilderMinQty', 'customBuilderPackagingUsd',
           'claimStatus', 'claimedByToken',
           'seoTitle', 'seoDescription', 'seoKeywords',
           'createdAt', 'updatedAt'
@@ -149,6 +150,10 @@ service cloud.firestore {
         (!('logo' in data) || (data.logo is string && data.logo.size() <= 120000)) &&
         (!('gallery' in data) || isValidStringList(data.gallery, 6, 200000)) &&
         isValidProductsList(data.products) &&
+        (!('customBuilderEnabled' in data) || data.customBuilderEnabled is bool) &&
+        (!('customBuilderMode' in data) || data.customBuilderMode in ['snackbox', 'mealbox', 'catering']) &&
+        (!('customBuilderMinQty' in data) || (data.customBuilderMinQty is number && data.customBuilderMinQty >= 1 && data.customBuilderMinQty <= 5000)) &&
+        (!('customBuilderPackagingUsd' in data) || (data.customBuilderPackagingUsd is number && data.customBuilderPackagingUsd >= 0 && data.customBuilderPackagingUsd <= 500)) &&
         (!('createdAt' in data) || data.createdAt is timestamp) &&
         data.updatedAt is timestamp;
     }
@@ -432,7 +437,9 @@ service cloud.firestore {
               'tagline', 'description', 'promoBanner', 'christmasSpecial',
               'christmasOffer', 'bioHandle', 'bioTheme',
               'instagramHandle', 'customLinks', 'serviceAreas',
-              'specialties', 'image', 'logo', 'gallery', 'products', 'updatedAt'
+              'specialties', 'image', 'logo', 'gallery', 'products',
+              'customBuilderEnabled', 'customBuilderMode', 'customBuilderMinQty', 'customBuilderPackagingUsd',
+              'updatedAt'
             ])
           ) ||
           // Tier 2: Admin approval, verification, SEO overrides, Christmas promotion & concierge setup
@@ -447,7 +454,9 @@ service cloud.firestore {
               'christmasSpecial', 'christmasOffer', 'bioHandle', 'bioTheme',
               'instagramHandle', 'customLinks', 'serviceAreas',
               'allStatesCoverage', 'serviceStates', 'specialties',
-              'image', 'logo', 'gallery', 'products', 'claimStatus',
+              'image', 'logo', 'gallery', 'products',
+              'customBuilderEnabled', 'customBuilderMode', 'customBuilderMinQty', 'customBuilderPackagingUsd',
+              'claimStatus',
               'seoTitle', 'seoDescription', 'seoKeywords', 'updatedAt'
             ])
           ) ||

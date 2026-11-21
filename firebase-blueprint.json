@@ -195,7 +195,24 @@
         },
         "products": {
           "type": "array",
-          "description": "Up to 20 catalog products/packages displayed on the vendor mini-website."
+          "description": "Up to 50 catalog products/packages displayed on the vendor mini-website and custom plate/box builder."
+        },
+        "customBuilderEnabled": {
+          "type": "boolean",
+          "description": "Whether the interactive Custom Snack Box / Meal Box / Catering Plate builder is enabled on this storefront."
+        },
+        "customBuilderMode": {
+          "type": "string",
+          "enum": ["snackbox", "mealbox", "catering"],
+          "description": "Builder presentation mode: snackbox, mealbox, or catering."
+        },
+        "customBuilderMinQty": {
+          "type": "number",
+          "description": "Minimum number of boxes, meal boxes, or catering plates required per custom order."
+        },
+        "customBuilderPackagingUsd": {
+          "type": "number",
+          "description": "Optional per-box or per-plate packaging fee in USD equivalent."
         },
         "claimStatus": {
           "type": "string",

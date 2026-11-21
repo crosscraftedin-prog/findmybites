@@ -18,6 +18,7 @@ import {
   MapPin,
   Megaphone,
   MessageCircle,
+  Package,
   PauseCircle,
   PlayCircle,
   Plus,
@@ -32,11 +33,15 @@ import {
   X,
 } from 'lucide-react';
 import {
+  BUILDER_PRESET_OPTIONS,
   BioTheme,
   BookingEnquiry,
+  BuilderPresetId,
   CURRENCIES,
+  CUSTOM_BUILDER_MODES,
   CloudVendorMetric,
   CurrencyCode,
+  CustomBuilderMode,
   EventRequest,
   PRODUCT_DIETARY_OPTIONS,
   PRODUCT_UNIT_OPTIONS,
@@ -50,9 +55,11 @@ import {
   formatMoney,
   formatPlanPrice,
   formatProductServesLabel,
+  getCustomBuilderModeConfig,
   getVendorBioHandle,
   localToUsd,
   parseProductUnitFromServes,
+  suggestBuilderModeForCategory,
   usdToLocal,
 } from '../data/vendors';
 import {
@@ -203,6 +210,8 @@ export function VendorDashboardModal({
   const [prodPriceLocal, setProdPriceLocal] = useState(usdToLocal(40, currency));
   const [prodDesc, setProdDesc] = useState('');
   const [prodImage, setProdImage] = useState('');
+  const [prodBuilderSection, setProdBuilderSection] = useState('');
+  const [prodBuilderPresets, setProdBuilderPresets] = useState<BuilderPresetId[]>([]);
 
   // Storefront full editor state
   const [editName, setEditName] = useState('');
@@ -212,6 +221,10 @@ export function VendorDashboardModal({
   const [editPromoBanner, setEditPromoBanner] = useState('');
   const [editChristmasSpecial, setEditChristmasSpecial] = useState(false);
   const [editChristmasOffer, setEditChristmasOffer] = useState('');
+  const [editCustomBuilderEnabled, setEditCustomBuilderEnabled] = useState(false);
+  const [editCustomBuilderMode, setEditCustomBuilderMode] = useState<CustomBuilderMode>('snackbox');
+  const [editCustomBuilderMinQty, setEditCustomBuilderMinQty] = useState(10);
+  const [editCustomBuilderPackagingLocal, setEditCustomBuilderPackagingLocal] = useState(0);
   const [editBioHandle, setEditBioHandle] = useState('');
   const [editBioTheme, setEditBioTheme] = useState<BioTheme>('saffron');
   const [editInstagram, setEditInstagram] = useState('');
@@ -258,6 +271,17 @@ export function VendorDashboardModal({
     setEditPromoBanner(target.promoBanner || '');
     setEditChristmasSpecial(Boolean(target.christmasSpecial));
     setEditChristmasOffer(target.christmasOffer || '');
+    const suggestedMode = target.customBuilderMode ?? suggestBuilderModeForCategory(target.category);
+    setEditCustomBuilderEnabled(Boolean(target.customBuilderEnabled));
+    setEditCustomBuilderMode(suggestedMode);
+    setEditCustomBuilderMinQty(
+      target.customBuilderMinQty ?? getCustomBuilderModeConfig(suggestedMode).defaultMinQty
+    );
+    setEditCustomBuilderPackagingLocal(
+      target.customBuilderPackagingUsd && target.customBuilderPackagingUsd > 0
+        ? usdToLocal(target.customBuilderPackagingUsd, currency)
+        : 0
+    );
     setEditBioHandle(getVendorBioHandle(target));
     setEditBioTheme(target.bioTheme ?? (target.marketplace === 'party' ? 'party' : 'saffron'));
     setEditInstagram(target.instagramHandle || '');
@@ -298,6 +322,17 @@ export function VendorDashboardModal({
     setEditPromoBanner(v.promoBanner || '');
     setEditChristmasSpecial(Boolean(v.christmasSpecial));
     setEditChristmasOffer(v.christmasOffer || '');
+    const suggestedMode = v.customBuilderMode ?? suggestBuilderModeForCategory(v.category);
+    setEditCustomBuilderEnabled(Boolean(v.customBuilderEnabled));
+    setEditCustomBuilderMode(suggestedMode);
+    setEditCustomBuilderMinQty(
+      v.customBuilderMinQty ?? getCustomBuilderModeConfig(suggestedMode).defaultMinQty
+    );
+    setEditCustomBuilderPackagingLocal(
+      v.customBuilderPackagingUsd && v.customBuilderPackagingUsd > 0
+        ? usdToLocal(v.customBuilderPackagingUsd, currency)
+        : 0
+    );
     setEditBioHandle(getVendorBioHandle(v));
     setEditBioTheme(v.bioTheme ?? (v.marketplace === 'party' ? 'party' : 'saffron'));
     setEditInstagram(v.instagramHandle || '');
@@ -356,6 +391,13 @@ export function VendorDashboardModal({
         promoBanner: editPromoBanner,
         christmasSpecial: editChristmasSpecial,
         christmasOffer: editChristmasOffer,
+        customBuilderEnabled: editCustomBuilderEnabled,
+        customBuilderMode: editCustomBuilderMode,
+        customBuilderMinQty: Math.max(1, Math.min(5000, Math.round(editCustomBuilderMinQty || 10))),
+        customBuilderPackagingUsd:
+          editCustomBuilderPackagingLocal > 0
+            ? Math.max(0, Math.min(500, localToUsd(editCustomBuilderPackagingLocal, currency)))
+            : 0,
         bioHandle: editBioHandle,
         bioTheme: editBioTheme,
         instagramHandle: editInstagram,
@@ -475,6 +517,8 @@ export function VendorDashboardModal({
     setProdPriceLocal(usdToLocal(40, currency));
     setProdDesc('');
     setProdImage('');
+    setProdBuilderSection('');
+    setProdBuilderPresets([]);
     setEditingProductId(null);
   };
 
@@ -507,11 +551,19 @@ export function VendorDashboardModal({
     setProdPriceLocal(Math.max(1, usdToLocal(product.priceUsd, currency)));
     setProdDesc(product.description || '');
     setProdImage(product.image || '');
+    setProdBuilderSection(product.builderSection || '');
+    setProdBuilderPresets(product.builderPresets ? [...product.builderPresets] : []);
   };
 
   const toggleProdDietaryTag = (tag: string) => {
     setProdDietaryTags((prev) =>
       prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
+    );
+  };
+
+  const toggleProdBuilderPreset = (presetId: BuilderPresetId) => {
+    setProdBuilderPresets((prev) =>
+      prev.includes(presetId) ? prev.filter((p) => p !== presetId) : [...prev, presetId]
     );
   };
 
@@ -529,6 +581,8 @@ export function VendorDashboardModal({
         unitType: prodUnitType,
         ...(prodFoodType ? { foodType: prodFoodType } : {}),
         ...(prodDietaryTags.length > 0 ? { dietaryTags: prodDietaryTags } : {}),
+        ...(prodBuilderSection.trim() ? { builderSection: prodBuilderSection.trim().slice(0, 60) } : {}),
+        ...(prodBuilderPresets.length > 0 ? { builderPresets: prodBuilderPresets } : {}),
         priceUsd: Math.max(1, localToUsd(prodPriceLocal, currency)),
         description: prodDesc.trim().slice(0, 400) || prodName.trim(),
         image: prodImage || vendor.image,
@@ -1079,6 +1133,90 @@ export function VendorDashboardModal({
                                 )}
                               </div>
 
+                              {/* Custom Plate / Snack Box / Meal Box Builder Controls */}
+                              <div className="rounded-xl border border-brand-border bg-card p-3">
+                                <label className="flex cursor-pointer items-start gap-2 text-xs font-bold text-foreground">
+                                  <input
+                                    type="checkbox"
+                                    checked={editCustomBuilderEnabled}
+                                    onChange={(e) => setEditCustomBuilderEnabled(e.target.checked)}
+                                    className="mt-0.5 size-4 accent-[#ef6c22]"
+                                  />
+                                  <div className="flex-1">
+                                    <span className="inline-flex items-center gap-1.5 text-brand">
+                                      <Package className="size-3.5" aria-hidden="true" />
+                                      Enable Custom Plate / Snack Box / Meal Box Builder
+                                    </span>
+                                    <p className="mt-0.5 text-[11px] font-normal text-muted-foreground">
+                                      Let customers pick individual items from your catalog to build their own custom box or catering plate &amp; order directly on WhatsApp.
+                                    </p>
+                                  </div>
+                                </label>
+
+                                {editCustomBuilderEnabled && (
+                                  <div className="mt-3 grid grid-cols-1 gap-2.5 border-t border-border pt-3 sm:grid-cols-3">
+                                    <div>
+                                      <label className="block text-[11px] font-semibold text-foreground">
+                                        Builder Mode
+                                      </label>
+                                      <select
+                                        value={editCustomBuilderMode}
+                                        onChange={(e) => {
+                                          const nextMode = e.target.value as CustomBuilderMode;
+                                          setEditCustomBuilderMode(nextMode);
+                                          setEditCustomBuilderMinQty(
+                                            getCustomBuilderModeConfig(nextMode).defaultMinQty
+                                          );
+                                        }}
+                                        className="mt-1 w-full rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-semibold text-foreground"
+                                      >
+                                        {CUSTOM_BUILDER_MODES.map((m) => (
+                                          <option key={m.id} value={m.id}>
+                                            {m.label}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                    <div>
+                                      <label className="block text-[11px] font-semibold text-foreground">
+                                        Minimum{' '}
+                                        {getCustomBuilderModeConfig(editCustomBuilderMode).unitPlural}
+                                      </label>
+                                      <input
+                                        type="number"
+                                        min={1}
+                                        max={5000}
+                                        value={editCustomBuilderMinQty}
+                                        onChange={(e) =>
+                                          setEditCustomBuilderMinQty(
+                                            Math.max(1, Math.min(5000, Number(e.target.value) || 1))
+                                          )
+                                        }
+                                        className="mt-1 w-full rounded-lg border border-border bg-background px-2.5 py-1.5 font-mono text-xs text-foreground"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-[11px] font-semibold text-foreground">
+                                        Box / Plate Fee ({currencyMeta.symbol.trim()}, optional)
+                                      </label>
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        max={50000}
+                                        value={editCustomBuilderPackagingLocal}
+                                        onChange={(e) =>
+                                          setEditCustomBuilderPackagingLocal(
+                                            Math.max(0, Number(e.target.value) || 0)
+                                          )
+                                        }
+                                        placeholder="0"
+                                        className="mt-1 w-full rounded-lg border border-border bg-background px-2.5 py-1.5 font-mono text-xs text-foreground"
+                                      />
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+
                               {/* Branding + Plan */}
                               <div className="flex flex-wrap items-center gap-2">
                                 <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-semibold text-foreground hover:border-brand hover:text-brand">
@@ -1322,7 +1460,7 @@ export function VendorDashboardModal({
                           <div className="mt-4 border-t border-border pt-4">
                             <div className="flex items-center justify-between">
                               <p className="text-xs font-bold text-foreground">
-                                Products &amp; Packages ({v.products.length}/20)
+                                Products &amp; Packages ({v.products.length}/50)
                               </p>
                               <button
                                 type="button"
@@ -1376,6 +1514,29 @@ export function VendorDashboardModal({
                                           <p className="font-mono text-[11px] tabular-nums text-muted-foreground">
                                             {formatMoney(p.priceUsd, currency)} · {p.serves}
                                           </p>
+                                          {(p.builderSection ||
+                                            (p.builderPresets && p.builderPresets.length > 0)) && (
+                                            <div className="mt-1 flex flex-wrap gap-1">
+                                              {p.builderSection && (
+                                                <span className="rounded border border-brand-border bg-brand-soft/60 px-1.5 py-0.5 text-[10px] font-bold text-brand">
+                                                  {p.builderSection}
+                                                </span>
+                                              )}
+                                              {p.builderPresets?.map((pid) => {
+                                                const meta = BUILDER_PRESET_OPTIONS.find(
+                                                  (opt) => opt.id === pid
+                                                );
+                                                return (
+                                                  <span
+                                                    key={pid}
+                                                    className="rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 dark:text-amber-300"
+                                                  >
+                                                    {meta?.shortLabel ?? pid}
+                                                  </span>
+                                                );
+                                              })}
+                                            </div>
+                                          )}
                                           {p.dietaryTags && p.dietaryTags.length > 0 && (
                                             <div className="mt-1 flex flex-wrap gap-1">
                                               {p.dietaryTags.map((tag) => (
@@ -1628,6 +1789,60 @@ export function VendorDashboardModal({
                                     })}
                                   </div>
                                 </div>
+
+                                {/* Custom Builder Section & Quick-Start Presets */}
+                                {(v.customBuilderEnabled ||
+                                  prodBuilderSection ||
+                                  prodBuilderPresets.length > 0) && (() => {
+                                  const modeCfg = getCustomBuilderModeConfig(
+                                    v.customBuilderMode ?? suggestBuilderModeForCategory(v.category)
+                                  );
+                                  return (
+                                    <div className="space-y-2 rounded-lg border border-brand-border bg-card p-2.5">
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <label className="text-[11px] font-bold text-foreground">
+                                          {modeCfg.label} Section:
+                                        </label>
+                                        <select
+                                          value={prodBuilderSection}
+                                          onChange={(e) => setProdBuilderSection(e.target.value)}
+                                          className="rounded-md border border-border bg-background px-2 py-1 text-[11px] font-semibold text-foreground"
+                                        >
+                                          <option value="">General / All Items</option>
+                                          {modeCfg.sections.map((sec) => (
+                                            <option key={sec} value={sec}>
+                                              {sec}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      </div>
+                                      <div className="flex flex-wrap items-center gap-1.5">
+                                        <span className="text-[11px] font-semibold text-muted-foreground">
+                                          Include in Quick-Start Presets:
+                                        </span>
+                                        {BUILDER_PRESET_OPTIONS.map((preset) => {
+                                          const active = prodBuilderPresets.includes(preset.id);
+                                          return (
+                                            <button
+                                              key={preset.id}
+                                              type="button"
+                                              onClick={() => toggleProdBuilderPreset(preset.id)}
+                                              className={`cursor-pointer rounded-md border px-2 py-0.5 text-[11px] font-bold transition-colors ${
+                                                active
+                                                  ? 'border-brand bg-brand text-brand-foreground'
+                                                  : 'border-border bg-background text-muted-foreground hover:border-brand hover:text-foreground'
+                                              }`}
+                                            >
+                                              {active
+                                                ? `✓ ${preset.modeLabels[modeCfg.id]}`
+                                                : preset.modeLabels[modeCfg.id]}
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  );
+                                })()}
 
                                 <div className="flex flex-wrap items-center gap-2">
                                   <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-semibold text-foreground hover:border-brand hover:text-brand">

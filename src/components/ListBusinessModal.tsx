@@ -10,6 +10,7 @@ import {
   LogIn,
   MapPin,
   MessageCircle,
+  Package,
   Plus,
   RefreshCw,
   Snowflake,
@@ -18,10 +19,14 @@ import {
   X,
 } from 'lucide-react';
 import {
+  BUILDER_PRESET_OPTIONS,
+  BuilderPresetId,
   COUNTRY_DEFAULT_CURRENCY,
   COUNTRY_REGION_LABEL,
   CURRENCIES,
+  CUSTOM_BUILDER_MODES,
   CurrencyCode,
+  CustomBuilderMode,
   FOOD_CATEGORIES,
   IMG_BALLOON,
   IMG_BAR,
@@ -52,7 +57,10 @@ import {
   VendorProduct,
   formatPlanPrice,
   formatProductServesLabel,
+  getCustomBuilderModeConfig,
+  isBuilderSuggestedCategory,
   localToUsd,
+  suggestBuilderModeForCategory,
   usdToLocal,
 } from '../data/vendors';
 import { compressImageFile, parseCoordsFromMapsLink } from '../utils/imageUpload';
@@ -78,6 +86,8 @@ interface DraftProduct {
   serves: string;
   foodType: ProductFoodType | '';
   dietaryTags: string[];
+  builderSection: string;
+  builderPresets: BuilderPresetId[];
   priceLocal: number;
   description: string;
   image: string;
@@ -153,6 +163,10 @@ export function ListBusinessModal({
   const [tagline, setTagline] = useState('');
   const [christmasSpecial, setChristmasSpecial] = useState(initialChristmasSpecial);
   const [christmasOffer, setChristmasOffer] = useState('');
+  const [customBuilderEnabled, setCustomBuilderEnabled] = useState(false);
+  const [customBuilderMode, setCustomBuilderMode] = useState<CustomBuilderMode>('snackbox');
+  const [customBuilderMinQty, setCustomBuilderMinQty] = useState(10);
+  const [customBuilderPackagingLocal, setCustomBuilderPackagingLocal] = useState(0);
   const [planTier, setPlanTier] = useState<PlanTier>(initialPlanTier);
   const [autoPayAccepted, setAutoPayAccepted] = useState(true);
 
@@ -170,6 +184,8 @@ export function ListBusinessModal({
       serves: '1 kg',
       foodType: '',
       dietaryTags: [],
+      builderSection: '',
+      builderPresets: [],
       priceLocal: usdToLocal(35, currency || 'INR'),
       description: '',
       image: '',
@@ -399,19 +415,36 @@ export function ListBusinessModal({
     );
   };
 
+  const toggleDraftBuilderPreset = (id: string, presetId: BuilderPresetId) => {
+    setProducts((prev) =>
+      prev.map((p) =>
+        p.id === id
+          ? {
+              ...p,
+              builderPresets: p.builderPresets.includes(presetId)
+                ? p.builderPresets.filter((x) => x !== presetId)
+                : [...p.builderPresets, presetId],
+            }
+          : p
+      )
+    );
+  };
+
   const addDraftProduct = () => {
-    if (products.length >= 10) return;
+    if (products.length >= 25) return;
     setProducts((prev) => [
       ...prev,
       {
         id: `draft-${Date.now()}`,
         name: '',
         unitQuantity: '1',
-        unitType: 'kg',
-        serves: '1 kg',
+        unitType: customBuilderEnabled ? 'pcs' : 'kg',
+        serves: customBuilderEnabled ? '1 pc' : '1 kg',
         foodType: '',
         dietaryTags: [],
-        priceLocal: usdToLocal(50, formCurrency),
+        builderSection: '',
+        builderPresets: [],
+        priceLocal: usdToLocal(customBuilderEnabled ? 2 : 50, formCurrency),
         description: '',
         image: '',
       },
@@ -481,6 +514,12 @@ export function ListBusinessModal({
         unitType: p.unitType,
         ...(p.foodType ? { foodType: p.foodType } : {}),
         ...(p.dietaryTags.length > 0 ? { dietaryTags: p.dietaryTags } : {}),
+        ...(customBuilderEnabled && p.builderSection.trim()
+          ? { builderSection: p.builderSection.trim().slice(0, 60) }
+          : {}),
+        ...(customBuilderEnabled && p.builderPresets.length > 0
+          ? { builderPresets: p.builderPresets }
+          : {}),
         priceUsd,
         description:
           p.description.trim() ||
@@ -519,6 +558,17 @@ export function ListBusinessModal({
       description: `${tagline.trim()} Published directly on FindMyBites × PimpMyParty with a dedicated one-page storefront and direct WhatsApp ordering across ${area.trim() || city.trim()}, ${city.trim()}, ${stateName}.`,
       christmasSpecial,
       christmasOffer: christmasOffer.trim() || undefined,
+      customBuilderEnabled: marketplace === 'food' && customBuilderEnabled,
+      customBuilderMode:
+        marketplace === 'food' && customBuilderEnabled ? customBuilderMode : undefined,
+      customBuilderMinQty:
+        marketplace === 'food' && customBuilderEnabled
+          ? Math.max(1, Math.min(5000, Math.round(customBuilderMinQty || 10)))
+          : undefined,
+      customBuilderPackagingUsd:
+        marketplace === 'food' && customBuilderEnabled && customBuilderPackagingLocal > 0
+          ? Math.max(0, Math.min(500, localToUsd(customBuilderPackagingLocal, formCurrency)))
+          : undefined,
       serviceAreas: [area.trim() || city.trim(), city.trim(), stateName, `${city.trim()} Metro`].filter(
         (v, i, arr) => v && arr.indexOf(v) === i
       ),
@@ -535,6 +585,8 @@ export function ListBusinessModal({
       setArea('');
       setTagline('');
       setChristmasOffer('');
+      setCustomBuilderEnabled(false);
+      setCustomBuilderPackagingLocal(0);
       setLogoDataUrl('');
       setCoverDataUrl('');
       setMapsPaste('');
@@ -547,6 +599,8 @@ export function ListBusinessModal({
           serves: '1 kg',
           foodType: '',
           dietaryTags: [],
+          builderSection: '',
+          builderPresets: [],
           priceLocal: usdToLocal(35, formCurrency),
           description: '',
           image: '',
@@ -704,7 +758,13 @@ export function ListBusinessModal({
                 <select
                   id="biz-cat"
                   value={category}
-                  onChange={(e) => setCategory(e.target.value)}
+                  onChange={(e) => {
+                    const nextCat = e.target.value;
+                    setCategory(nextCat);
+                    const suggestedMode = suggestBuilderModeForCategory(nextCat);
+                    setCustomBuilderMode(suggestedMode);
+                    setCustomBuilderMinQty(getCustomBuilderModeConfig(suggestedMode).defaultMinQty);
+                  }}
                   className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:border-brand focus:outline-none"
                 >
                   {categories.map((cat) => (
@@ -1022,21 +1082,115 @@ export function ListBusinessModal({
             </div>
           </div>
 
-          {/* 5. Products / Packages with Local Currency & Product Images */}
+          {/* 5. Products / Packages with Optional Custom Plate / Snack Box Builder */}
           <div className="space-y-3 border-t border-border pt-5">
+            {marketplace === 'food' && (
+              <div className="rounded-xl border border-brand-border bg-brand-soft/30 p-3.5">
+                <label className="flex cursor-pointer items-start gap-2.5 text-xs">
+                  <input
+                    type="checkbox"
+                    checked={customBuilderEnabled}
+                    onChange={(e) => setCustomBuilderEnabled(e.target.checked)}
+                    className="mt-0.5 size-4 accent-[#ef6c22]"
+                  />
+                  <div className="flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="inline-flex items-center gap-1.5 font-extrabold text-brand">
+                        <Package className="size-3.5" aria-hidden="true" />
+                        Enable Custom Plate / Snack Box / Meal Box Builder
+                      </span>
+                      {isBuilderSuggestedCategory(category) && (
+                        <span className="rounded bg-brand px-1.5 py-0.5 text-[10px] font-bold text-brand-foreground">
+                          Recommended for {category}
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">
+                      Let customers pick individual items below to assemble their own custom Snack Box, Meal Box, or Catering Plate with automatic per-box pricing &amp; WhatsApp ordering.
+                    </p>
+                  </div>
+                </label>
+
+                {customBuilderEnabled && (
+                  <div className="mt-3 grid grid-cols-1 gap-3 border-t border-brand-border/60 pt-3 sm:grid-cols-3">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-foreground">
+                        Builder Mode
+                      </label>
+                      <select
+                        value={customBuilderMode}
+                        onChange={(e) => {
+                          const nextMode = e.target.value as CustomBuilderMode;
+                          setCustomBuilderMode(nextMode);
+                          setCustomBuilderMinQty(
+                            getCustomBuilderModeConfig(nextMode).defaultMinQty
+                          );
+                        }}
+                        className="mt-1 w-full rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-semibold text-foreground"
+                      >
+                        {CUSTOM_BUILDER_MODES.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-foreground">
+                        Min {getCustomBuilderModeConfig(customBuilderMode).unitPlural}
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={5000}
+                        value={customBuilderMinQty}
+                        onChange={(e) =>
+                          setCustomBuilderMinQty(
+                            Math.max(1, Math.min(5000, Number(e.target.value) || 1))
+                          )
+                        }
+                        className="mt-1 w-full rounded-lg border border-border bg-background px-2.5 py-1.5 font-mono text-xs text-foreground"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-foreground">
+                        Box / Plate Fee ({currencyMeta.symbol.trim()}, optional)
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={50000}
+                        value={customBuilderPackagingLocal}
+                        onChange={(e) =>
+                          setCustomBuilderPackagingLocal(
+                            Math.max(0, Number(e.target.value) || 0)
+                          )
+                        }
+                        placeholder="0"
+                        className="mt-1 w-full rounded-lg border border-border bg-background px-2.5 py-1.5 font-mono text-xs text-foreground"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
-                  5. Products &amp; Packages ({currencyMeta.code} {currencyMeta.symbol.trim()})
+                  5. Products &amp; Packages ({currencyMeta.code} {currencyMeta.symbol.trim()}) ·{' '}
+                  {products.length}/25
                 </p>
                 <p className="text-[11px] text-muted-foreground">
-                  Add your cakes, counters, snack boxes or decor packages with photos &amp; local prices
+                  {customBuilderEnabled
+                    ? `Add individual ${getCustomBuilderModeConfig(customBuilderMode).label.toLowerCase()} items with per-item prices so customers can mix & match`
+                    : 'Add your cakes, counters, snack boxes or decor packages with photos & local prices'}
                 </p>
               </div>
               <button
                 type="button"
                 onClick={addDraftProduct}
-                disabled={products.length >= 10}
+                disabled={products.length >= 25}
                 className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-brand bg-brand-soft/60 px-3 py-1.5 text-xs font-bold text-brand hover:bg-brand-soft disabled:opacity-50"
               >
                 <Plus className="size-3.5" aria-hidden="true" />
@@ -1223,6 +1377,50 @@ export function ListBusinessModal({
                           );
                         })}
                       </div>
+
+                      {marketplace === 'food' && customBuilderEnabled && (
+                        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-brand-border/60 bg-brand-soft/20 px-2.5 py-1.5">
+                          <select
+                            aria-label="Builder Section"
+                            value={prod.builderSection}
+                            onChange={(e) =>
+                              updateProductField(prod.id, 'builderSection', e.target.value)
+                            }
+                            className="rounded-md border border-border bg-card px-2 py-1 text-[11px] font-semibold text-foreground"
+                          >
+                            <option value="">
+                              {getCustomBuilderModeConfig(customBuilderMode).label} Section (Optional)
+                            </option>
+                            {getCustomBuilderModeConfig(customBuilderMode).sections.map((sec) => (
+                              <option key={sec} value={sec}>
+                                {sec}
+                              </option>
+                            ))}
+                          </select>
+                          <span className="text-[10px] font-semibold text-muted-foreground">
+                            Presets:
+                          </span>
+                          {BUILDER_PRESET_OPTIONS.map((preset) => {
+                            const active = prod.builderPresets.includes(preset.id);
+                            return (
+                              <button
+                                key={preset.id}
+                                type="button"
+                                onClick={() => toggleDraftBuilderPreset(prod.id, preset.id)}
+                                className={`cursor-pointer rounded-md border px-2 py-0.5 text-[10px] font-bold transition-colors ${
+                                  active
+                                    ? 'border-brand bg-brand text-brand-foreground'
+                                    : 'border-border bg-card text-muted-foreground hover:border-brand hover:text-foreground'
+                                }`}
+                              >
+                                {active
+                                  ? `✓ ${preset.modeLabels[customBuilderMode]}`
+                                  : preset.modeLabels[customBuilderMode]}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
 
                     {products.length > 1 && (
