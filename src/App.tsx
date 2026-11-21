@@ -574,22 +574,45 @@ export default function App() {
         // non-blocking profile sync fallback
       });
 
-    const unsubMine = subscribeMyVendors(authUser.uid, setMyCloudVendors);
     const unsubBookings = subscribeMyBookings(authUser.uid, setCloudBookings);
-    const unsubLeads = subscribeVendorLeads(authUser.uid, setVendorLeads);
     const unsubMyRequests = subscribeMyEventRequests(authUser.uid, setMyEventRequests);
-    const unsubOpenRequests = subscribeOpenEventRequests(setOpenEventRequests);
 
     return () => {
       active = false;
-      unsubMine();
       unsubBookings();
-      unsubLeads();
       unsubMyRequests();
-      unsubOpenRequests();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authReady, authUser]);
+
+  // Attach owner-scoped vendor & lead listeners only when needed (avoids duplicating active vendor reads)
+  useEffect(() => {
+    if (!authReady || !authUser) {
+      setMyCloudVendors([]);
+      setVendorLeads([]);
+      setOpenEventRequests([]);
+      return;
+    }
+
+    const isAdminAccount = Boolean(
+      authUser.emailVerified &&
+        authUser.email &&
+        authUser.email.toLowerCase() === ADMIN_EMAIL.toLowerCase()
+    );
+
+    const unsubs: Array<() => void> = [];
+    if (!isAdminAccount || (dashboardOpen && !adminPanelOpen)) {
+      unsubs.push(subscribeMyVendors(authUser.uid, setMyCloudVendors));
+    }
+    if (dashboardOpen) {
+      unsubs.push(subscribeVendorLeads(authUser.uid, setVendorLeads));
+      unsubs.push(subscribeOpenEventRequests(setOpenEventRequests));
+    }
+
+    return () => {
+      unsubs.forEach((fn) => fn());
+    };
+  }, [authReady, authUser, dashboardOpen, adminPanelOpen]);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode);
@@ -695,14 +718,16 @@ export default function App() {
   );
 
   useEffect(() => {
-    if (!authReady || !isAdminUser) {
-      setAdminTransfers([]);
-      setAdminStoreClaims([]);
-      setAdminAllVendors([]);
-      setAdminAllBookings([]);
-      setAdminAllReviews([]);
-      setAdminAllEventRequests([]);
-      setAdminAllMetrics([]);
+    if (!authReady || !isAdminUser || !adminPanelOpen) {
+      if (!isAdminUser) {
+        setAdminTransfers([]);
+        setAdminStoreClaims([]);
+        setAdminAllVendors([]);
+        setAdminAllBookings([]);
+        setAdminAllReviews([]);
+        setAdminAllEventRequests([]);
+        setAdminAllMetrics([]);
+      }
       return;
     }
     const unsubTransfers = subscribeAdminTransfers(setAdminTransfers);
@@ -721,7 +746,7 @@ export default function App() {
       unsubAllRequests();
       unsubAllMetrics();
     };
-  }, [authReady, isAdminUser]);
+  }, [authReady, isAdminUser, adminPanelOpen]);
 
   const effectiveAdminVendors = useMemo(
     () => (adminAllVendors.length > 0 ? adminAllVendors : cloudVendors),

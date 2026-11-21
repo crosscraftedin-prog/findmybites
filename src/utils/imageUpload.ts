@@ -6,24 +6,21 @@ export interface CompressImageOptions {
 }
 
 /**
- * Compresses an uploaded image file to a lightweight JPEG data URL
- * sized safely for Cloud Firestore documents (1MB document cap).
+ * Compresses an existing image data URL to a lightweight JPEG data URL
+ * sized safely for Cloud Firestore documents (1MB document cap & low read/write units).
  */
-export async function compressImageFile(
-  file: File,
-  { maxWidth, maxHeight, quality = 0.78, maxChars }: CompressImageOptions
+export async function compressDataUrlImage(
+  rawDataUrl: string,
+  { maxWidth, maxHeight, quality = 0.72, maxChars }: CompressImageOptions
 ): Promise<string> {
-  const rawDataUrl = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ''));
-    reader.onerror = () => reject(new Error('Failed to read image file.'));
-    reader.readAsDataURL(file);
-  });
+  if (!rawDataUrl.startsWith('data:image/')) {
+    return rawDataUrl;
+  }
 
   const img = await new Promise<HTMLImageElement>((resolve, reject) => {
     const el = new Image();
     el.onload = () => resolve(el);
-    el.onerror = () => reject(new Error('Invalid image file.'));
+    el.onerror = () => reject(new Error('Invalid image data.'));
     el.src = rawDataUrl;
   });
 
@@ -50,7 +47,7 @@ export async function compressImageFile(
   }
 
   if (output.length > maxChars) {
-    const scale = Math.sqrt(maxChars / output.length) * 0.9;
+    const scale = Math.sqrt(maxChars / output.length) * 0.88;
     canvas.width = Math.max(80, Math.round(width * scale));
     canvas.height = Math.max(80, Math.round(height * scale));
     const ctx2 = canvas.getContext('2d');
@@ -58,11 +55,29 @@ export async function compressImageFile(
       ctx2.fillStyle = '#ffffff';
       ctx2.fillRect(0, 0, canvas.width, canvas.height);
       ctx2.drawImage(img, 0, 0, canvas.width, canvas.height);
-      output = canvas.toDataURL('image/jpeg', 0.65);
+      output = canvas.toDataURL('image/jpeg', 0.58);
     }
   }
 
   return output;
+}
+
+/**
+ * Compresses an uploaded image file to a lightweight JPEG data URL
+ * sized safely for Cloud Firestore documents (1MB document cap).
+ */
+export async function compressImageFile(
+  file: File,
+  options: CompressImageOptions
+): Promise<string> {
+  const rawDataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('Failed to read image file.'));
+    reader.readAsDataURL(file);
+  });
+
+  return compressDataUrlImage(rawDataUrl, options);
 }
 
 /**

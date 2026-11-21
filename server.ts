@@ -4,12 +4,14 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI, Type } from '@google/genai';
+import { createSupabaseApiRouter } from './server/supabaseApi.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '6mb' }));
+app.use('/api/db', createSupabaseApiRouter());
 
 function resolveBaseUrl(req: express.Request): string {
   if (process.env.APP_URL && !process.env.APP_URL.includes('MY_APP_URL')) {

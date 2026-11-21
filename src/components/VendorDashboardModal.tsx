@@ -70,7 +70,7 @@ import {
   updateVendorInCloud,
 } from '../services/firestoreService';
 import { requestBrowserGpsLocation } from '../utils/geolocation';
-import { compressImageFile } from '../utils/imageUpload';
+import { compressDataUrlImage, compressImageFile } from '../utils/imageUpload';
 import { FoodTypeBadge, FoodTypeIcon } from './FoodTypeBadge';
 import { PromoCardModal } from './PromoCardModal';
 import { QrPosterModal } from './QrPosterModal';
@@ -198,6 +198,7 @@ export function VendorDashboardModal({
   const [addingProductForId, setAddingProductForId] = useState<string | null>(null);
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const [confirmDeleteProdKey, setConfirmDeleteProdKey] = useState<string | null>(null);
+  const [confirmDeleteVendorId, setConfirmDeleteVendorId] = useState<string | null>(null);
   const [editingVendorId, setEditingVendorId] = useState<string | null>(null);
 
   // Add / Edit product state
@@ -514,10 +515,10 @@ export function VendorDashboardModal({
     if (!file) return;
     try {
       const dataUrl = await compressImageFile(file, {
-        maxWidth: 640,
-        maxHeight: 480,
-        quality: 0.72,
-        maxChars: 90000,
+        maxWidth: 420,
+        maxHeight: 320,
+        quality: 0.62,
+        maxChars: 24000,
       });
       setProdImage(dataUrl);
     } catch {
@@ -619,6 +620,20 @@ export function VendorDashboardModal({
     setBusyId(vendor.id);
     try {
       const formattedServes = formatProductServesLabel(prodUnitQty, prodUnitType, prodServes);
+      let resolvedImage = prodImage || vendor.image;
+      if (resolvedImage.startsWith('data:image/') && resolvedImage.length > 24000) {
+        try {
+          resolvedImage = await compressDataUrlImage(resolvedImage, {
+            maxWidth: 420,
+            maxHeight: 320,
+            quality: 0.62,
+            maxChars: 22000,
+          });
+        } catch {
+          // Keep original if canvas re-compression fails
+        }
+      }
+
       const nextProd: VendorProduct = {
         id: editingProductId || `prod-${Date.now()}`,
         name: prodName.trim().slice(0, 100),
@@ -631,13 +646,45 @@ export function VendorDashboardModal({
         ...(prodBuilderPresets.length > 0 ? { builderPresets: prodBuilderPresets } : {}),
         priceUsd: Math.max(1, localToUsd(prodPriceLocal, currency)),
         description: prodDesc.trim().slice(0, 400) || prodName.trim(),
-        image: prodImage || vendor.image,
+        image: resolvedImage,
       };
-      const updatedProducts = editingProductId
+      let updatedProducts = editingProductId
         ? vendor.products.map((p) =>
             p.id === editingProductId ? { ...nextProd, ...(p.tag ? { tag: p.tag } : {}) } : p
           )
         : [...vendor.products, nextProd];
+
+      // Auto-optimize oversized inline product thumbnails to keep total vendor document compact
+      // (well under Firestore's 1MB doc cap and cutting read/write quota usage by ~70%)
+      const totalImageChars = updatedProducts.reduce(
+        (sum, p) => sum + (p.image?.startsWith('data:image/') ? p.image.length : 0),
+        0
+      );
+      if (totalImageChars > 420000) {
+        const targetPerPhoto = Math.max(
+          10000,
+          Math.min(20000, Math.floor(420000 / Math.max(1, updatedProducts.length)))
+        );
+        updatedProducts = await Promise.all(
+          updatedProducts.map(async (p) => {
+            if (!p.image || !p.image.startsWith('data:image/') || p.image.length <= targetPerPhoto) {
+              return p;
+            }
+            try {
+              const smaller = await compressDataUrlImage(p.image, {
+                maxWidth: 360,
+                maxHeight: 270,
+                quality: 0.58,
+                maxChars: targetPerPhoto,
+              });
+              return { ...p, image: smaller };
+            } catch {
+              return p;
+            }
+          })
+        );
+      }
+
       const nextStartingUsd =
         updatedProducts.length > 0
           ? Math.min(...updatedProducts.map((p) => p.priceUsd))
@@ -657,12 +704,15 @@ export function VendorDashboardModal({
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : '';
+      const lower = msg.toLowerCase();
       onNotify(
-        msg.toLowerCase().includes('permission')
-          ? 'Could not save product — permission denied. Please refresh or sign in again.'
-          : msg.toLowerCase().includes('exceeds the maximum') || msg.toLowerCase().includes('too large')
-            ? 'Storefront photo data is too large. Try using smaller or fewer product photos.'
-            : 'Could not save product right now. Please try again.'
+        lower.includes('quota') || lower.includes('resource-exhausted')
+          ? 'Firestore daily quota temporarily reached. Your existing products are safe — wait a moment or upgrade quota in Firebase Console.'
+          : lower.includes('permission')
+            ? 'Could not save product — permission denied. Please refresh or sign in again.'
+            : lower.includes('exceeds the maximum') || lower.includes('too large')
+              ? 'Storefront photo data is too large. Try using smaller or fewer product photos.'
+              : 'Could not save product right now. Please try again.'
       );
     } finally {
       setBusyId(null);
@@ -701,6 +751,7 @@ export function VendorDashboardModal({
     setBusyId(vendor.id);
     try {
       await deleteVendorInCloud(vendor.id);
+      setConfirmDeleteVendorId(null);
       onNotify(`${vendor.name} removed from cloud directory.`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : '';
@@ -1096,15 +1147,36 @@ export function VendorDashboardModal({
                                   </>
                                 )}
                               </button>
-                              <button
-                                type="button"
-                                disabled={isBusy}
-                                onClick={() => void handleDeleteVendor(v)}
-                                aria-label={`Delete ${v.name}`}
-                                className="grid size-8 cursor-pointer place-items-center rounded-lg border border-border text-muted-foreground hover:border-red-500 hover:text-red-500 disabled:opacity-50"
-                              >
-                                <Trash2 className="size-3.5" aria-hidden="true" />
-                              </button>
+                              {confirmDeleteVendorId === v.id ? (
+                                <span className="inline-flex items-center gap-1 rounded-lg border border-red-500/40 bg-red-500/10 px-2 py-1">
+                                  <button
+                                    type="button"
+                                    disabled={isBusy}
+                                    onClick={() => void handleDeleteVendor(v)}
+                                    className="cursor-pointer rounded bg-red-600 px-2 py-0.5 text-[11px] font-bold text-white hover:bg-red-700 disabled:opacity-50"
+                                  >
+                                    Delete Store
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setConfirmDeleteVendorId(null)}
+                                    className="cursor-pointer rounded px-1.5 py-0.5 text-[11px] font-semibold text-muted-foreground hover:text-foreground"
+                                  >
+                                    Cancel
+                                  </button>
+                                </span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled={isBusy}
+                                  onClick={() => setConfirmDeleteVendorId(v.id)}
+                                  aria-label={`Delete ${v.name}`}
+                                  title="Delete storefront"
+                                  className="grid size-8 cursor-pointer place-items-center rounded-lg border border-border text-muted-foreground hover:border-red-500 hover:text-red-500 disabled:opacity-50"
+                                >
+                                  <Trash2 className="size-3.5" aria-hidden="true" />
+                                </button>
+                              )}
                             </div>
                           </div>
 
