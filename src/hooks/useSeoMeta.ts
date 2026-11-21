@@ -68,13 +68,23 @@ export function useSeoMeta({
       description = `Compare verified ${subject.toLowerCase()}${place}. View full one-page product catalogs, prices, reviews & chat directly on WhatsApp.`;
     }
 
+    const resolvePublicImage = (img?: string) => {
+      if (!img || img.startsWith('data:')) return `${origin}/og-cover.png`;
+      if (img.startsWith('http://') || img.startsWith('https://')) return img;
+      return `${origin}${img.startsWith('/') ? img : `/${img}`}`;
+    };
+
+    const ogImage = activeVendor ? resolvePublicImage(activeVendor.image) : `${origin}/og-cover.png`;
+
     document.title = title;
     upsertMeta('name', 'description', description);
     upsertMeta('property', 'og:title', title);
     upsertMeta('property', 'og:description', description);
     upsertMeta('property', 'og:url', canonical);
+    upsertMeta('property', 'og:image', ogImage);
     upsertMeta('name', 'twitter:title', title);
     upsertMeta('name', 'twitter:description', description);
+    upsertMeta('name', 'twitter:image', ogImage);
     upsertCanonical(canonical);
 
     // Dynamic LocalBusiness JSON-LD when viewing a Vendor Mini-Website
@@ -86,7 +96,7 @@ export function useSeoMeta({
         name: activeVendor.name,
         description: activeVendor.description,
         url: canonical,
-        image: `${origin}${activeVendor.image}`,
+        image: ogImage,
         telephone: `+${activeVendor.whatsappNumber}`,
         priceRange: activeVendor.priceTier,
         address: {

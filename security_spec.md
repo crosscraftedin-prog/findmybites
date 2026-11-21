@@ -1,31 +1,38 @@
-# FindMyBites × PimpMyParty — Firestore Security Specification
+# Security Specification — FindMyBites × PimpMyParty
 
-## 1. Data Invariants
-1. **Default Deny**: All unmatched Firestore paths deny read and write (`match /{document=**} { allow read, write: if false; }`).
-2. **Vendor Identity & Moderation Integrity**:
-   - A vendor document can only be created by an authenticated, email-verified user with `ownerId == request.auth.uid`.
-   - Non-admin vendors cannot self-assign `verified: true` on creation or update.
-   - `ownerId` and `createdAt` are immutable after creation; `createdAt` and `updatedAt` must equal `request.time`.
-   - Public discovery (`list`) only exposes documents where `resource.data.status == 'active'`.
-3. **Private PII Isolation**:
-   - `/users/{userId}` stores personal `email` and `savedVendorIds`; strictly readable and writable only by `request.auth.uid == userId` (or verified admin). Collection `list` is forbidden (`allow list: if false;`).
-   - `/bookings/{bookingId}` stores customer contact details (`customerEmail`, `customerName`); readable and listable strictly by the customer (`resource.data.customerId == request.auth.uid`), the target vendor owner (`resource.data.vendorOwnerId == request.auth.uid`), or a verified admin.
-4. **Booking Terminal State Locking**:
-   - Once a booking status transitions to `'Completed'` or `'Cancelled'`, non-admin users cannot modify it further.
-5. **Bounded Payloads & Path Hardening**:
-   - Every single-document operation validates document IDs via `isValidId()` (`<= 128` chars, `^[a-zA-Z0-9_\-]+$`).
-   - Every string field enforces `.size()` limits, and arrays (`serviceAreas`, `specialties`, `products`, `savedVendorIds`) enforce strict maximum lengths.
+## Data Invariants
+1. **Vendors (`/vendors/{vendorId}`)**:
+   - Publicly readable only when `status == 'active'`; paused storefronts are readable only by `ownerId` or admin.
+   - `ownerId` is immutable after creation and must match `request.auth.uid` on create.
+   - Non-admin owners cannot self-verify (`verified == false` on create, immutable on update) or spoof `rating`/`reviewCount`.
+   - `gallery` is strictly bounded to at most 6 entries; `promoBanner` is capped at 120 chars.
+2. **Users (`/users/{userId}`)**:
+   - Contains private PII (`email`); `get` is restricted strictly to `isOwner(userId) || isAdmin()`, and `list` is `false`.
+3. **Bookings (`/bookings/{bookingId}`)**:
+   - Accessible strictly to `customerId`, `vendorOwnerId`, or admin. Terminal states (`Completed`, `Cancelled`) are locked.
+4. **Reviews (`/reviews/{reviewId}`)**:
+   - Contains no private PII; publicly readable.
+   - Only verified signed-in users can create a review with `authorId == request.auth.uid`, integer/number `rating` in `1..5`, `comment` 5..600 chars, and `createdAt == request.time`.
+   - Reviews are immutable (`allow update: if false`) and deletable only by author or admin.
+5. **Event Requests (`/eventRequests/{requestId}`) & Quotes (`/eventRequests/{requestId}/quotes/{quoteId}`)**:
+   - Event requests contain no customer PII (`email`/`phone` forbidden by `hasOnly`).
+   - Open requests (`status == 'open'`) are readable by verified users so local vendors can quote; closed requests are readable only by `customerId` or admin.
+   - Terminal state `closed` locks further non-admin updates.
+   - Quotes enforce the Master Gate: parent `/eventRequests/{requestId}` MUST exist and have `status == 'open'` on create; quotes are readable strictly by the parent request's `customerId`, the quoting `vendorOwnerId`, or admin.
+6. **Vendor Metrics (`/vendorMetrics/{vendorId}`)**:
+   - Publicly readable (`get`) for displaying storefront views/clicks.
+   - Verified users may initialize with values `0..1` or monotonically increment each counter (`views`, `whatsappClicks`, `shares`) by at most `+1` per write with `updatedAt == request.time`. Deletes forbidden except admin.
 
-## 2. The "Dirty Dozen" Adversarial Attack Payloads
-1. **Identity Spoofing on Vendor Create**: Authenticated user `uidA` creates `/vendors/v1` with `ownerId: "uidB"`. -> `PERMISSION_DENIED`
-2. **Self-Verification Privilege Escalation**: Non-admin user creates `/vendors/v1` with `verified: true`. -> `PERMISSION_DENIED`
-3. **Shadow Ghost Field Injection**: Vendor owner updates `/vendors/v1` adding an undeclared field `isFeaturedOverride: true`. -> `PERMISSION_DENIED`
-4. **Immutable Owner Hijack**: Vendor owner updates `/vendors/v1` changing `ownerId` or `createdAt`. -> `PERMISSION_DENIED`
-5. **Forged Client Timestamp**: User creates `/vendors/v1` with backdated `createdAt: Timestamp(2020-01-01)` instead of `serverTimestamp()`. -> `PERMISSION_DENIED`
-6. **Email Spoofing Attack**: Unverified account with `email: "crosscraftedin@gmail.com"` and `email_verified: false` attempts admin write. -> `PERMISSION_DENIED`
-7. **PII Blanket Read on `/users`**: Authenticated user `uidA` tries `get(/users/uidB)` or `list(/users)`. -> `PERMISSION_DENIED`
-8. **Cross-Customer Booking Snooping**: Authenticated user `uidC` attempts `get(/bookings/b1)` belonging to `customerId: "uidA"` and `vendorOwnerId: "uidB"`. -> `PERMISSION_DENIED`
-9. **Terminal State Re-Opening**: Customer attempts to update `/bookings/b1` from `status: "Cancelled"` back to `"Confirmed Enquiry"`. -> `PERMISSION_DENIED`
-10. **ID Poisoning / Resource Exhaustion**: Attacker writes `/vendors/<500-char-junk-id>` or injects `description` > 1200 chars. -> `PERMISSION_DENIED`
-11. **Unbounded Array Bomb**: Vendor submits 25 `products` (limit 20) or 15 `serviceAreas` (limit 10). -> `PERMISSION_DENIED`
-12. **Self-Admin Promotion**: Regular user attempts to write `/admins/{theirUid}`. -> `PERMISSION_DENIED`
+## The "Dirty Dozen" Payloads (Expected: PERMISSION_DENIED)
+1. **Vendor Self-Verification**: Non-admin creates vendor with `verified: true`.
+2. **Vendor Shadow Field**: Owner updates vendor adding ghost field `isTopRanked: true`.
+3. **User PII Scrape**: Authenticated User B attempts `get` or `list` on `/users/userA`.
+4. **Booking Terminal Mutation**: Vendor tries to reopen a `Cancelled` booking back to `Confirmed Enquiry`.
+5. **Review Author Spoofing**: User A creates review with `authorId: 'userB'`.
+6. **Review Rating Overflow**: User A creates review with `rating: 99` or `comment: ''`.
+7. **Review Tampering**: User A tries to `update` an existing review.
+8. **Event Request PII Injection**: Customer posts event request with extra ghost field `customerPhone: '+919999999999'`.
+9. **Event Request Reopen**: Customer attempts to change a `closed` event request back to `open`.
+10. **Orphan / Closed Quote Attack**: Vendor submits a quote under a non-existent or `closed` event request ID.
+11. **Quote Cross-Vendor Snooping**: Vendor B attempts to `get` Vendor A's quote on Customer C's event request.
+12. **Metrics Inflation / Negative Attack**: User tries to set `views: 99999` or decrement `views` in `/vendorMetrics/{vendorId}`.

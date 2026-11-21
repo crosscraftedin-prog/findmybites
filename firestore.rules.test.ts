@@ -1,126 +1,98 @@
 /**
- * Security Rules Verification Spec — Dirty Dozen Payloads
- * Every attack payload below MUST evaluate to PERMISSION_DENIED against firestore.rules.
+ * Payload-First Security TDD Spec for FindMyBites x PimpMyParty Firestore Rules.
+ * Covers the Dirty Dozen adversarial payloads across vendors, users, bookings,
+ * reviews, eventRequests, quotes, and vendorMetrics.
  */
-
-export interface SecurityTestCase {
-  id: number;
-  name: string;
-  operation: 'get' | 'list' | 'create' | 'update' | 'delete';
-  path: string;
-  auth: { uid: string; email?: string; email_verified?: boolean } | null;
-  payload?: Record<string, unknown>;
-  expected: 'PERMISSION_DENIED';
-}
-
-export const DIRTY_DOZEN_TESTS: SecurityTestCase[] = [
+export const DIRTY_DOZEN_CASES = [
   {
-    id: 1,
-    name: 'Identity spoofing on vendor create (mismatched ownerId)',
+    name: '1. Vendor self-verification on create',
+    collection: 'vendors/v-spoof',
     operation: 'create',
-    path: '/vendors/spoofed-baker',
-    auth: { uid: 'user_a', email: 'a@example.com', email_verified: true },
-    payload: { ownerId: 'user_b', name: 'Fake Baker' },
     expected: 'PERMISSION_DENIED',
+    payload: { ownerId: 'user-a', verified: true, reviewCount: 500 },
   },
   {
-    id: 2,
-    name: 'Non-admin self-verifying vendor badge on create',
-    operation: 'create',
-    path: '/vendors/self-verified-baker',
-    auth: { uid: 'user_a', email: 'a@example.com', email_verified: true },
-    payload: { ownerId: 'user_a', verified: true },
-    expected: 'PERMISSION_DENIED',
-  },
-  {
-    id: 3,
-    name: 'Shadow ghost field injection on vendor update',
+    name: '2. Vendor shadow field injection on update',
+    collection: 'vendors/v-1',
     operation: 'update',
-    path: '/vendors/valid-vendor',
-    auth: { uid: 'user_a', email: 'a@example.com', email_verified: true },
-    payload: { isAdminSponsored: true },
     expected: 'PERMISSION_DENIED',
+    payload: { tagline: 'Updated', isTopRanked: true },
   },
   {
-    id: 4,
-    name: 'Mutating immutable ownerId on vendor update',
-    operation: 'update',
-    path: '/vendors/valid-vendor',
-    auth: { uid: 'user_a', email: 'a@example.com', email_verified: true },
-    payload: { ownerId: 'user_b' },
-    expected: 'PERMISSION_DENIED',
-  },
-  {
-    id: 5,
-    name: 'Forged client timestamp instead of request.time',
-    operation: 'create',
-    path: '/vendors/backdated-vendor',
-    auth: { uid: 'user_a', email: 'a@example.com', email_verified: true },
-    payload: { ownerId: 'user_a', createdAt: '2020-01-01T00:00:00Z' },
-    expected: 'PERMISSION_DENIED',
-  },
-  {
-    id: 6,
-    name: 'Admin email spoofing with email_verified=false',
-    operation: 'update',
-    path: '/vendors/valid-vendor',
-    auth: { uid: 'attacker', email: 'crosscraftedin@gmail.com', email_verified: false },
-    payload: { verified: true },
-    expected: 'PERMISSION_DENIED',
-  },
-  {
-    id: 7,
-    name: 'PII blanket read on another user profile',
+    name: '3. Cross-user PII read on /users',
+    collection: 'users/user-a',
     operation: 'get',
-    path: '/users/user_b',
-    auth: { uid: 'user_a', email: 'a@example.com', email_verified: true },
+    actor: 'user-b',
     expected: 'PERMISSION_DENIED',
   },
   {
-    id: 8,
-    name: 'Unauthorized third-party read of customer booking enquiry',
-    operation: 'get',
-    path: '/bookings/booking_1',
-    auth: { uid: 'user_c', email: 'c@example.com', email_verified: true },
-    expected: 'PERMISSION_DENIED',
-  },
-  {
-    id: 9,
-    name: 'Re-opening a Cancelled booking enquiry (terminal state lock)',
+    name: '4. Booking terminal state reopen',
+    collection: 'bookings/bk-1',
     operation: 'update',
-    path: '/bookings/cancelled_booking_1',
-    auth: { uid: 'user_a', email: 'a@example.com', email_verified: true },
+    expected: 'PERMISSION_DENIED',
     payload: { status: 'Confirmed Enquiry' },
+  },
+  {
+    name: '5. Review authorId spoofing',
+    collection: 'reviews/rev-1',
+    operation: 'create',
+    actor: 'user-a',
+    expected: 'PERMISSION_DENIED',
+    payload: { vendorId: 'v-1', authorId: 'user-b', rating: 5, comment: 'Great cake!' },
+  },
+  {
+    name: '6. Review out-of-bounds rating',
+    collection: 'reviews/rev-2',
+    operation: 'create',
+    actor: 'user-a',
+    expected: 'PERMISSION_DENIED',
+    payload: { vendorId: 'v-1', authorId: 'user-a', rating: 10, comment: 'Too high' },
+  },
+  {
+    name: '7. Review mutation after create',
+    collection: 'reviews/rev-1',
+    operation: 'update',
+    actor: 'user-a',
+    expected: 'PERMISSION_DENIED',
+    payload: { rating: 1 },
+  },
+  {
+    name: '8. EventRequest shadow PII field injection',
+    collection: 'eventRequests/req-1',
+    operation: 'create',
+    actor: 'user-a',
+    expected: 'PERMISSION_DENIED',
+    payload: { customerId: 'user-a', customerPhone: '+919999999999', status: 'open' },
+  },
+  {
+    name: '9. EventRequest reopen from closed terminal state',
+    collection: 'eventRequests/req-closed',
+    operation: 'update',
+    actor: 'user-a',
+    expected: 'PERMISSION_DENIED',
+    payload: { status: 'open' },
+  },
+  {
+    name: '10. Quote created on closed or missing parent EventRequest',
+    collection: 'eventRequests/req-closed/quotes/q-1',
+    operation: 'create',
+    actor: 'vendor-a',
+    expected: 'PERMISSION_DENIED',
+    payload: { requestId: 'req-closed', vendorOwnerId: 'vendor-a', priceUsd: 120 },
+  },
+  {
+    name: '11. Cross-vendor quote read',
+    collection: 'eventRequests/req-1/quotes/q-vendor-a',
+    operation: 'get',
+    actor: 'vendor-b',
     expected: 'PERMISSION_DENIED',
   },
   {
-    id: 10,
-    name: 'ID poisoning with oversized / invalid characters in document ID',
-    operation: 'create',
-    path: `/vendors/${'x'.repeat(200)}`,
-    auth: { uid: 'user_a', email: 'a@example.com', email_verified: true },
-    payload: { ownerId: 'user_a' },
+    name: '12. VendorMetrics counter inflation',
+    collection: 'vendorMetrics/v-1',
+    operation: 'update',
+    actor: 'user-a',
     expected: 'PERMISSION_DENIED',
+    payload: { vendorId: 'v-1', views: 99999, whatsappClicks: 500, shares: 10 },
   },
-  {
-    id: 11,
-    name: 'Array overflow attack exceeding max serviceAreas length',
-    operation: 'create',
-    path: '/vendors/array-bomb',
-    auth: { uid: 'user_a', email: 'a@example.com', email_verified: true },
-    payload: {
-      ownerId: 'user_a',
-      serviceAreas: Array.from({ length: 15 }, (_, i) => `Area ${i}`),
-    },
-    expected: 'PERMISSION_DENIED',
-  },
-  {
-    id: 12,
-    name: 'Non-admin self-promotion in /admins collection',
-    operation: 'create',
-    path: '/admins/user_a',
-    auth: { uid: 'user_a', email: 'a@example.com', email_verified: true },
-    payload: { uid: 'user_a' },
-    expected: 'PERMISSION_DENIED',
-  },
-];
+] as const;

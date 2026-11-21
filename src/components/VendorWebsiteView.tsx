@@ -1,13 +1,18 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
+import type { User } from 'firebase/auth';
 import {
   ArrowLeft,
   BadgeCheck,
   Check,
   Copy,
   Crown,
+  Edit3,
   Eye,
   Globe2,
   Heart,
+  Image as ImageIcon,
+  Instagram,
+  LogIn,
   MapPin,
   MessageCircle,
   Minus,
@@ -15,17 +20,29 @@ import {
   QrCode,
   ShieldCheck,
   ShoppingBag,
+  Sparkles,
   Star,
+  Trash2,
+  X,
 } from 'lucide-react';
 import {
   BookingEnquiry,
+  CloudVendorMetric,
   CurrencyCode,
   Vendor,
   VendorProduct,
+  VendorReview,
   buildWhatsAppUrl,
   formatMoney,
   getVendorQuickTags,
 } from '../data/vendors';
+import {
+  createReviewInCloud,
+  deleteReviewInCloud,
+  subscribeVendorMetric,
+  subscribeVendorReviews,
+} from '../services/firestoreService';
+import { PromoCardModal } from './PromoCardModal';
 import { QrPosterModal } from './QrPosterModal';
 
 export interface VendorMetrics {
@@ -38,11 +55,16 @@ interface VendorWebsiteViewProps {
   currency: CurrencyCode;
   isSaved: boolean;
   metrics?: VendorMetrics;
+  user?: User | null;
+  canEdit?: boolean;
+  onSignIn?: () => Promise<void>;
+  onEditStorefront?: (vendor: Vendor) => void;
   onClose: () => void;
   onToggleSave: (vendorId: string) => void;
   onCreateBooking: (booking: BookingEnquiry) => void;
   onOpenBookings: () => void;
   onTrackWhatsAppClick?: (vendorId: string) => void;
+  onTrackShare?: (vendorId: string) => void;
 }
 
 export function VendorWebsiteView({
@@ -50,16 +72,23 @@ export function VendorWebsiteView({
   currency,
   isSaved,
   metrics,
+  user,
+  canEdit = false,
+  onSignIn,
+  onEditStorefront,
   onClose,
   onToggleSave,
   onCreateBooking,
   onOpenBookings,
   onTrackWhatsAppClick,
+  onTrackShare,
 }: VendorWebsiteViewProps) {
   const [selectedProductId, setSelectedProductId] = useState<string>('');
   const [basket, setBasket] = useState<Record<string, number>>({});
   const [basketExpanded, setBasketExpanded] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
+  const [promoCardOpen, setPromoCardOpen] = useState(false);
+  const [lightboxImg, setLightboxImg] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
@@ -68,26 +97,53 @@ export function VendorWebsiteView({
   const [notes, setNotes] = useState('');
   const [submittedRef, setSubmittedRef] = useState<string | null>(null);
 
+  // Cloud reviews & live metrics
+  const [cloudReviews, setCloudReviews] = useState<VendorReview[]>([]);
+  const [cloudMetric, setCloudMetric] = useState<CloudVendorMetric | null>(null);
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewEventType, setReviewEventType] = useState('Birthday Party');
+  const [reviewComment, setReviewComment] = useState('');
+  const [submittingReview, setSubmittingReview] = useState(false);
+  const [reviewStatus, setReviewStatus] = useState<string | null>(null);
+
   useEffect(() => {
     if (vendor) {
       setSelectedProductId(vendor.products[0]?.id ?? '');
       setBasket({});
       setBasketExpanded(false);
       setQrOpen(false);
+      setPromoCardOpen(false);
+      setLightboxImg(null);
       setSubmittedRef(null);
       setCopiedLink(false);
       setNotes('');
+      setReviewComment('');
+      setReviewStatus(null);
     }
+  }, [vendor]);
+
+  useEffect(() => {
+    if (!vendor) {
+      setCloudReviews([]);
+      setCloudMetric(null);
+      return;
+    }
+    const unsubRev = subscribeVendorReviews(vendor.id, setCloudReviews);
+    const unsubMet = subscribeVendorMetric(vendor.id, setCloudMetric);
+    return () => {
+      unsubRev();
+      unsubMet();
+    };
   }, [vendor]);
 
   useEffect(() => {
     if (!vendor) return;
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !qrOpen) onClose();
+      if (e.key === 'Escape' && !qrOpen && !promoCardOpen && !lightboxImg) onClose();
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [vendor, qrOpen, onClose]);
+  }, [vendor, qrOpen, promoCardOpen, lightboxImg, onClose]);
 
   const basketItems = useMemo(() => {
     if (!vendor) return [];
@@ -189,6 +245,52 @@ export function VendorWebsiteView({
     setSubmittedRef(refCode);
   };
 
+  const handleReviewSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!user) {
+      await onSignIn?.();
+      return;
+    }
+    if (reviewComment.trim().length < 5) return;
+    setSubmittingReview(true);
+    setReviewStatus(null);
+    try {
+      await createReviewInCloud(vendor.id, user, {
+        rating: reviewRating,
+        eventType: reviewEventType,
+        comment: reviewComment.trim(),
+      });
+      setReviewComment('');
+      setReviewRating(5);
+      setReviewStatus('Thank you! Your verified review is now live in the cloud.');
+    } catch {
+      setReviewStatus('Could not save review right now. Please try again.');
+    } finally {
+      setSubmittingReview(false);
+    }
+  };
+
+  const handleDeleteReview = async (reviewId: string) => {
+    await deleteReviewInCloud(reviewId);
+    setReviewStatus('Review removed.');
+  };
+
+  const mergedReviews = [...cloudReviews, ...vendor.reviews];
+  const effectiveReviewCount = vendor.reviewCount + cloudReviews.length;
+  const effectiveRating =
+    cloudReviews.length > 0
+      ? Number(
+          (
+            (vendor.rating * Math.max(1, vendor.reviewCount) +
+              cloudReviews.reduce((s, r) => s + r.rating, 0)) /
+            (Math.max(1, vendor.reviewCount) + cloudReviews.length)
+          ).toFixed(2)
+        )
+      : vendor.rating;
+
+  const displayViews = Math.max(metrics?.views ?? 0, cloudMetric?.views ?? 0);
+  const displayWaClicks = Math.max(metrics?.whatsappClicks ?? 0, cloudMetric?.whatsappClicks ?? 0);
+
   const isPaid = vendor.planTier === 'business' || vendor.planTier === 'pro';
 
   return (
@@ -225,6 +327,24 @@ export function VendorWebsiteView({
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            {canEdit && onEditStorefront && (
+              <button
+                type="button"
+                onClick={() => onEditStorefront(vendor)}
+                className="inline-flex h-10 cursor-pointer items-center gap-1.5 rounded-lg bg-brand px-3.5 text-xs font-bold text-brand-foreground shadow-sm transition-colors hover:bg-brand-hover whitespace-nowrap"
+              >
+                <Edit3 className="size-4" aria-hidden="true" />
+                <span>Edit Storefront</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setPromoCardOpen(true)}
+              className="inline-flex h-10 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-card px-3 text-xs font-semibold text-foreground hover:border-brand hover:text-brand whitespace-nowrap"
+            >
+              <Instagram className="size-4" aria-hidden="true" />
+              <span className="hidden md:inline">Story Card</span>
+            </button>
             <button
               type="button"
               onClick={() => setQrOpen(true)}
@@ -257,6 +377,24 @@ export function VendorWebsiteView({
           </div>
         </div>
       </header>
+
+      {canEdit && onEditStorefront && (
+        <div className="border-b border-brand-border bg-brand-soft/80">
+          <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-2.5 text-xs sm:px-6 lg:px-8">
+            <span className="font-semibold text-foreground">
+              You manage this storefront — update cover, logo, gallery photos, promo banner, products, WhatsApp or GPS pin anytime.
+            </span>
+            <button
+              type="button"
+              onClick={() => onEditStorefront(vendor)}
+              className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-brand px-3.5 py-1.5 text-xs font-bold text-brand-foreground hover:bg-brand-hover"
+            >
+              <Edit3 className="size-3.5" aria-hidden="true" />
+              Edit Details &amp; Products
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* One-Page Vendor Website Hero */}
       <section className="relative overflow-hidden border-b border-border bg-[#0A0A0A]">
@@ -305,11 +443,18 @@ export function VendorWebsiteView({
               {vendor.tagline}
             </p>
 
+            {vendor.promoBanner && (
+              <div className="mt-4 inline-flex items-center gap-2 rounded-xl border border-amber-300/40 bg-amber-400/20 px-3.5 py-2 text-xs font-bold text-amber-100 backdrop-blur-md">
+                <Sparkles className="size-4 shrink-0 text-amber-300" aria-hidden="true" />
+                <span>Special Offer: {vendor.promoBanner}</span>
+              </div>
+            )}
+
             <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-white/85">
               <span className="inline-flex items-center gap-1.5">
                 <Star className="size-4 fill-amber-400 text-amber-400" aria-hidden="true" />
-                <strong className="font-mono text-white">{vendor.rating.toFixed(2)}</strong>
-                <span>({vendor.reviewCount} verified reviews)</span>
+                <strong className="font-mono text-white">{effectiveRating.toFixed(2)}</strong>
+                <span>({effectiveReviewCount} verified reviews)</span>
               </span>
               <span className="inline-flex items-center gap-1.5">
                 <ShieldCheck className="size-4 text-[#25D366]" aria-hidden="true" />
@@ -338,6 +483,14 @@ export function VendorWebsiteView({
                 <ShoppingBag className="size-4" aria-hidden="true" />
                 Build Order ({vendor.products.length} Items)
               </a>
+              <button
+                type="button"
+                onClick={() => setPromoCardOpen(true)}
+                className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-white/25 bg-white/10 px-4 py-3 text-sm font-semibold text-white backdrop-blur-md transition-colors hover:bg-white/20"
+              >
+                <Instagram className="size-4" aria-hidden="true" />
+                Share Story Card
+              </button>
               <button
                 type="button"
                 onClick={() => setQrOpen(true)}
@@ -388,20 +541,53 @@ export function VendorWebsiteView({
               <p className="font-semibold text-foreground">Direct WhatsApp Hotline</p>
               <p className="mt-0.5 font-mono">+{vendor.whatsappNumber}</p>
             </div>
-            {metrics && (
-              <div className="mt-4 flex items-center justify-between border-t border-border pt-3 text-[11px] text-muted-foreground">
-                <span className="inline-flex items-center gap-1">
-                  <Eye className="size-3.5 text-brand" aria-hidden="true" />
-                  <strong className="font-mono text-foreground">{metrics.views}</strong> storefront views
-                </span>
-                <span className="inline-flex items-center gap-1">
-                  <MessageCircle className="size-3.5 text-[#25D366]" aria-hidden="true" />
-                  <strong className="font-mono text-foreground">{metrics.whatsappClicks}</strong> WA leads
-                </span>
-              </div>
-            )}
+            <div className="mt-4 flex items-center justify-between border-t border-border pt-3 text-[11px] text-muted-foreground">
+              <span className="inline-flex items-center gap-1">
+                <Eye className="size-3.5 text-brand" aria-hidden="true" />
+                <strong className="font-mono text-foreground">{displayViews}</strong> storefront views
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <MessageCircle className="size-3.5 text-[#25D366]" aria-hidden="true" />
+                <strong className="font-mono text-foreground">{displayWaClicks}</strong> WA leads
+              </span>
+            </div>
           </div>
         </section>
+
+        {/* Portfolio Photo Gallery (shown when vendor uploaded gallery photos) */}
+        {vendor.gallery && vendor.gallery.length > 0 && (
+          <section className="border-b border-border pb-10">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-brand">
+                  <ImageIcon className="size-3.5" aria-hidden="true" />
+                  Past Events &amp; Work Portfolio
+                </p>
+                <h2 className="mt-1 text-xl font-extrabold text-foreground sm:text-2xl">
+                  Photo Gallery ({vendor.gallery.length})
+                </h2>
+              </div>
+              <span className="text-xs text-muted-foreground">Tap any photo to zoom</span>
+            </div>
+            <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+              {vendor.gallery.map((photo, idx) => (
+                <button
+                  key={`${photo.slice(0, 24)}-${idx}`}
+                  type="button"
+                  onClick={() => setLightboxImg(photo)}
+                  className="group relative aspect-square cursor-pointer overflow-hidden rounded-2xl border border-border bg-muted"
+                >
+                  <img
+                    src={photo}
+                    alt={`${vendor.name} portfolio ${idx + 1}`}
+                    referrerPolicy="no-referrer"
+                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                  />
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* Full Product Catalog Grid with Multi-Item WhatsApp Basket */}
         <section id="vendor-products">
@@ -690,24 +876,141 @@ export function VendorWebsiteView({
           </div>
 
           <div className="lg:col-span-5">
-            <h2 className="text-xl font-extrabold text-foreground">Verified Reviews</h2>
-            <div className="mt-4 space-y-4">
-              {vendor.reviews.map((rev) => (
-                <div key={rev.id} className="rounded-2xl border border-border bg-card p-5">
-                  <div className="flex items-center justify-between gap-2 text-xs">
-                    <span className="font-bold text-foreground">{rev.author}</span>
-                    <span className="font-mono font-semibold text-amber-500">
-                      {rev.rating.toFixed(1)}★
-                    </span>
-                  </div>
-                  <p className="mt-0.5 text-[11px] text-muted-foreground">
-                    {rev.role} · {rev.date}
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-xl font-extrabold text-foreground">
+                Verified Reviews ({effectiveReviewCount})
+              </h2>
+              <span className="inline-flex items-center gap-1 font-mono text-sm font-bold text-amber-500">
+                <Star className="size-4 fill-amber-400 text-amber-400" aria-hidden="true" />
+                {effectiveRating.toFixed(1)}
+              </span>
+            </div>
+
+            {/* Write a Verified Cloud Review */}
+            <div className="mt-4 rounded-2xl border border-border bg-card p-4">
+              <p className="text-xs font-bold text-foreground">Write a Customer Review</p>
+              {!user ? (
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs text-muted-foreground">
+                    Sign in with Google to leave a verified rating.
                   </p>
-                  <p className="mt-2.5 text-sm leading-relaxed text-muted-foreground">
-                    “{rev.comment}”
-                  </p>
+                  <button
+                    type="button"
+                    onClick={() => void onSignIn?.()}
+                    className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-xs font-bold text-brand-foreground hover:bg-brand-hover"
+                  >
+                    <LogIn className="size-3.5" aria-hidden="true" />
+                    Sign in
+                  </button>
                 </div>
-              ))}
+              ) : (
+                <form onSubmit={(e) => void handleReviewSubmit(e)} className="mt-2.5 space-y-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-1">
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <button
+                          key={star}
+                          type="button"
+                          onClick={() => setReviewRating(star)}
+                          aria-label={`Rate ${star} out of 5`}
+                          className="cursor-pointer p-0.5"
+                        >
+                          <Star
+                            className={`size-5 ${
+                              star <= reviewRating
+                                ? 'fill-amber-400 text-amber-400'
+                                : 'text-muted-foreground/40'
+                            }`}
+                          />
+                        </button>
+                      ))}
+                    </div>
+                    <select
+                      aria-label="Occasion"
+                      value={reviewEventType}
+                      onChange={(e) => setReviewEventType(e.target.value)}
+                      className="rounded-lg border border-border bg-background px-2.5 py-1 text-xs text-foreground"
+                    >
+                      <option value="Birthday Party">Birthday Party</option>
+                      <option value="Wedding / Reception">Wedding / Reception</option>
+                      <option value="Corporate Event">Corporate Event</option>
+                      <option value="House Party">House Party</option>
+                      <option value="Festival / Gifting">Festival / Gifting</option>
+                    </select>
+                  </div>
+                  <textarea
+                    rows={2}
+                    required
+                    minLength={5}
+                    maxLength={600}
+                    value={reviewComment}
+                    onChange={(e) => setReviewComment(e.target.value)}
+                    placeholder={`Share your experience with ${vendor.name} (taste, punctuality, presentation)...`}
+                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs text-foreground focus:border-brand focus:outline-none"
+                  />
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] text-muted-foreground">
+                      Posting as <strong className="text-foreground">{user.displayName || 'Customer'}</strong>
+                    </span>
+                    <button
+                      type="submit"
+                      disabled={submittingReview}
+                      className="cursor-pointer rounded-lg bg-brand px-3.5 py-1.5 text-xs font-bold text-brand-foreground hover:bg-brand-hover disabled:opacity-50"
+                    >
+                      {submittingReview ? 'Posting…' : 'Post Review'}
+                    </button>
+                  </div>
+                </form>
+              )}
+              {reviewStatus && (
+                <p className="mt-2 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                  {reviewStatus}
+                </p>
+              )}
+            </div>
+
+            <div className="mt-4 space-y-3">
+              {mergedReviews.length === 0 ? (
+                <p className="rounded-2xl border border-dashed border-border p-5 text-center text-xs text-muted-foreground">
+                  No reviews yet — be the first to review {vendor.name}!
+                </p>
+              ) : (
+                mergedReviews.map((rev) => (
+                  <div key={rev.id} className="rounded-2xl border border-border bg-card p-4">
+                    <div className="flex items-center justify-between gap-2 text-xs">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-bold text-foreground">{rev.author}</span>
+                        {rev.isCloud && (
+                          <span className="rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-bold text-emerald-600">
+                            Verified
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-semibold text-amber-500">
+                          {rev.rating.toFixed(1)}★
+                        </span>
+                        {rev.isCloud && user && rev.authorId === user.uid && (
+                          <button
+                            type="button"
+                            onClick={() => void handleDeleteReview(rev.id)}
+                            aria-label="Delete your review"
+                            className="cursor-pointer text-muted-foreground hover:text-red-500"
+                          >
+                            <Trash2 className="size-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">
+                      {rev.role} · {rev.date}
+                    </p>
+                    <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                      “{rev.comment}”
+                    </p>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </section>
@@ -814,6 +1117,37 @@ export function VendorWebsiteView({
       </div>
 
       <QrPosterModal vendor={qrOpen ? vendor : null} onClose={() => setQrOpen(false)} />
+      <PromoCardModal
+        vendor={promoCardOpen ? vendor : null}
+        currency={currency}
+        onClose={() => setPromoCardOpen(false)}
+        onTrackShare={onTrackShare}
+      />
+
+      {lightboxImg && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Portfolio photo preview"
+          onClick={() => setLightboxImg(null)}
+        >
+          <button
+            type="button"
+            onClick={() => setLightboxImg(null)}
+            aria-label="Close photo preview"
+            className="absolute right-4 top-4 grid size-10 cursor-pointer place-items-center rounded-full bg-white/15 text-white hover:bg-white/25"
+          >
+            <X className="size-5" aria-hidden="true" />
+          </button>
+          <img
+            src={lightboxImg}
+            alt="Portfolio full view"
+            className="max-h-[86vh] max-w-[92vw] rounded-2xl object-contain shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
     </div>
   );
 }

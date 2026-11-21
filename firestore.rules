@@ -40,10 +40,19 @@ service cloud.firestore {
     }
 
     // --- Entity Validation Blueprints ---
-    function isValidStringList(listVal, maxLen) {
+    function isValidStringList(listVal, maxLen, maxItemLen) {
       return listVal is list &&
         listVal.size() <= maxLen &&
-        (listVal.size() == 0 || (listVal[0] is string && listVal[0].size() <= 100));
+        (listVal.size() == 0 || (listVal[0] is string && listVal[0].size() <= maxItemLen));
+    }
+
+    function isValidNonEmptyStringList(listVal, maxLen, maxItemLen) {
+      return listVal is list &&
+        listVal.size() >= 1 &&
+        listVal.size() <= maxLen &&
+        listVal[0] is string &&
+        listVal[0].size() >= 1 &&
+        listVal[0].size() <= maxItemLen;
     }
 
     function isValidProductsList(listVal) {
@@ -68,8 +77,8 @@ service cloud.firestore {
           'country', 'state', 'city', 'area', 'lat', 'lng',
           'whatsappNumber', 'planTier', 'monthlyAutoPay', 'priceTier',
           'startingPriceUsd', 'rating', 'reviewCount', 'responseTime',
-          'verified', 'status', 'tagline', 'description',
-          'serviceAreas', 'specialties', 'image', 'logo', 'products',
+          'verified', 'status', 'tagline', 'description', 'promoBanner',
+          'serviceAreas', 'specialties', 'image', 'logo', 'gallery', 'products',
           'createdAt', 'updatedAt'
         ]) &&
         isValidId(data.ownerId) &&
@@ -95,10 +104,12 @@ service cloud.firestore {
         data.status in ['active', 'paused'] &&
         data.tagline is string && data.tagline.size() >= 3 && data.tagline.size() <= 180 &&
         data.description is string && data.description.size() >= 5 && data.description.size() <= 1200 &&
-        isValidStringList(data.serviceAreas, 10) &&
-        isValidStringList(data.specialties, 10) &&
+        (!('promoBanner' in data) || (data.promoBanner is string && data.promoBanner.size() <= 120)) &&
+        isValidStringList(data.serviceAreas, 10, 100) &&
+        isValidStringList(data.specialties, 10, 100) &&
         data.image is string && data.image.size() >= 1 && data.image.size() <= 150000 &&
         (!('logo' in data) || (data.logo is string && data.logo.size() <= 70000)) &&
+        (!('gallery' in data) || isValidStringList(data.gallery, 6, 95000)) &&
         isValidProductsList(data.products) &&
         data.createdAt is timestamp &&
         data.updatedAt is timestamp;
@@ -111,7 +122,7 @@ service cloud.firestore {
         isValidId(data.uid) &&
         data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 100 &&
         data.email is string && data.email.size() >= 3 && data.email.size() <= 160 &&
-        isValidStringList(data.savedVendorIds, 50) &&
+        isValidStringList(data.savedVendorIds, 50, 100) &&
         data.createdAt is timestamp &&
         data.updatedAt is timestamp;
     }
@@ -148,6 +159,84 @@ service cloud.firestore {
         data.updatedAt is timestamp;
     }
 
+    function isValidReview(data) {
+      return data.keys().hasAll([
+          'vendorId', 'authorId', 'authorName', 'eventType',
+          'rating', 'comment', 'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'vendorId', 'authorId', 'authorName', 'eventType',
+          'rating', 'comment', 'createdAt'
+        ]) &&
+        isValidId(data.vendorId) &&
+        isValidId(data.authorId) &&
+        data.authorName is string && data.authorName.size() >= 1 && data.authorName.size() <= 80 &&
+        data.eventType is string && data.eventType.size() >= 2 && data.eventType.size() <= 60 &&
+        data.rating is number && data.rating >= 1 && data.rating <= 5 &&
+        data.comment is string && data.comment.size() >= 5 && data.comment.size() <= 600 &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidEventRequest(data) {
+      return data.keys().hasAll([
+          'customerId', 'customerName', 'occasion', 'categories',
+          'country', 'state', 'city', 'eventDate', 'guests',
+          'budgetUsd', 'details', 'status', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'customerId', 'customerName', 'occasion', 'categories',
+          'country', 'state', 'city', 'eventDate', 'guests',
+          'budgetUsd', 'details', 'status', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.customerId) &&
+        data.customerName is string && data.customerName.size() >= 1 && data.customerName.size() <= 80 &&
+        data.occasion is string && data.occasion.size() >= 2 && data.occasion.size() <= 60 &&
+        isValidNonEmptyStringList(data.categories, 4, 80) &&
+        data.country in ['India', 'Dubai / UAE', 'Sri Lanka', 'Pakistan', 'Bangladesh', 'Nepal'] &&
+        data.state is string && data.state.size() >= 2 && data.state.size() <= 80 &&
+        data.city is string && data.city.size() >= 2 && data.city.size() <= 80 &&
+        data.eventDate is string && data.eventDate.size() >= 6 && data.eventDate.size() <= 30 &&
+        data.guests is number && data.guests >= 1 && data.guests <= 100000 &&
+        data.budgetUsd is number && data.budgetUsd >= 0 && data.budgetUsd <= 500000 &&
+        data.details is string && data.details.size() >= 5 && data.details.size() <= 800 &&
+        data.status in ['open', 'closed'] &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidEventQuote(data, requestId) {
+      return data.keys().hasAll([
+          'requestId', 'requestCustomerId', 'vendorOwnerId', 'vendorId', 'vendorName',
+          'vendorSlug', 'vendorWhatsapp', 'priceUsd', 'message', 'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'requestId', 'requestCustomerId', 'vendorOwnerId', 'vendorId', 'vendorName',
+          'vendorSlug', 'vendorWhatsapp', 'priceUsd', 'message', 'createdAt'
+        ]) &&
+        data.requestId == requestId &&
+        isValidId(data.requestId) &&
+        isValidId(data.requestCustomerId) &&
+        isValidId(data.vendorOwnerId) &&
+        isValidId(data.vendorId) &&
+        data.vendorName is string && data.vendorName.size() >= 2 && data.vendorName.size() <= 100 &&
+        data.vendorSlug is string && data.vendorSlug.size() >= 2 && data.vendorSlug.size() <= 100 && data.vendorSlug.matches('^[a-z0-9\\-]+$') &&
+        data.vendorWhatsapp is string && data.vendorWhatsapp.size() >= 7 && data.vendorWhatsapp.size() <= 18 && data.vendorWhatsapp.matches('^[0-9]+$') &&
+        data.priceUsd is number && data.priceUsd >= 1 && data.priceUsd <= 500000 &&
+        data.message is string && data.message.size() >= 5 && data.message.size() <= 600 &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidVendorMetric(data, vendorId) {
+      return data.keys().hasAll(['vendorId', 'views', 'whatsappClicks', 'shares', 'updatedAt']) &&
+        data.keys().hasOnly(['vendorId', 'views', 'whatsappClicks', 'shares', 'updatedAt']) &&
+        data.vendorId == vendorId &&
+        isValidId(data.vendorId) &&
+        data.views is number && data.views >= 0 && data.views <= 100000000 &&
+        data.whatsappClicks is number && data.whatsappClicks >= 0 && data.whatsappClicks <= 100000000 &&
+        data.shares is number && data.shares >= 0 && data.shares <= 100000000 &&
+        data.updatedAt is timestamp;
+    }
+
     function isValidAdminRecord(data, adminId) {
       return data.keys().hasAll(['uid', 'grantedAt']) &&
         data.keys().hasOnly(['uid', 'grantedAt']) &&
@@ -181,7 +270,7 @@ service cloud.firestore {
         incoming().ownerId == existing().ownerId &&
         incoming().createdAt == existing().createdAt &&
         incoming().updatedAt == request.time && (
-          // Tier 1: Owner editing storefront details, products, or plan (cannot self-verify or fake reviews)
+          // Tier 1: Owner editing storefront details, promoBanner, gallery, products, or plan
           (
             isOwner(existing().ownerId) &&
             incoming().verified == existing().verified &&
@@ -191,8 +280,8 @@ service cloud.firestore {
               'name', 'category', 'country', 'state', 'city', 'area',
               'lat', 'lng', 'whatsappNumber', 'planTier', 'monthlyAutoPay',
               'priceTier', 'startingPriceUsd', 'responseTime', 'status',
-              'tagline', 'description', 'serviceAreas', 'specialties',
-              'image', 'logo', 'products', 'updatedAt'
+              'tagline', 'description', 'promoBanner', 'serviceAreas',
+              'specialties', 'image', 'logo', 'gallery', 'products', 'updatedAt'
             ])
           ) ||
           // Tier 2: Admin verification & moderation
@@ -298,6 +387,144 @@ service cloud.firestore {
       allow delete: if isVerifiedUser() &&
         isValidId(bookingId) &&
         (existing().customerId == request.auth.uid || isAdmin());
+    }
+
+    // --- Collection: /reviews/{reviewId} (Public Verified Customer Reviews) ---
+    match /reviews/{reviewId} {
+      allow get: if isValidId(reviewId);
+      allow list: if existing().rating >= 1 && existing().rating <= 5;
+
+      allow create: if isVerifiedUser() &&
+        isValidId(reviewId) &&
+        isValidReview(incoming()) &&
+        incoming().authorId == request.auth.uid &&
+        incoming().createdAt == request.time;
+
+      allow update: if false;
+
+      allow delete: if isVerifiedUser() &&
+        isValidId(reviewId) &&
+        (existing().authorId == request.auth.uid || isAdmin());
+    }
+
+    // --- Collection: /eventRequests/{requestId} (Broadcast Event Leads — No PII) ---
+    match /eventRequests/{requestId} {
+      allow get: if isValidId(requestId) && isVerifiedUser() && (
+        existing().status == 'open' ||
+        existing().customerId == request.auth.uid ||
+        isAdmin()
+      );
+
+      allow list: if isVerifiedUser() && (
+        existing().status == 'open' ||
+        existing().customerId == request.auth.uid
+      );
+
+      allow create: if isVerifiedUser() &&
+        isValidId(requestId) &&
+        isValidEventRequest(incoming()) &&
+        incoming().customerId == request.auth.uid &&
+        incoming().status == 'open' &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isVerifiedUser() &&
+        isValidId(requestId) &&
+        isValidEventRequest(incoming()) &&
+        incoming().customerId == existing().customerId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          // Action 1: Customer closes an open request (closed is terminal)
+          (
+            existing().customerId == request.auth.uid &&
+            existing().status == 'open' &&
+            incoming().status == 'closed' &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+          ) ||
+          // Action 2: Admin override
+          (
+            isAdmin() &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+          )
+        );
+
+      allow delete: if isVerifiedUser() &&
+        isValidId(requestId) &&
+        (existing().customerId == request.auth.uid || isAdmin());
+
+      // --- Subcollection: /eventRequests/{requestId}/quotes/{quoteId} (Master Gate) ---
+      match /quotes/{quoteId} {
+        allow get: if isValidId(requestId) && isValidId(quoteId) && isVerifiedUser() && (
+          existing().vendorOwnerId == request.auth.uid ||
+          existing().requestCustomerId == request.auth.uid ||
+          get(/databases/$(database)/documents/eventRequests/$(requestId)).data.customerId == request.auth.uid ||
+          isAdmin()
+        );
+
+        allow list: if isVerifiedUser() && (
+          existing().vendorOwnerId == request.auth.uid ||
+          existing().requestCustomerId == request.auth.uid
+        );
+
+        allow create: if isVerifiedUser() &&
+          isValidId(requestId) &&
+          isValidId(quoteId) &&
+          isValidEventQuote(incoming(), requestId) &&
+          incoming().vendorOwnerId == request.auth.uid &&
+          incoming().createdAt == request.time &&
+          exists(/databases/$(database)/documents/eventRequests/$(requestId)) &&
+          get(/databases/$(database)/documents/eventRequests/$(requestId)).data.status == 'open' &&
+          get(/databases/$(database)/documents/eventRequests/$(requestId)).data.customerId == incoming().requestCustomerId;
+
+        allow update: if false;
+
+        allow delete: if isVerifiedUser() &&
+          isValidId(requestId) &&
+          isValidId(quoteId) &&
+          (existing().vendorOwnerId == request.auth.uid || isAdmin());
+      }
+    }
+
+    // --- Collection: /vendorMetrics/{vendorId} (Cloud Engagement Analytics) ---
+    match /vendorMetrics/{vendorId} {
+      allow get: if isValidId(vendorId);
+      allow list: if false;
+
+      allow create: if isVerifiedUser() &&
+        isValidId(vendorId) &&
+        isValidVendorMetric(incoming(), vendorId) &&
+        incoming().views <= 1 &&
+        incoming().whatsappClicks <= 1 &&
+        incoming().shares <= 1 &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isVerifiedUser() &&
+        isValidId(vendorId) &&
+        isValidVendorMetric(incoming(), vendorId) &&
+        incoming().vendorId == existing().vendorId &&
+        incoming().updatedAt == request.time && (
+          // Action 1: Strictly monotonic +0/+1 engagement increment
+          (
+            incoming().views >= existing().views &&
+            incoming().views <= existing().views + 1 &&
+            incoming().whatsappClicks >= existing().whatsappClicks &&
+            incoming().whatsappClicks <= existing().whatsappClicks + 1 &&
+            incoming().shares >= existing().shares &&
+            incoming().shares <= existing().shares + 1 &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'views', 'whatsappClicks', 'shares', 'updatedAt'
+            ])
+          ) ||
+          // Action 2: Admin correction
+          (
+            isAdmin() &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'views', 'whatsappClicks', 'shares', 'updatedAt'
+            ])
+          )
+        );
+
+      allow delete: if isAdmin() && isValidId(vendorId);
     }
 
     // --- Collection: /admins/{adminId} ---

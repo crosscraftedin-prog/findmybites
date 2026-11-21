@@ -11,7 +11,7 @@
       ]
     },
     {
-      "source": "/(robots\\.txt|sitemap\\.xml)",
+      "source": "/(robots\\.txt|sitemap\\.xml|favicon\\.svg|og-cover\\.png)",
       "headers": [
         { "key": "Cache-Control", "value": "public, max-age=3600, s-maxage=86400" }
       ]
@@ -19,7 +19,7 @@
   ],
   "rewrites": [
     {
-      "source": "/((?!api/|assets/|robots\\.txt|sitemap\\.xml).*)",
+      "source": "/((?!api/|assets/|robots\\.txt|sitemap\\.xml|favicon\\.svg|og-cover\\.png).*)",
       "destination": "/index.html"
     }
   ]

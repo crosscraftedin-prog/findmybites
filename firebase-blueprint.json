@@ -127,6 +127,11 @@
           "maxLength": 1200,
           "description": "Full storefront description."
         },
+        "promoBanner": {
+          "type": "string",
+          "maxLength": 120,
+          "description": "Optional seasonal or festival offer banner shown on the storefront."
+        },
         "serviceAreas": {
           "type": "array",
           "description": "Up to 10 covered local areas."
@@ -145,6 +150,10 @@
           "type": "string",
           "maxLength": 70000,
           "description": "Optional business logo image URL or compressed data URL."
+        },
+        "gallery": {
+          "type": "array",
+          "description": "Optional portfolio gallery of up to 6 compressed photo data URLs or asset paths."
         },
         "products": {
           "type": "array",
@@ -358,6 +367,267 @@
         "updatedAt"
       ]
     },
+    "Review": {
+      "title": "Review",
+      "description": "Public customer review and star rating for a vendor storefront (contains no private PII).",
+      "type": "object",
+      "properties": {
+        "vendorId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Target vendor ID."
+        },
+        "authorId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase Auth UID of the reviewer."
+        },
+        "authorName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "Public reviewer display name."
+        },
+        "eventType": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 60,
+          "description": "Occasion booked (e.g. Wedding, Birthday, Corporate)."
+        },
+        "rating": {
+          "type": "number",
+          "description": "Star rating from 1 to 5."
+        },
+        "comment": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 600,
+          "description": "Customer review text."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        }
+      },
+      "required": ["vendorId", "authorId", "authorName", "eventType", "rating", "comment", "createdAt"]
+    },
+    "EventRequest": {
+      "title": "EventRequest",
+      "description": "Customer event brief broadcast to local vendors (contains no customer PII).",
+      "type": "object",
+      "properties": {
+        "customerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase Auth UID of the requesting customer."
+        },
+        "customerName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "Customer first name or display label."
+        },
+        "occasion": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 60,
+          "description": "Event type such as Birthday, Wedding, Corporate."
+        },
+        "categories": {
+          "type": "array",
+          "description": "1 to 4 requested service categories."
+        },
+        "country": {
+          "type": "string",
+          "enum": ["India", "Dubai / UAE", "Sri Lanka", "Pakistan", "Bangladesh", "Nepal"],
+          "description": "Event country."
+        },
+        "state": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 80,
+          "description": "Event state, emirate, or province."
+        },
+        "city": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 80,
+          "description": "Event city."
+        },
+        "eventDate": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 30,
+          "description": "Event date."
+        },
+        "guests": {
+          "type": "number",
+          "description": "Expected guest count."
+        },
+        "budgetUsd": {
+          "type": "number",
+          "description": "Target budget in USD equivalent."
+        },
+        "details": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 800,
+          "description": "Event requirements, theme, or dietary notes."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["open", "closed"],
+          "description": "Request status (closed is terminal)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp."
+        }
+      },
+      "required": [
+        "customerId",
+        "customerName",
+        "occasion",
+        "categories",
+        "country",
+        "state",
+        "city",
+        "eventDate",
+        "guests",
+        "budgetUsd",
+        "details",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "EventQuote": {
+      "title": "EventQuote",
+      "description": "Vendor quote submitted in response to an open EventRequest.",
+      "type": "object",
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Parent event request ID."
+        },
+        "requestCustomerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "UID of the parent event request customer (verified against parent on create)."
+        },
+        "vendorOwnerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase Auth UID of the quoting vendor."
+        },
+        "vendorId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Vendor storefront ID."
+        },
+        "vendorName": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 100,
+          "description": "Vendor business name."
+        },
+        "vendorSlug": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 100,
+          "pattern": "^[a-z0-9\\-]+$",
+          "description": "Vendor storefront slug."
+        },
+        "vendorWhatsapp": {
+          "type": "string",
+          "minLength": 7,
+          "maxLength": 18,
+          "pattern": "^[0-9]+$",
+          "description": "Public vendor business WhatsApp number."
+        },
+        "priceUsd": {
+          "type": "number",
+          "description": "Quoted estimate in USD equivalent."
+        },
+        "message": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 600,
+          "description": "Quote details and package inclusions."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        }
+      },
+      "required": [
+        "requestId",
+        "requestCustomerId",
+        "vendorOwnerId",
+        "vendorId",
+        "vendorName",
+        "vendorSlug",
+        "vendorWhatsapp",
+        "priceUsd",
+        "message",
+        "createdAt"
+      ]
+    },
+    "VendorMetric": {
+      "title": "VendorMetric",
+      "description": "Aggregated cloud engagement metrics for a vendor storefront.",
+      "type": "object",
+      "properties": {
+        "vendorId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Target vendor ID."
+        },
+        "views": {
+          "type": "number",
+          "description": "Total storefront views."
+        },
+        "whatsappClicks": {
+          "type": "number",
+          "description": "Total WhatsApp inquiry clicks."
+        },
+        "shares": {
+          "type": "number",
+          "description": "Total QR poster or story card downloads/shares."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server last-updated timestamp."
+        }
+      },
+      "required": ["vendorId", "views", "whatsappClicks", "shares", "updatedAt"]
+    },
     "AdminRecord": {
       "title": "AdminRecord",
       "description": "Trusted admin role document.",
@@ -389,6 +659,22 @@
     "/bookings/{bookingId}": {
       "schema": { "$ref": "#/entities/BookingEnquiry" },
       "description": "Customer booking enquiries accessible strictly to the customer, the target vendor owner, or an admin."
+    },
+    "/reviews/{reviewId}": {
+      "schema": { "$ref": "#/entities/Review" },
+      "description": "Public vendor reviews created by verified users; immutable after creation and deletable only by author or admin."
+    },
+    "/eventRequests/{requestId}": {
+      "schema": { "$ref": "#/entities/EventRequest" },
+      "description": "Broadcast customer event requests (no PII); open requests readable by verified users, editable only by request owner or admin."
+    },
+    "/eventRequests/{requestId}/quotes/{quoteId}": {
+      "schema": { "$ref": "#/entities/EventQuote" },
+      "description": "Vendor quotes submitted against a parent event request; readable by the request customer, the quoting vendor, or admin."
+    },
+    "/vendorMetrics/{vendorId}": {
+      "schema": { "$ref": "#/entities/VendorMetric" },
+      "description": "Storefront views, WhatsApp clicks, and share counters; strictly monotonic increments (+0 or +1) by verified users."
     },
     "/admins/{adminId}": {
       "schema": { "$ref": "#/entities/AdminRecord" },

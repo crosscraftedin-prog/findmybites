@@ -15,6 +15,7 @@ import {
   Loader2,
   Mail,
   MapPin,
+  Megaphone,
   MessageCircle,
   MessageSquare,
   MessageSquareHeart,
@@ -37,6 +38,7 @@ import { Ecosystem, Header } from './components/Header';
 import { JoshPlannerDrawer } from './components/JoshPlannerDrawer';
 import { ListBusinessModal } from './components/ListBusinessModal';
 import { LocationPickerModal, SelectedLocation } from './components/LocationPickerModal';
+import { PostEventRequestModal } from './components/PostEventRequestModal';
 import { SavedBookingsDrawer } from './components/SavedBookingsDrawer';
 import { VendorCard } from './components/VendorCard';
 import { VendorDashboardModal } from './components/VendorDashboardModal';
@@ -47,6 +49,7 @@ import {
   COUNTRY_REGION_LABEL,
   CURRENCIES,
   CurrencyCode,
+  EventRequest,
   FOOD_CATEGORIES,
   HERO_FOOD_IMAGE,
   HERO_PARTY_IMAGE,
@@ -73,9 +76,12 @@ import {
   createBookingInCloud,
   createVendorInCloud,
   ensureUserProfile,
+  incrementVendorMetricInCloud,
   subscribeActiveVendors,
   subscribeMyBookings,
+  subscribeMyEventRequests,
   subscribeMyVendors,
+  subscribeOpenEventRequests,
   subscribeVendorLeads,
   syncSavedVendorsToCloud,
   updateBookingStatusInCloud,
@@ -436,9 +442,11 @@ export default function App() {
   const [activeVendor, setActiveVendor] = useState<Vendor | null>(null);
   const [drawerTab, setDrawerTab] = useState<'saved' | 'bookings' | null>(null);
   const [aiPlannerOpen, setAiPlannerOpen] = useState(false);
+  const [eventRequestModalOpen, setEventRequestModalOpen] = useState(false);
   const [listModalOpen, setListModalOpen] = useState(false);
   const [listModalPlan, setListModalPlan] = useState<PlanTier>('free');
   const [dashboardOpen, setDashboardOpen] = useState(false);
+  const [editVendorId, setEditVendorId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   // Firebase Auth & Live Cloud Firestore State
@@ -448,6 +456,8 @@ export default function App() {
   const [myCloudVendors, setMyCloudVendors] = useState<Vendor[]>([]);
   const [cloudBookings, setCloudBookings] = useState<BookingEnquiry[]>([]);
   const [vendorLeads, setVendorLeads] = useState<BookingEnquiry[]>([]);
+  const [myEventRequests, setMyEventRequests] = useState<EventRequest[]>([]);
+  const [openEventRequests, setOpenEventRequests] = useState<EventRequest[]>([]);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
@@ -474,6 +484,8 @@ export default function App() {
       setMyCloudVendors([]);
       setCloudBookings([]);
       setVendorLeads([]);
+      setMyEventRequests([]);
+      setOpenEventRequests([]);
       return;
     }
 
@@ -491,12 +503,16 @@ export default function App() {
     const unsubMine = subscribeMyVendors(authUser.uid, setMyCloudVendors);
     const unsubBookings = subscribeMyBookings(authUser.uid, setCloudBookings);
     const unsubLeads = subscribeVendorLeads(authUser.uid, setVendorLeads);
+    const unsubMyRequests = subscribeMyEventRequests(authUser.uid, setMyEventRequests);
+    const unsubOpenRequests = subscribeOpenEventRequests(setOpenEventRequests);
 
     return () => {
       active = false;
       unsubMine();
       unsubBookings();
       unsubLeads();
+      unsubMyRequests();
+      unsubOpenRequests();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authReady, authUser]);
@@ -552,6 +568,7 @@ export default function App() {
         [id]: { ...current, views: current.views + 1 },
       };
     });
+    void incrementVendorMetricInCloud(id, 'views');
   }, [activeVendor]);
 
   const trackWhatsAppClick = (vendorId: string) => {
@@ -562,6 +579,11 @@ export default function App() {
         [vendorId]: { ...current, whatsappClicks: current.whatsappClicks + 1 },
       };
     });
+    void incrementVendorMetricInCloud(vendorId, 'whatsappClicks');
+  };
+
+  const trackShare = (vendorId: string) => {
+    void incrementVendorMetricInCloud(vendorId, 'shares');
   };
 
   useEffect(() => {
@@ -582,31 +604,102 @@ export default function App() {
     return merged;
   }, [cloudVendors, customVendors]);
 
+  const resolvedActiveVendor = useMemo(() => {
+    if (!activeVendor) return null;
+    return allVendors.find((v) => v.id === activeVendor.id) ?? activeVendor;
+  }, [activeVendor, allVendors]);
+
+  const isAdminUser = Boolean(
+    authUser?.email && authUser.email.toLowerCase() === ADMIN_EMAIL.toLowerCase()
+  );
+
+  const dashboardVendors = useMemo(() => {
+    if (!isAdminUser) return myCloudVendors;
+    const seen = new Set<string>();
+    const combined: Vendor[] = [];
+    for (const v of [...myCloudVendors, ...cloudVendors]) {
+      if (!seen.has(v.id)) {
+        seen.add(v.id);
+        combined.push(v);
+      }
+    }
+    return combined;
+  }, [isAdminUser, myCloudVendors, cloudVendors]);
+
+  const dashboardVendorIds = useMemo(
+    () => new Set(dashboardVendors.map((v) => v.id)),
+    [dashboardVendors]
+  );
+
+  const canEditVendor = (vendor: Vendor): boolean =>
+    Boolean(authUser && dashboardVendorIds.has(vendor.id));
+
+  const handleEditStorefront = (vendor: Vendor) => {
+    setActiveVendor(null);
+    setEditVendorId(vendor.id);
+    setDashboardOpen(true);
+  };
+
   const effectiveBookings = authUser ? cloudBookings : bookings;
   const ecoKey: 'food' | 'party' = ecosystem === 'FINDMYBITES' ? 'food' : 'party';
 
   useSeoMeta({
-    activeVendor,
+    activeVendor: resolvedActiveVendor,
     selectedCategory,
     selectedCountry,
     selectedState,
     ecosystem,
   });
 
-  // Hydrate deep links from Google Search / sitemap.xml (?q=, ?country=, ?category=, /v/<slug>)
+  // Hydrate /v/<slug> deep links for BOTH built-in & Cloud Firestore vendors + handle browser Back button
+  useEffect(() => {
+    const syncSlugFromUrl = (fromPopState: boolean) => {
+      const pathname = window.location.pathname;
+      if (pathname.startsWith('/v/')) {
+        const slug = decodeURIComponent(pathname.slice(3)).replace(/\/$/, '').toLowerCase();
+        const matchedVendor = allVendors.find((v) => v.slug.toLowerCase() === slug);
+        if (matchedVendor) {
+          setActiveVendor((prev) => (prev?.id === matchedVendor.id ? prev : matchedVendor));
+        }
+      } else if (fromPopState) {
+        setActiveVendor(null);
+      }
+    };
+
+    syncSlugFromUrl(false);
+    const onPopState = () => syncSlugFromUrl(true);
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [allVendors]);
+
+  // Keep browser address bar synced with /v/<slug> when browsing storefronts on www.findmybites.com
   useEffect(() => {
     const pathname = window.location.pathname;
-    if (pathname.startsWith('/v/')) {
+    if (resolvedActiveVendor) {
+      const targetPath = `/v/${resolvedActiveVendor.slug}`;
+      if (pathname !== targetPath) {
+        try {
+          window.history.pushState({ vendorSlug: resolvedActiveVendor.slug }, '', targetPath);
+        } catch {
+          // ignore sandbox history restrictions
+        }
+      }
+    } else if (pathname.startsWith('/v/')) {
+      // Only reset URL to '/' if the user explicitly closed a matched vendor (not while waiting for cloudVendors to load)
       const slug = decodeURIComponent(pathname.slice(3)).replace(/\/$/, '').toLowerCase();
-      const matchedVendor = [...customVendors, ...INITIAL_VENDORS].find(
-        (v) => v.slug.toLowerCase() === slug
-      );
-      if (matchedVendor) {
-        setActiveVendor(matchedVendor);
-        return;
+      const existsInCatalog = allVendors.some((v) => v.slug.toLowerCase() === slug);
+      if (existsInCatalog) {
+        try {
+          window.history.pushState({}, '', '/');
+        } catch {
+          // ignore sandbox history restrictions
+        }
       }
     }
+  }, [resolvedActiveVendor, allVendors]);
 
+  // Hydrate query deep links from Google Search / sitemap.xml (?q=, ?country=, ?category=)
+  useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const qParam = params.get('q');
     const countryParam = params.get('country');
@@ -639,7 +732,7 @@ export default function App() {
         setSelectedCategory(matchedParty);
       }
     }
-    // Run once on initial mount for deep-link hydration
+    // Run once on initial mount for query deep-link hydration
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -1034,7 +1127,7 @@ export default function App() {
         savedCount={savedIds.length}
         bookingsCount={effectiveBookings.length}
         user={authUser}
-        myVendorCount={myCloudVendors.length}
+        myVendorCount={dashboardVendors.length}
         onOpenSaved={() => setDrawerTab('saved')}
         onOpenBookings={() => setDrawerTab('bookings')}
         onOpenListBusiness={() => handleOpenListModal('free')}
@@ -1233,6 +1326,20 @@ export default function App() {
                   >
                     <Sparkles className="size-4" aria-hidden="true" />
                     Plan My Event with AI
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setEventRequestModalOpen(true)}
+                    className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-white/30 bg-white/15 px-4 py-2.5 text-xs font-bold text-white shadow-lg backdrop-blur-md transition-colors hover:bg-white/25 sm:text-sm"
+                  >
+                    <Megaphone className="size-4" aria-hidden="true" />
+                    Post Event Request
+                    {myEventRequests.length > 0 && (
+                      <span className="rounded-full bg-[#25D366] px-1.5 py-0.5 font-mono text-[10px] font-bold text-white">
+                        {myEventRequests.length}
+                      </span>
+                    )}
                   </button>
 
                   <button
@@ -1474,8 +1581,10 @@ export default function App() {
                         ? haversineKm(userCoords.lat, userCoords.lng, vendor.lat, vendor.lng)
                         : null
                     }
+                    canEdit={canEditVendor(vendor)}
                     onToggleSave={toggleSave}
                     onSelect={setActiveVendor}
+                    onEdit={handleEditStorefront}
                   />
                 ))}
               </div>
@@ -1503,6 +1612,19 @@ export default function App() {
               </div>
 
               <div className="flex flex-wrap items-center gap-2.5 text-xs text-muted-foreground">
+                <button
+                  type="button"
+                  onClick={() => setEventRequestModalOpen(true)}
+                  className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-brand/40 bg-brand-soft px-3 py-2 text-xs font-semibold text-brand transition-colors hover:bg-brand hover:text-brand-foreground"
+                >
+                  <Megaphone className="size-3.5" aria-hidden="true" />
+                  Post Event Request
+                  {myEventRequests.length > 0 && (
+                    <span className="rounded-full bg-brand px-1.5 py-0.5 font-mono text-[10px] text-brand-foreground">
+                      {myEventRequests.length}
+                    </span>
+                  )}
+                </button>
                 <span className="font-mono font-semibold tabular-nums text-foreground">
                   {filteredVendors.length} {filteredVendors.length === 1 ? 'vendor' : 'vendors'}
                 </span>
@@ -1928,8 +2050,10 @@ export default function App() {
                             ? haversineKm(userCoords.lat, userCoords.lng, vendor.lat, vendor.lng)
                             : null
                         }
+                        canEdit={canEditVendor(vendor)}
                         onToggleSave={toggleSave}
                         onSelect={setActiveVendor}
+                        onEdit={handleEditStorefront}
                       />
                     ))}
                   </div>
@@ -2392,6 +2516,15 @@ export default function App() {
                 <li>
                   <button
                     type="button"
+                    onClick={() => setEventRequestModalOpen(true)}
+                    className="cursor-pointer transition-colors hover:text-brand"
+                  >
+                    Post an Event Request
+                  </button>
+                </li>
+                <li>
+                  <button
+                    type="button"
                     onClick={() => setAiPlannerOpen(true)}
                     className="cursor-pointer transition-colors hover:text-brand"
                   >
@@ -2504,15 +2637,20 @@ export default function App() {
 
       {/* Full One-Page Vendor Mini-Website */}
       <VendorWebsiteView
-        vendor={activeVendor}
+        vendor={resolvedActiveVendor}
         currency={currency}
-        isSaved={activeVendor ? savedIds.includes(activeVendor.id) : false}
-        metrics={activeVendor ? vendorAnalytics[activeVendor.id] : undefined}
+        isSaved={resolvedActiveVendor ? savedIds.includes(resolvedActiveVendor.id) : false}
+        metrics={resolvedActiveVendor ? vendorAnalytics[resolvedActiveVendor.id] : undefined}
+        user={authUser}
+        canEdit={resolvedActiveVendor ? canEditVendor(resolvedActiveVendor) : false}
+        onSignIn={handleSignIn}
+        onEditStorefront={handleEditStorefront}
         onClose={() => setActiveVendor(null)}
         onToggleSave={toggleSave}
         onCreateBooking={handleCreateBooking}
         onOpenBookings={() => setDrawerTab('bookings')}
         onTrackWhatsAppClick={trackWhatsAppClick}
+        onTrackShare={trackShare}
       />
 
       <SavedBookingsDrawer
@@ -2541,14 +2679,29 @@ export default function App() {
       <VendorDashboardModal
         isOpen={dashboardOpen}
         user={authUser}
-        myVendors={myCloudVendors}
+        myVendors={dashboardVendors}
         vendorLeads={vendorLeads}
+        openEventRequests={openEventRequests}
         currency={currency}
+        initialEditVendorId={editVendorId}
+        onClearInitialEdit={() => setEditVendorId(null)}
         onClose={() => setDashboardOpen(false)}
         onSignIn={handleSignIn}
         onSignOut={handleSignOut}
         onOpenListModal={handleOpenListModal}
         onOpenVendorWebsite={setActiveVendor}
+        onTrackShare={trackShare}
+        onNotify={setNotice}
+      />
+
+      <PostEventRequestModal
+        isOpen={eventRequestModalOpen}
+        user={authUser}
+        currency={currency}
+        defaultCountry={detectDefaultCountry()}
+        myRequests={myEventRequests}
+        onClose={() => setEventRequestModalOpen(false)}
+        onSignIn={handleSignIn}
         onNotify={setNotice}
       />
 

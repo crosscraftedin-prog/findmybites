@@ -14,13 +14,17 @@ import {
 } from 'firebase/firestore';
 import {
   BookingEnquiry,
+  CloudVendorMetric,
+  EventQuote,
+  EventRequest,
   LaunchCountry,
   PlanTier,
   PriceTier,
   Vendor,
   VendorProduct,
+  VendorReview,
 } from '../data/vendors';
-import { db, handleFirestoreError, OperationType } from '../firebase';
+import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 
 function sanitizeId(raw: string): string {
   const cleaned = raw.replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 120);
@@ -103,10 +107,17 @@ function docToVendor(id: string, data: Record<string, unknown>): Vendor {
     verified: Boolean(data.verified),
     tagline: typeof data.tagline === 'string' ? data.tagline : '',
     description: typeof data.description === 'string' ? data.description : '',
+    promoBanner:
+      typeof data.promoBanner === 'string' && data.promoBanner.trim().length > 0
+        ? data.promoBanner
+        : undefined,
     serviceAreas: Array.isArray(data.serviceAreas) ? (data.serviceAreas as string[]) : [],
     specialties: Array.isArray(data.specialties) ? (data.specialties as string[]) : [],
     image: typeof data.image === 'string' ? data.image : '/src/assets/images/cat-bakers.png',
     logo: typeof data.logo === 'string' && data.logo.length > 0 ? data.logo : undefined,
+    gallery: Array.isArray(data.gallery)
+      ? (data.gallery as string[]).filter((g) => typeof g === 'string' && g.length > 0).slice(0, 6)
+      : undefined,
     products,
     reviews: [],
   };
@@ -226,11 +237,22 @@ export async function createVendorInCloud(
     status: 'active' as const,
     tagline: clampStr(vendor.tagline, 3, 180, 'Local event specialist'),
     description: clampStr(vendor.description || vendor.tagline, 5, 1200, 'Local event specialist.'),
+    ...(vendor.promoBanner && vendor.promoBanner.trim().length > 0
+      ? { promoBanner: vendor.promoBanner.trim().slice(0, 120) }
+      : {}),
     serviceAreas: serviceAreas.length > 0 ? serviceAreas : [vendor.city],
     specialties: specialties.length > 0 ? specialties : [vendor.category],
     image: clampStr(vendor.image, 1, 150000, '/src/assets/images/cat-bakers.png'),
     ...(vendor.logo && vendor.logo.trim().length > 0
       ? { logo: vendor.logo.trim().slice(0, 70000) }
+      : {}),
+    ...(Array.isArray(vendor.gallery) && vendor.gallery.length > 0
+      ? {
+          gallery: vendor.gallery
+            .map((g) => g.trim().slice(0, 95000))
+            .filter(Boolean)
+            .slice(0, 6),
+        }
       : {}),
     products: cleanProducts,
     createdAt: serverTimestamp(),
@@ -249,6 +271,8 @@ export async function createVendorInCloud(
       reviewCount: 0,
       image: payload.image,
       logo: payload.logo,
+      promoBanner: payload.promoBanner,
+      gallery: payload.gallery,
       products: cleanProducts,
     };
   } catch (error) {
@@ -262,6 +286,7 @@ export async function updateVendorInCloud(
     name: string;
     tagline: string;
     description: string;
+    promoBanner: string;
     whatsappNumber: string;
     planTier: PlanTier;
     monthlyAutoPay: boolean;
@@ -269,6 +294,7 @@ export async function updateVendorInCloud(
     status: 'active' | 'paused';
     image: string;
     logo: string;
+    gallery: string[];
     lat: number;
     lng: number;
     products: VendorProduct[];
@@ -282,6 +308,7 @@ export async function updateVendorInCloud(
   if (updates.tagline !== undefined) clean.tagline = clampStr(updates.tagline, 3, 180, 'Local vendor');
   if (updates.description !== undefined)
     clean.description = clampStr(updates.description, 5, 1200, 'Local vendor');
+  if (updates.promoBanner !== undefined) clean.promoBanner = updates.promoBanner.trim().slice(0, 120);
   if (updates.whatsappNumber !== undefined)
     clean.whatsappNumber = sanitizeDigits(updates.whatsappNumber);
   if (updates.planTier !== undefined) clean.planTier = updates.planTier;
@@ -292,6 +319,11 @@ export async function updateVendorInCloud(
   if (updates.image !== undefined)
     clean.image = clampStr(updates.image, 1, 150000, '/src/assets/images/cat-bakers.png');
   if (updates.logo !== undefined) clean.logo = updates.logo.trim().slice(0, 70000);
+  if (updates.gallery !== undefined)
+    clean.gallery = updates.gallery
+      .map((g) => g.trim().slice(0, 95000))
+      .filter(Boolean)
+      .slice(0, 6);
   if (updates.lat !== undefined) clean.lat = Math.max(-90, Math.min(90, Number(updates.lat) || 0));
   if (updates.lng !== undefined) clean.lng = Math.max(-180, Math.min(180, Number(updates.lng) || 0));
   if (updates.products !== undefined) clean.products = sanitizeProducts(updates.products);
@@ -434,4 +466,321 @@ export async function updateBookingStatusInCloud(
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, docPath);
   }
+}
+
+// ============================================================================
+// CLOUD CUSTOMER REVIEWS (/reviews/{reviewId})
+// ============================================================================
+
+function docToReview(id: string, data: Record<string, unknown>): VendorReview {
+  return {
+    id,
+    authorId: typeof data.authorId === 'string' ? data.authorId : undefined,
+    author: typeof data.authorName === 'string' ? data.authorName : 'Verified Customer',
+    role: typeof data.eventType === 'string' ? data.eventType : 'Verified Booking',
+    date: formatTs(data.createdAt),
+    rating: typeof data.rating === 'number' ? Math.min(5, Math.max(1, data.rating)) : 5,
+    comment: typeof data.comment === 'string' ? data.comment : '',
+    isCloud: true,
+  };
+}
+
+export function subscribeVendorReviews(
+  vendorId: string,
+  onData: (reviews: VendorReview[]) => void
+): () => void {
+  const safeVendorId = sanitizeId(vendorId);
+  const q = query(collection(db, 'reviews'), where('vendorId', '==', safeVendorId));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const list = snap.docs.map((d) => docToReview(d.id, d.data()));
+      onData(list);
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'reviews');
+    }
+  );
+}
+
+export async function createReviewInCloud(
+  vendorId: string,
+  user: User,
+  input: { rating: number; eventType: string; comment: string }
+): Promise<void> {
+  const reviewId = sanitizeId(`rev-${vendorId.slice(0, 24)}-${Date.now()}`);
+  const docPath = `reviews/${reviewId}`;
+  const payload = {
+    vendorId: sanitizeId(vendorId),
+    authorId: user.uid,
+    authorName: clampStr(user.displayName || user.email?.split('@')[0] || 'Customer', 1, 80, 'Customer'),
+    eventType: clampStr(input.eventType, 2, 60, 'Event Booking'),
+    rating: Math.min(5, Math.max(1, Math.round(Number(input.rating) || 5))),
+    comment: clampStr(input.comment, 5, 600, 'Wonderful experience and service.'),
+    createdAt: serverTimestamp(),
+  };
+
+  try {
+    await setDoc(doc(db, 'reviews', reviewId), payload);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, docPath);
+  }
+}
+
+export async function deleteReviewInCloud(reviewId: string): Promise<void> {
+  const docPath = `reviews/${reviewId}`;
+  try {
+    await deleteDoc(doc(db, 'reviews', reviewId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, docPath);
+  }
+}
+
+// ============================================================================
+// BROADCAST EVENT REQUESTS & VENDOR QUOTES (/eventRequests & /quotes)
+// ============================================================================
+
+function docToEventRequest(id: string, data: Record<string, unknown>): EventRequest {
+  return {
+    id,
+    customerId: typeof data.customerId === 'string' ? data.customerId : '',
+    customerName: typeof data.customerName === 'string' ? data.customerName : 'Host',
+    occasion: typeof data.occasion === 'string' ? data.occasion : 'Celebration',
+    categories: Array.isArray(data.categories) ? (data.categories as string[]) : [],
+    country: (data.country as Exclude<LaunchCountry, 'All'>) || 'India',
+    state: typeof data.state === 'string' ? data.state : '',
+    city: typeof data.city === 'string' ? data.city : '',
+    eventDate: typeof data.eventDate === 'string' ? data.eventDate : '',
+    guests: typeof data.guests === 'number' ? data.guests : 50,
+    budgetUsd: typeof data.budgetUsd === 'number' ? data.budgetUsd : 200,
+    details: typeof data.details === 'string' ? data.details : '',
+    status: data.status === 'closed' ? 'closed' : 'open',
+    createdAt: formatTs(data.createdAt),
+  };
+}
+
+function docToEventQuote(id: string, data: Record<string, unknown>): EventQuote {
+  return {
+    id,
+    requestId: typeof data.requestId === 'string' ? data.requestId : '',
+    requestCustomerId: typeof data.requestCustomerId === 'string' ? data.requestCustomerId : '',
+    vendorOwnerId: typeof data.vendorOwnerId === 'string' ? data.vendorOwnerId : '',
+    vendorId: typeof data.vendorId === 'string' ? data.vendorId : '',
+    vendorName: typeof data.vendorName === 'string' ? data.vendorName : 'Vendor',
+    vendorSlug: typeof data.vendorSlug === 'string' ? data.vendorSlug : '',
+    vendorWhatsapp: typeof data.vendorWhatsapp === 'string' ? data.vendorWhatsapp : '',
+    priceUsd: typeof data.priceUsd === 'number' ? data.priceUsd : 50,
+    message: typeof data.message === 'string' ? data.message : '',
+    createdAt: formatTs(data.createdAt),
+  };
+}
+
+export async function createEventRequestInCloud(
+  user: User,
+  input: {
+    occasion: string;
+    categories: string[];
+    country: Exclude<LaunchCountry, 'All'>;
+    state: string;
+    city: string;
+    eventDate: string;
+    guests: number;
+    budgetUsd: number;
+    details: string;
+  }
+): Promise<string> {
+  const requestId = sanitizeId(`req-${Date.now()}`);
+  const docPath = `eventRequests/${requestId}`;
+  const cleanCategories = input.categories
+    .map((c) => c.trim().slice(0, 80))
+    .filter(Boolean)
+    .slice(0, 4);
+
+  const payload = {
+    customerId: user.uid,
+    customerName: clampStr(
+      (user.displayName || user.email?.split('@')[0] || 'Event Host').split(' ')[0],
+      1,
+      80,
+      'Host'
+    ),
+    occasion: clampStr(input.occasion, 2, 60, 'Celebration'),
+    categories: cleanCategories.length > 0 ? cleanCategories : ['Bakers & Cakes'],
+    country: input.country,
+    state: clampStr(input.state, 2, 80, 'Maharashtra'),
+    city: clampStr(input.city, 2, 80, 'Mumbai'),
+    eventDate: clampStr(input.eventDate, 6, 30, '2026-12-20'),
+    guests: Math.max(1, Math.min(100000, Math.round(Number(input.guests) || 50))),
+    budgetUsd: Math.max(0, Math.min(500000, Number(input.budgetUsd) || 0)),
+    details: clampStr(input.details, 5, 800, 'Looking for quotes from local vendors.'),
+    status: 'open' as const,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  };
+
+  try {
+    await setDoc(doc(db, 'eventRequests', requestId), payload);
+    return requestId;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, docPath);
+  }
+}
+
+export function subscribeOpenEventRequests(
+  onData: (requests: EventRequest[]) => void
+): () => void {
+  const q = query(collection(db, 'eventRequests'), where('status', '==', 'open'));
+  return onSnapshot(
+    q,
+    (snap) => {
+      onData(snap.docs.map((d) => docToEventRequest(d.id, d.data())));
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'eventRequests');
+    }
+  );
+}
+
+export function subscribeMyEventRequests(
+  uid: string,
+  onData: (requests: EventRequest[]) => void
+): () => void {
+  const q = query(collection(db, 'eventRequests'), where('customerId', '==', uid));
+  return onSnapshot(
+    q,
+    (snap) => {
+      onData(snap.docs.map((d) => docToEventRequest(d.id, d.data())));
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'eventRequests');
+    }
+  );
+}
+
+export async function closeEventRequestInCloud(requestId: string): Promise<void> {
+  const docPath = `eventRequests/${requestId}`;
+  try {
+    await updateDoc(doc(db, 'eventRequests', requestId), {
+      status: 'closed',
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, docPath);
+  }
+}
+
+export async function submitEventQuoteInCloud(
+  request: EventRequest,
+  vendorOwnerId: string,
+  vendor: Vendor,
+  priceUsd: number,
+  message: string
+): Promise<void> {
+  const quoteId = sanitizeId(`q-${vendor.id.slice(0, 24)}-${Date.now()}`);
+  const docPath = `eventRequests/${request.id}/quotes/${quoteId}`;
+  const payload = {
+    requestId: sanitizeId(request.id),
+    requestCustomerId: sanitizeId(request.customerId),
+    vendorOwnerId,
+    vendorId: sanitizeId(vendor.id),
+    vendorName: clampStr(vendor.name, 2, 100, 'Vendor'),
+    vendorSlug: sanitizeSlug(vendor.slug || vendor.name),
+    vendorWhatsapp: sanitizeDigits(vendor.whatsappNumber),
+    priceUsd: Math.max(1, Math.min(500000, Number(priceUsd) || 1)),
+    message: clampStr(message, 5, 600, 'We would love to cater/decorate your event!'),
+    createdAt: serverTimestamp(),
+  };
+
+  try {
+    await setDoc(doc(db, 'eventRequests', request.id, 'quotes', quoteId), payload);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, docPath);
+  }
+}
+
+export function subscribeRequestQuotesForCustomer(
+  requestId: string,
+  customerUid: string,
+  onData: (quotes: EventQuote[]) => void
+): () => void {
+  const q = query(
+    collection(db, 'eventRequests', requestId, 'quotes'),
+    where('requestCustomerId', '==', customerUid)
+  );
+  return onSnapshot(
+    q,
+    (snap) => {
+      onData(snap.docs.map((d) => docToEventQuote(d.id, d.data())));
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, `eventRequests/${requestId}/quotes`);
+    }
+  );
+}
+
+// ============================================================================
+// CLOUD VENDOR ENGAGEMENT METRICS (/vendorMetrics/{vendorId})
+// ============================================================================
+
+export async function incrementVendorMetricInCloud(
+  vendorId: string,
+  field: 'views' | 'whatsappClicks' | 'shares'
+): Promise<void> {
+  const currentUser = auth.currentUser;
+  if (!currentUser || !currentUser.emailVerified) return;
+
+  const safeId = sanitizeId(vendorId);
+  const ref = doc(db, 'vendorMetrics', safeId);
+  try {
+    const snap = await getDoc(ref);
+    if (!snap.exists()) {
+      await setDoc(ref, {
+        vendorId: safeId,
+        views: field === 'views' ? 1 : 0,
+        whatsappClicks: field === 'whatsappClicks' ? 1 : 0,
+        shares: field === 'shares' ? 1 : 0,
+        updatedAt: serverTimestamp(),
+      });
+    } else {
+      const data = snap.data();
+      const curViews = typeof data.views === 'number' ? data.views : 0;
+      const curWa = typeof data.whatsappClicks === 'number' ? data.whatsappClicks : 0;
+      const curShares = typeof data.shares === 'number' ? data.shares : 0;
+      await updateDoc(ref, {
+        views: field === 'views' ? curViews + 1 : curViews,
+        whatsappClicks: field === 'whatsappClicks' ? curWa + 1 : curWa,
+        shares: field === 'shares' ? curShares + 1 : curShares,
+        updatedAt: serverTimestamp(),
+      });
+    }
+  } catch {
+    // Non-blocking analytics increment
+  }
+}
+
+export function subscribeVendorMetric(
+  vendorId: string,
+  onData: (metric: CloudVendorMetric) => void
+): () => void {
+  const safeId = sanitizeId(vendorId);
+  const ref = doc(db, 'vendorMetrics', safeId);
+  return onSnapshot(
+    ref,
+    (snap) => {
+      if (!snap.exists()) {
+        onData({ vendorId: safeId, views: 0, whatsappClicks: 0, shares: 0 });
+        return;
+      }
+      const d = snap.data();
+      onData({
+        vendorId: safeId,
+        views: typeof d.views === 'number' ? d.views : 0,
+        whatsappClicks: typeof d.whatsappClicks === 'number' ? d.whatsappClicks : 0,
+        shares: typeof d.shares === 'number' ? d.shares : 0,
+      });
+    },
+    () => {
+      // Non-blocking fallback
+    }
+  );
 }

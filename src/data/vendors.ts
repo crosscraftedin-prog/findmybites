@@ -157,11 +157,13 @@ export interface VendorProduct {
 
 export interface VendorReview {
   id: string;
+  authorId?: string;
   author: string;
   role: string;
   date: string;
   rating: number;
   comment: string;
+  isCloud?: boolean;
 }
 
 export interface Vendor {
@@ -189,10 +191,12 @@ export interface Vendor {
   verified: boolean;
   tagline: string;
   description: string;
+  promoBanner?: string;
   serviceAreas: string[];
   specialties: string[];
   image: string;
   logo?: string;
+  gallery?: string[];
   products: VendorProduct[];
   reviews: VendorReview[];
 }
@@ -215,6 +219,44 @@ export interface BookingEnquiry {
   notes: string;
   createdAt: string;
   status: 'Confirmed Enquiry' | 'Awaiting Vendor Reply' | 'Completed' | 'Cancelled';
+}
+
+export interface EventRequest {
+  id: string;
+  customerId: string;
+  customerName: string;
+  occasion: string;
+  categories: string[];
+  country: Exclude<LaunchCountry, 'All'>;
+  state: string;
+  city: string;
+  eventDate: string;
+  guests: number;
+  budgetUsd: number;
+  details: string;
+  status: 'open' | 'closed';
+  createdAt: string;
+}
+
+export interface EventQuote {
+  id: string;
+  requestId: string;
+  requestCustomerId: string;
+  vendorOwnerId: string;
+  vendorId: string;
+  vendorName: string;
+  vendorSlug: string;
+  vendorWhatsapp: string;
+  priceUsd: number;
+  message: string;
+  createdAt: string;
+}
+
+export interface CloudVendorMetric {
+  vendorId: string;
+  views: number;
+  whatsappClicks: number;
+  shares: number;
 }
 
 export interface SaasPlan {

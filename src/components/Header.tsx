@@ -160,8 +160,8 @@ export function Header({
             <button
               type="button"
               onClick={onOpenDashboard}
-              className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 text-xs font-semibold text-foreground transition-colors hover:border-brand hover:text-brand whitespace-nowrap shrink-0"
-              title="Open Vendor Cloud Dashboard"
+              className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border border-brand-border bg-brand-soft/60 px-2.5 text-xs font-bold text-foreground transition-colors hover:border-brand hover:bg-brand-soft hover:text-brand whitespace-nowrap shrink-0"
+              title="Open Vendor Portal & Edit Storefronts"
             >
               {user.photoURL ? (
                 <img
@@ -173,8 +173,8 @@ export function Header({
               ) : (
                 <Store className="size-3.5 text-brand" aria-hidden="true" />
               )}
-              <span className="hidden md:inline">
-                Portal{myVendorCount > 0 ? ` (${myVendorCount})` : ''}
+              <span className="hidden sm:inline">
+                {myVendorCount > 0 ? `My Storefront (${myVendorCount})` : 'Portal'}
               </span>
             </button>
           ) : (

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import {
   BadgeCheck,
   Crown,
+  Edit3,
   ExternalLink,
   Heart,
   MapPin,
@@ -17,8 +18,10 @@ interface VendorCardProps {
   currency: CurrencyCode;
   isSaved: boolean;
   distanceKm?: number | null;
+  canEdit?: boolean;
   onToggleSave: (vendorId: string) => void;
   onSelect: (vendor: Vendor) => void;
+  onEdit?: (vendor: Vendor) => void;
 }
 
 export function VendorCard({
@@ -26,8 +29,10 @@ export function VendorCard({
   currency,
   isSaved,
   distanceKm,
+  canEdit = false,
   onToggleSave,
   onSelect,
+  onEdit,
 }: VendorCardProps) {
   const [imgFailed, setImgFailed] = useState(false);
   const isPaid = vendor.planTier === 'business' || vendor.planTier === 'pro';
@@ -155,27 +160,42 @@ export function VendorCard({
           </div>
         </div>
 
-        {/* Direct Action Row: Open One-Page Website + Direct WhatsApp */}
-        <div className="mt-auto grid grid-cols-2 gap-2 border-t border-border/70 pt-3 mt-4">
-          <button
-            type="button"
-            onClick={() => onSelect(vendor)}
-            className="inline-flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-border bg-background px-2.5 text-xs font-semibold text-foreground transition-colors hover:border-brand hover:text-brand whitespace-nowrap"
-          >
-            <ExternalLink className="size-3.5" aria-hidden="true" />
-            View Website
-          </button>
+        {/* Direct Action Row: Open One-Page Website + Direct WhatsApp (+ Owner Edit Storefront) */}
+        <div className="mt-auto space-y-2 border-t border-border/70 pt-3 mt-4">
+          {canEdit && onEdit && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onEdit(vendor);
+              }}
+              className="inline-flex h-9 w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-brand px-3 text-xs font-bold text-brand-foreground shadow-xs transition-colors hover:bg-brand-hover"
+            >
+              <Edit3 className="size-3.5" aria-hidden="true" />
+              Edit My Storefront
+            </button>
+          )}
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => onSelect(vendor)}
+              className="inline-flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-border bg-background px-2.5 text-xs font-semibold text-foreground transition-colors hover:border-brand hover:text-brand whitespace-nowrap"
+            >
+              <ExternalLink className="size-3.5" aria-hidden="true" />
+              View Website
+            </button>
 
-          <a
-            href={buildWhatsAppUrl(vendor)}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-[#25D366] px-2.5 text-xs font-semibold text-white transition-colors hover:bg-[#1ebe5d] whitespace-nowrap"
-          >
-            <MessageCircle className="size-3.5" aria-hidden="true" />
-            WhatsApp
-          </a>
+            <a
+              href={buildWhatsAppUrl(vendor)}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-[#25D366] px-2.5 text-xs font-semibold text-white transition-colors hover:bg-[#1ebe5d] whitespace-nowrap"
+            >
+              <MessageCircle className="size-3.5" aria-hidden="true" />
+              WhatsApp
+            </a>
+          </div>
         </div>
       </div>
     </article>
