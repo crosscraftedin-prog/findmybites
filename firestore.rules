@@ -39,7 +39,7 @@ service cloud.firestore {
     }
 
     function isValidId(id) {
-      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
     function isValidSha256Id(id) {
@@ -108,17 +108,17 @@ service cloud.firestore {
           'createdAt', 'updatedAt'
         ]) &&
         isValidId(data.ownerId) &&
-        data.slug is string && data.slug.size() >= 1 && data.slug.size() <= 100 && data.slug.matches('^[a-zA-Z0-9_\\-]+$') &&
-        data.name is string && data.name.size() >= 1 && data.name.size() <= 100 &&
+        data.slug is string && data.slug.size() <= 100 && data.slug.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.name is string && data.name.size() <= 100 &&
         data.marketplace in ['food', 'party'] &&
-        data.category is string && data.category.size() >= 1 && data.category.size() <= 80 &&
+        data.category is string && data.category.size() <= 80 &&
         data.country in ['India', 'Dubai / UAE', 'Sri Lanka', 'Pakistan', 'Bangladesh', 'Nepal'] &&
         (!('state' in data) || (data.state is string && data.state.size() <= 80)) &&
-        data.city is string && data.city.size() >= 1 && data.city.size() <= 80 &&
+        data.city is string && data.city.size() <= 80 &&
         (!('area' in data) || (data.area is string && data.area.size() <= 100)) &&
         (!('lat' in data) || (data.lat is number && data.lat >= -90 && data.lat <= 90)) &&
         (!('lng' in data) || (data.lng is number && data.lng >= -180 && data.lng <= 180)) &&
-        data.whatsappNumber is string && data.whatsappNumber.size() >= 7 && data.whatsappNumber.size() <= 22 && data.whatsappNumber.matches('^[0-9+\\-\\s()]+$') &&
+        data.whatsappNumber is string && data.whatsappNumber.size() <= 22 && data.whatsappNumber.matches('^[0-9+\\-\\s()]{7,22}$') &&
         data.planTier in ['free', 'pro', 'business'] &&
         (!('monthlyAutoPay' in data) || data.monthlyAutoPay is bool) &&
         (!('priceTier' in data) || data.priceTier in ['$', '$$', '$$$', '$$$$']) &&
@@ -146,7 +146,7 @@ service cloud.firestore {
         (!('allStatesCoverage' in data) || data.allStatesCoverage is bool) &&
         (!('serviceStates' in data) || isValidStringList(data.serviceStates, 40, 80)) &&
         (!('specialties' in data) || isValidStringList(data.specialties, 10, 100)) &&
-        data.image is string && data.image.size() >= 1 && data.image.size() <= 350000 &&
+        data.image is string && data.image.size() <= 350000 &&
         (!('logo' in data) || (data.logo is string && data.logo.size() <= 120000)) &&
         (!('gallery' in data) || isValidStringList(data.gallery, 6, 200000)) &&
         isValidProductsList(data.products) &&
@@ -155,6 +155,54 @@ service cloud.firestore {
         (!('customBuilderMinQty' in data) || (data.customBuilderMinQty is number && data.customBuilderMinQty >= 1 && data.customBuilderMinQty <= 5000)) &&
         (!('customBuilderPackagingUsd' in data) || (data.customBuilderPackagingUsd is number && data.customBuilderPackagingUsd >= 0 && data.customBuilderPackagingUsd <= 500)) &&
         (!('createdAt' in data) || data.createdAt is timestamp) &&
+        data.updatedAt is timestamp;
+    }
+
+    // Validates only mutated keys on /vendors/{vendorId} update to stay well below Firestore's 1,000-expression limit
+    function isValidVendorUpdate(data, changed) {
+      return (!('slug' in changed) || (data.slug is string && data.slug.size() <= 100 && data.slug.matches('^[a-zA-Z0-9_\\-]+$'))) &&
+        (!('name' in changed) || (data.name is string && data.name.size() <= 100)) &&
+        (!('category' in changed) || (data.category is string && data.category.size() <= 80)) &&
+        (!('country' in changed) || data.country in ['India', 'Dubai / UAE', 'Sri Lanka', 'Pakistan', 'Bangladesh', 'Nepal']) &&
+        (!('state' in changed) || (data.state is string && data.state.size() <= 80)) &&
+        (!('city' in changed) || (data.city is string && data.city.size() <= 80)) &&
+        (!('area' in changed) || (data.area is string && data.area.size() <= 100)) &&
+        (!('lat' in changed) || (data.lat is number && data.lat >= -90 && data.lat <= 90)) &&
+        (!('lng' in changed) || (data.lng is number && data.lng >= -180 && data.lng <= 180)) &&
+        (!('whatsappNumber' in changed) || (data.whatsappNumber is string && data.whatsappNumber.size() <= 22 && data.whatsappNumber.matches('^[0-9+\\-\\s()]{7,22}$'))) &&
+        (!('planTier' in changed) || data.planTier in ['free', 'pro', 'business']) &&
+        (!('monthlyAutoPay' in changed) || data.monthlyAutoPay is bool) &&
+        (!('priceTier' in changed) || data.priceTier in ['$', '$$', '$$$', '$$$$']) &&
+        (!('startingPriceUsd' in changed) || (data.startingPriceUsd is number && data.startingPriceUsd >= 0 && data.startingPriceUsd <= 100000)) &&
+        (!('responseTime' in changed) || (data.responseTime is string && data.responseTime.size() <= 80)) &&
+        (!('verified' in changed) || data.verified is bool) &&
+        (!('status' in changed) || data.status in ['active', 'pending_review', 'paused']) &&
+        (!('tagline' in changed) || (data.tagline is string && data.tagline.size() <= 200)) &&
+        (!('description' in changed) || (data.description is string && data.description.size() <= 1500)) &&
+        (!('promoBanner' in changed) || (data.promoBanner is string && data.promoBanner.size() <= 140)) &&
+        (!('christmasSpecial' in changed) || data.christmasSpecial is bool) &&
+        (!('christmasOffer' in changed) || (data.christmasOffer is string && data.christmasOffer.size() <= 160)) &&
+        (!('bioHandle' in changed) || (data.bioHandle is string && data.bioHandle.size() <= 60 && (data.bioHandle == '' || data.bioHandle.matches('^[a-z0-9_\\-]+$')))) &&
+        (!('bioTheme' in changed) || data.bioTheme in ['saffron', 'midnight', 'party', 'cream']) &&
+        (!('instagramHandle' in changed) || (data.instagramHandle is string && data.instagramHandle.size() <= 80)) &&
+        (!('customLinks' in changed) || isValidCustomLinksList(data.customLinks)) &&
+        (!('claimStatus' in changed) || data.claimStatus in ['none', 'pending', 'claimed']) &&
+        (!('claimedByToken' in changed) || data.claimedByToken == '' || isValidSha256Id(data.claimedByToken)) &&
+        (!('seoTitle' in changed) || (data.seoTitle is string && data.seoTitle.size() <= 120)) &&
+        (!('seoDescription' in changed) || (data.seoDescription is string && data.seoDescription.size() <= 240)) &&
+        (!('seoKeywords' in changed) || (data.seoKeywords is string && data.seoKeywords.size() <= 300)) &&
+        (!('serviceAreas' in changed) || isValidStringList(data.serviceAreas, 10, 100)) &&
+        (!('allStatesCoverage' in changed) || data.allStatesCoverage is bool) &&
+        (!('serviceStates' in changed) || isValidStringList(data.serviceStates, 40, 80)) &&
+        (!('specialties' in changed) || isValidStringList(data.specialties, 10, 100)) &&
+        (!('image' in changed) || (data.image is string && data.image.size() <= 350000)) &&
+        (!('logo' in changed) || (data.logo is string && data.logo.size() <= 120000)) &&
+        (!('gallery' in changed) || isValidStringList(data.gallery, 6, 200000)) &&
+        (!('products' in changed) || isValidProductsList(data.products)) &&
+        (!('customBuilderEnabled' in changed) || data.customBuilderEnabled is bool) &&
+        (!('customBuilderMode' in changed) || data.customBuilderMode in ['snackbox', 'mealbox', 'catering']) &&
+        (!('customBuilderMinQty' in changed) || (data.customBuilderMinQty is number && data.customBuilderMinQty >= 1 && data.customBuilderMinQty <= 5000)) &&
+        (!('customBuilderPackagingUsd' in changed) || (data.customBuilderPackagingUsd is number && data.customBuilderPackagingUsd >= 0 && data.customBuilderPackagingUsd <= 500)) &&
         data.updatedAt is timestamp;
     }
 
@@ -416,13 +464,13 @@ service cloud.firestore {
 
       allow update: if isAuthenticatedUser() &&
         isValidId(vendorId) &&
-        isValidVendor(incoming()) &&
         (!('createdAt' in existing()) || incoming().createdAt == existing().createdAt) &&
-        incoming().updatedAt == request.time && (
+        incoming().updatedAt == request.time &&
+        isValidVendorUpdate(incoming(), incoming().diff(existing()).affectedKeys()) && (
           // Tier 1: Owner editing storefront details (cannot self-approve pending_review)
           (
             incoming().ownerId == existing().ownerId &&
-            isOwner(existing().ownerId) &&
+            request.auth.uid == existing().ownerId &&
             (!('verified' in existing()) || incoming().verified == existing().verified) &&
             (!('rating' in existing()) || incoming().rating == existing().rating) &&
             (!('reviewCount' in existing()) || incoming().reviewCount == existing().reviewCount) &&
