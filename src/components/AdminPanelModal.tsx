@@ -1258,11 +1258,13 @@ export function AdminPanelModal({
                         <div className="flex flex-wrap items-start gap-3">
                           {/* Product Thumbnail + Upload */}
                           <div className="flex flex-col items-center gap-1.5">
-                            <img
-                              src={prod.image || categoryDefaultImg}
-                              alt={prod.name || `Product ${idx + 1}`}
-                              className="size-16 rounded-lg object-cover ring-1 ring-border"
-                            />
+                            <div className="flex aspect-[4/3] w-20 items-center justify-center overflow-hidden rounded-lg bg-white ring-1 ring-border dark:bg-neutral-900">
+                              <img
+                                src={prod.image || categoryDefaultImg}
+                                alt={prod.name || `Product ${idx + 1}`}
+                                className="h-full w-full object-contain object-center"
+                              />
+                            </div>
                             <label className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-border px-2 py-0.5 text-[10px] font-bold hover:border-brand">
                               {uploadingProdId === prod.id ? (
                                 <Loader2 className="size-2.5 animate-spin" />

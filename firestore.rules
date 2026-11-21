@@ -76,9 +76,8 @@ service cloud.firestore {
 
     function isValidProductsList(listVal) {
       return listVal is list &&
-        listVal.size() >= 1 &&
-        listVal.size() <= 20 &&
-        listVal[0] is map;
+        listVal.size() <= 30 &&
+        (listVal.size() == 0 || listVal[0] is map);
     }
 
     function isValidCustomLinksList(listVal) {
@@ -90,12 +89,8 @@ service cloud.firestore {
     function isValidVendor(data) {
       return data.keys().hasAll([
           'ownerId', 'slug', 'name', 'marketplace', 'category',
-          'country', 'state', 'city', 'area', 'lat', 'lng',
-          'whatsappNumber', 'planTier', 'monthlyAutoPay', 'priceTier',
-          'startingPriceUsd', 'rating', 'reviewCount', 'responseTime',
-          'verified', 'status', 'tagline', 'description',
-          'serviceAreas', 'specialties', 'image', 'products',
-          'createdAt', 'updatedAt'
+          'country', 'city', 'whatsappNumber', 'planTier',
+          'verified', 'status', 'image', 'products', 'updatedAt'
         ]) &&
         data.keys().hasOnly([
           'ownerId', 'slug', 'name', 'marketplace', 'category',
@@ -111,47 +106,47 @@ service cloud.firestore {
           'createdAt', 'updatedAt'
         ]) &&
         isValidId(data.ownerId) &&
-        data.slug is string && data.slug.size() >= 2 && data.slug.size() <= 100 && data.slug.matches('^[a-z0-9\\-]+$') &&
-        data.name is string && data.name.size() >= 2 && data.name.size() <= 100 &&
+        data.slug is string && data.slug.size() >= 1 && data.slug.size() <= 100 && data.slug.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 100 &&
         data.marketplace in ['food', 'party'] &&
-        data.category is string && data.category.size() >= 2 && data.category.size() <= 80 &&
+        data.category is string && data.category.size() >= 1 && data.category.size() <= 80 &&
         data.country in ['India', 'Dubai / UAE', 'Sri Lanka', 'Pakistan', 'Bangladesh', 'Nepal'] &&
-        data.state is string && data.state.size() >= 2 && data.state.size() <= 80 &&
-        data.city is string && data.city.size() >= 2 && data.city.size() <= 80 &&
-        data.area is string && data.area.size() >= 2 && data.area.size() <= 100 &&
-        data.lat is number && data.lat >= -90 && data.lat <= 90 &&
-        data.lng is number && data.lng >= -180 && data.lng <= 180 &&
-        data.whatsappNumber is string && data.whatsappNumber.size() >= 7 && data.whatsappNumber.size() <= 18 && data.whatsappNumber.matches('^[0-9]+$') &&
+        (!('state' in data) || (data.state is string && data.state.size() <= 80)) &&
+        data.city is string && data.city.size() >= 1 && data.city.size() <= 80 &&
+        (!('area' in data) || (data.area is string && data.area.size() <= 100)) &&
+        (!('lat' in data) || (data.lat is number && data.lat >= -90 && data.lat <= 90)) &&
+        (!('lng' in data) || (data.lng is number && data.lng >= -180 && data.lng <= 180)) &&
+        data.whatsappNumber is string && data.whatsappNumber.size() >= 7 && data.whatsappNumber.size() <= 22 && data.whatsappNumber.matches('^[0-9+\\-\\s()]+$') &&
         data.planTier in ['free', 'pro', 'business'] &&
-        data.monthlyAutoPay is bool &&
-        data.priceTier in ['$', '$$', '$$$', '$$$$'] &&
-        data.startingPriceUsd is number && data.startingPriceUsd >= 0 && data.startingPriceUsd <= 100000 &&
-        data.rating is number && data.rating >= 0 && data.rating <= 5 &&
-        data.reviewCount is number && data.reviewCount >= 0 && data.reviewCount <= 100000 &&
-        data.responseTime is string && data.responseTime.size() >= 2 && data.responseTime.size() <= 60 &&
+        (!('monthlyAutoPay' in data) || data.monthlyAutoPay is bool) &&
+        (!('priceTier' in data) || data.priceTier in ['$', '$$', '$$$', '$$$$']) &&
+        (!('startingPriceUsd' in data) || (data.startingPriceUsd is number && data.startingPriceUsd >= 0 && data.startingPriceUsd <= 100000)) &&
+        (!('rating' in data) || (data.rating is number && data.rating >= 0 && data.rating <= 5)) &&
+        (!('reviewCount' in data) || (data.reviewCount is number && data.reviewCount >= 0 && data.reviewCount <= 100000)) &&
+        (!('responseTime' in data) || (data.responseTime is string && data.responseTime.size() <= 80)) &&
         data.verified is bool &&
         data.status in ['active', 'pending_review', 'paused'] &&
-        data.tagline is string && data.tagline.size() >= 3 && data.tagline.size() <= 180 &&
-        data.description is string && data.description.size() >= 5 && data.description.size() <= 1200 &&
-        (!('promoBanner' in data) || (data.promoBanner is string && data.promoBanner.size() <= 120)) &&
+        (!('tagline' in data) || (data.tagline is string && data.tagline.size() <= 200)) &&
+        (!('description' in data) || (data.description is string && data.description.size() <= 1500)) &&
+        (!('promoBanner' in data) || (data.promoBanner is string && data.promoBanner.size() <= 140)) &&
         (!('christmasSpecial' in data) || data.christmasSpecial is bool) &&
-        (!('christmasOffer' in data) || (data.christmasOffer is string && data.christmasOffer.size() <= 140)) &&
-        (!('bioHandle' in data) || (data.bioHandle is string && data.bioHandle.size() >= 2 && data.bioHandle.size() <= 50 && data.bioHandle.matches('^[a-z0-9\\-]+$'))) &&
+        (!('christmasOffer' in data) || (data.christmasOffer is string && data.christmasOffer.size() <= 160)) &&
+        (!('bioHandle' in data) || (data.bioHandle is string && data.bioHandle.size() <= 60 && (data.bioHandle == '' || data.bioHandle.matches('^[a-z0-9_\\-]+$')))) &&
         (!('bioTheme' in data) || data.bioTheme in ['saffron', 'midnight', 'party', 'cream']) &&
         (!('instagramHandle' in data) || (data.instagramHandle is string && data.instagramHandle.size() <= 80)) &&
         (!('customLinks' in data) || isValidCustomLinksList(data.customLinks)) &&
         (!('claimStatus' in data) || data.claimStatus in ['none', 'pending', 'claimed']) &&
-        (!('claimedByToken' in data) || isValidSha256Id(data.claimedByToken)) &&
-        (!('seoTitle' in data) || (data.seoTitle is string && data.seoTitle.size() <= 100)) &&
-        (!('seoDescription' in data) || (data.seoDescription is string && data.seoDescription.size() <= 220)) &&
-        (!('seoKeywords' in data) || (data.seoKeywords is string && data.seoKeywords.size() <= 240)) &&
-        isValidStringList(data.serviceAreas, 10, 100) &&
-        isValidStringList(data.specialties, 10, 100) &&
-        data.image is string && data.image.size() >= 1 && data.image.size() <= 150000 &&
-        (!('logo' in data) || (data.logo is string && data.logo.size() <= 70000)) &&
-        (!('gallery' in data) || isValidStringList(data.gallery, 6, 95000)) &&
+        (!('claimedByToken' in data) || data.claimedByToken == '' || isValidSha256Id(data.claimedByToken)) &&
+        (!('seoTitle' in data) || (data.seoTitle is string && data.seoTitle.size() <= 120)) &&
+        (!('seoDescription' in data) || (data.seoDescription is string && data.seoDescription.size() <= 240)) &&
+        (!('seoKeywords' in data) || (data.seoKeywords is string && data.seoKeywords.size() <= 300)) &&
+        (!('serviceAreas' in data) || isValidStringList(data.serviceAreas, 10, 100)) &&
+        (!('specialties' in data) || isValidStringList(data.specialties, 10, 100)) &&
+        data.image is string && data.image.size() >= 1 && data.image.size() <= 350000 &&
+        (!('logo' in data) || (data.logo is string && data.logo.size() <= 120000)) &&
+        (!('gallery' in data) || isValidStringList(data.gallery, 6, 200000)) &&
         isValidProductsList(data.products) &&
-        data.createdAt is timestamp &&
+        (!('createdAt' in data) || data.createdAt is timestamp) &&
         data.updatedAt is timestamp;
     }
 
@@ -340,11 +335,11 @@ service cloud.firestore {
           'snowfallEnabled', 'requireVendorApproval',
           'updatedBy', 'updatedAt'
         ]) &&
-        data.siteTitle is string && data.siteTitle.size() >= 5 && data.siteTitle.size() <= 100 &&
+        data.siteTitle is string && data.siteTitle.size() >= 5 && data.siteTitle.size() <= 120 &&
         data.siteDescription is string && data.siteDescription.size() >= 10 && data.siteDescription.size() <= 240 &&
         data.siteKeywords is string && data.siteKeywords.size() <= 400 &&
         data.promoEnabled is bool &&
-        data.promoText is string && data.promoText.size() <= 180 &&
+        data.promoText is string && data.promoText.size() <= 200 &&
         data.promoCtaLabel is string && data.promoCtaLabel.size() <= 60 &&
         data.snowfallEnabled is bool &&
         data.requireVendorApproval is bool &&
@@ -373,26 +368,26 @@ service cloud.firestore {
         incoming().status in ['active', 'pending_review'] &&
         incoming().createdAt == request.time &&
         incoming().updatedAt == request.time &&
-        ((incoming().verified == false && incoming().reviewCount == 0) || isAdmin());
+        ((incoming().verified == false && (!('reviewCount' in incoming()) || incoming().reviewCount == 0)) || isAdmin());
 
       allow update: if isAuthenticatedUser() &&
         isValidId(vendorId) &&
         isValidVendor(incoming()) &&
-        incoming().createdAt == existing().createdAt &&
+        (!('createdAt' in existing()) || incoming().createdAt == existing().createdAt) &&
         incoming().updatedAt == request.time && (
           // Tier 1: Owner editing storefront details (cannot self-approve pending_review)
           (
             incoming().ownerId == existing().ownerId &&
             isOwner(existing().ownerId) &&
             incoming().verified == existing().verified &&
-            incoming().rating == existing().rating &&
-            incoming().reviewCount == existing().reviewCount &&
+            (!('rating' in existing()) || incoming().rating == existing().rating) &&
+            (!('reviewCount' in existing()) || incoming().reviewCount == existing().reviewCount) &&
             (
               (existing().status != 'pending_review' && incoming().status in ['active', 'paused']) ||
               incoming().status == existing().status
             ) &&
             incoming().diff(existing()).affectedKeys().hasOnly([
-              'name', 'category', 'country', 'state', 'city', 'area',
+              'slug', 'name', 'category', 'country', 'state', 'city', 'area',
               'lat', 'lng', 'whatsappNumber', 'planTier', 'monthlyAutoPay',
               'priceTier', 'startingPriceUsd', 'responseTime', 'status',
               'tagline', 'description', 'promoBanner', 'christmasSpecial',
@@ -409,10 +404,10 @@ service cloud.firestore {
               'slug', 'name', 'category', 'country', 'state', 'city', 'area',
               'lat', 'lng', 'whatsappNumber', 'verified', 'status',
               'planTier', 'monthlyAutoPay', 'priceTier', 'startingPriceUsd',
-              'tagline', 'description', 'promoBanner', 'christmasSpecial',
-              'christmasOffer', 'bioHandle', 'bioTheme', 'instagramHandle',
-              'customLinks', 'serviceAreas', 'specialties', 'image', 'logo',
-              'gallery', 'products', 'claimStatus',
+              'responseTime', 'tagline', 'description', 'promoBanner',
+              'christmasSpecial', 'christmasOffer', 'bioHandle', 'bioTheme',
+              'instagramHandle', 'customLinks', 'serviceAreas', 'specialties',
+              'image', 'logo', 'gallery', 'products', 'claimStatus',
               'seoTitle', 'seoDescription', 'seoKeywords', 'updatedAt'
             ])
           ) ||
@@ -423,8 +418,8 @@ service cloud.firestore {
             incoming().claimStatus == 'claimed' &&
             isValidSha256Id(incoming().claimedByToken) &&
             incoming().verified == existing().verified &&
-            incoming().rating == existing().rating &&
-            incoming().reviewCount == existing().reviewCount &&
+            (!('rating' in existing()) || incoming().rating == existing().rating) &&
+            (!('reviewCount' in existing()) || incoming().reviewCount == existing().reviewCount) &&
             incoming().diff(existing()).affectedKeys().hasOnly([
               'ownerId', 'claimStatus', 'claimedByToken', 'updatedAt'
             ]) &&
@@ -633,7 +628,7 @@ service cloud.firestore {
     // --- Collection: /reviews/{reviewId} (Public Verified Customer Reviews) ---
     match /reviews/{reviewId} {
       allow get: if isValidId(reviewId);
-      allow list: if existing().rating >= 1 && existing().rating <= 5;
+      allow list: if isRootAdminToken() || (request.query.limit != null && request.query.limit <= 100);
 
       allow create: if isAuthenticatedUser() &&
         isValidId(reviewId) &&

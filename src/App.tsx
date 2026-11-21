@@ -36,6 +36,7 @@ import {
 } from 'lucide-react';
 import { onAuthStateChanged, type User as FirebaseUser } from 'firebase/auth';
 import { AdminPanelModal } from './components/AdminPanelModal';
+import { CakePricingKitModal } from './components/CakePricingKitModal';
 import { ChristmasSpotlightSection } from './components/ChristmasSpotlightSection';
 import { CityCategorySeoBanner } from './components/CityCategorySeoBanner';
 import { ClaimModalInitialTab, ClaimStoreModal } from './components/ClaimStoreModal';
@@ -481,6 +482,7 @@ export default function App() {
   const [claimModalTab, setClaimModalTab] = useState<ClaimModalInitialTab>('claim');
   const [claimHintSlug, setClaimHintSlug] = useState<string | null>(null);
   const [editVendorId, setEditVendorId] = useState<string | null>(null);
+  const [pricingKitOpen, setPricingKitOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
   // Firebase Auth & Live Cloud Firestore State
@@ -839,7 +841,16 @@ export default function App() {
 
     const syncRouteFromUrl = (fromPopState: boolean) => {
       const pathname = window.location.pathname;
-      if (pathname === '/claim' || pathname.startsWith('/claim/')) {
+      if (
+        pathname === '/pricing-kit' ||
+        pathname === '/cake-pricing-kit' ||
+        pathname.startsWith('/pricing-kit/')
+      ) {
+        setActiveVendor(null);
+        setBioVendor(null);
+        setSeoDirectoryRoute(null);
+        setPricingKitOpen(true);
+      } else if (pathname === '/claim' || pathname.startsWith('/claim/')) {
         const slugPart = pathname.startsWith('/claim/')
           ? decodeURIComponent(pathname.slice(7)).replace(/\/$/, '').toLowerCase()
           : '';
@@ -2844,6 +2855,22 @@ export default function App() {
                 <li>
                   <button
                     type="button"
+                    onClick={() => {
+                      setPricingKitOpen(true);
+                      try {
+                        window.history.pushState({}, '', '/pricing-kit');
+                      } catch {
+                        // ignore
+                      }
+                    }}
+                    className="cursor-pointer transition-colors hover:text-brand"
+                  >
+                    Cake Pricing Kit (For Bakers)
+                  </button>
+                </li>
+                <li>
+                  <button
+                    type="button"
                     onClick={() => setDrawerTab('bookings')}
                     className="cursor-pointer transition-colors hover:text-brand"
                   >
@@ -3019,6 +3046,19 @@ export default function App() {
         onOpenListModal={handleOpenListModal}
         onOpenVendorWebsite={setActiveVendor}
         onOpenBioLink={handleOpenBioLink}
+        onOpenPricingKit={
+          isAdminUser ||
+          dashboardVendors.some((v) => {
+            const hay = `${v.category} ${v.name} ${v.tagline} ${(v.specialties || []).join(' ')}`.toLowerCase();
+            return (
+              v.category === 'Bakers & Cakes' ||
+              v.category === 'Home Bakers & Cloud Kitchens' ||
+              /\b(baker|bakery|cake|cakes|patisserie|cupcake|pastry|dessert)\b/.test(hay)
+            );
+          })
+            ? () => setPricingKitOpen(true)
+            : undefined
+        }
         onTrackShare={trackShare}
         onNotify={setNotice}
       />
@@ -3104,6 +3144,41 @@ export default function App() {
             `Signed in as ${loggedInUser.displayName || loggedInUser.email}. Cloud sync is active!`
           );
         }}
+      />
+
+      {/* Bakery & Cake Pricing Kit (Simple Free + Full Paid Pro Suite) */}
+      <CakePricingKitModal
+        isOpen={pricingKitOpen}
+        onClose={() => {
+          setPricingKitOpen(false);
+          if (
+            window.location.pathname.startsWith('/pricing-kit') ||
+            window.location.pathname === '/cake-pricing-kit'
+          ) {
+            try {
+              window.history.pushState({}, '', '/');
+            } catch {
+              // ignore
+            }
+          }
+        }}
+        currency={currency}
+        onChangeCurrency={setCurrency}
+        user={authUser}
+        isProUnlocked={
+          isAdminUser ||
+          dashboardVendors.some((v) => v.planTier === 'pro' || v.planTier === 'business')
+        }
+        isAdmin={isAdminUser}
+        myVendors={dashboardVendors}
+        onUpgradePlan={() => handleOpenListModal('pro')}
+        onSignIn={() => {
+          setPricingKitOpen(false);
+          setClaimHintSlug(null);
+          setClaimModalTab('login');
+          setClaimModalOpen(true);
+        }}
+        onToast={setNotice}
       />
 
       {/* Festive Winter Snowfall Overlay + On/Off Toggle */}

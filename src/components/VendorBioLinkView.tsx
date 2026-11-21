@@ -419,22 +419,29 @@ export function VendorBioLinkView({
                     key={prod.id}
                     href={buildWhatsAppUrl(
                       vendor,
-                      `Hi ${vendor.name}! I'm interested in "${prod.name}" (${formatMoney(prod.priceUsd, currency)}) from your FindMyBites bio link.`
+                      `Hi ${vendor.name}! I'm interested in "${prod.name}" (${prod.serves}${prod.dietaryTags?.length ? ` · ${prod.dietaryTags.join(', ')}` : ''} · ${formatMoney(prod.priceUsd, currency)}) from your FindMyBites bio link.`
                     )}
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={() => onTrackWhatsAppClick?.(vendor.id)}
                     className={`flex items-center gap-3 rounded-2xl border p-2.5 transition-all ${t.linkBg} ${t.linkHover}`}
                   >
-                    <img
-                      src={prod.image}
-                      alt={prod.name}
-                      referrerPolicy="no-referrer"
-                      className="size-12 shrink-0 rounded-xl object-cover"
-                    />
+                    <div className="flex aspect-[4/3] w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-black/10 bg-white dark:border-white/10 dark:bg-neutral-900">
+                      <img
+                        src={prod.image}
+                        alt={prod.name}
+                        referrerPolicy="no-referrer"
+                        className="h-full w-full object-contain object-center"
+                      />
+                    </div>
                     <div className="min-w-0 flex-1 text-left">
                       <p className="truncate text-xs font-bold">{prod.name}</p>
-                      <p className="truncate text-[11px] opacity-70">{prod.serves}</p>
+                      <p className="truncate text-[11px] opacity-70">
+                        {prod.serves}
+                        {prod.dietaryTags && prod.dietaryTags.length > 0
+                          ? ` · ${prod.dietaryTags.slice(0, 2).join(', ')}`
+                          : ''}
+                      </p>
                     </div>
                     <div className="shrink-0 text-right">
                       <p className="font-mono text-xs font-extrabold">

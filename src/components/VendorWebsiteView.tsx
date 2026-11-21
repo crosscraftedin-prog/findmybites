@@ -623,7 +623,11 @@ export function VendorWebsiteView({
             {vendor.products.map((product) => {
               const isSelected = activeProduct?.id === product.id;
               const qty = basket[product.id] ?? 0;
-              const productWaText = `Hi ${vendor.name}, I saw "${product.name}" (${formatMoney(product.priceUsd, currency)} · ${product.serves}) on your FindMyBites page (${shareUrl}). Is it available for my upcoming event?`;
+              const dietarySuffix =
+                product.dietaryTags && product.dietaryTags.length > 0
+                  ? ` [${product.dietaryTags.join(', ')}]`
+                  : '';
+              const productWaText = `Hi ${vendor.name}, I saw "${product.name}" (${formatMoney(product.priceUsd, currency)} · ${product.serves}${dietarySuffix}) on your FindMyBites page (${shareUrl}). Is it available for my upcoming event?`;
 
               return (
                 <div
@@ -636,12 +640,12 @@ export function VendorWebsiteView({
                         : 'border-border'
                   }`}
                 >
-                  <div className="relative aspect-[4/3] w-full overflow-hidden bg-muted">
+                  <div className="relative flex aspect-[4/3] w-full items-center justify-center overflow-hidden border-b border-border/60 bg-white dark:bg-neutral-900">
                     <img
                       src={product.image}
                       alt={product.name}
                       referrerPolicy="no-referrer"
-                      className="h-full w-full object-cover"
+                      className="h-full w-full object-contain object-center"
                     />
                     {product.tag && (
                       <span className="absolute left-3 top-3 rounded-full bg-black/75 px-2.5 py-1 text-[11px] font-semibold text-white backdrop-blur-md">
@@ -656,6 +660,18 @@ export function VendorWebsiteView({
                   <div className="flex flex-1 flex-col p-5">
                     <p className="text-xs font-medium text-muted-foreground">{product.serves}</p>
                     <h3 className="mt-1 text-base font-bold text-foreground">{product.name}</h3>
+                    {product.dietaryTags && product.dietaryTags.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {product.dietaryTags.map((tag) => (
+                          <span
+                            key={tag}
+                            className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300"
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                     <p className="mt-2 flex-1 text-sm leading-relaxed text-muted-foreground">
                       {product.description}
                     </p>

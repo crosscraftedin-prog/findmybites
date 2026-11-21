@@ -145,10 +145,85 @@ export const LAUNCH_CITY_PRESETS: LaunchCityPreset[] = [
   { city: 'Kathmandu', state: 'Bagmati Province', country: 'Nepal', lat: 27.7172, lng: 85.324 },
 ];
 
+export type ProductUnitType = 'kg' | 'g' | 'pcs' | 'box' | 'dozen' | 'pax' | 'custom';
+
+export const PRODUCT_UNIT_OPTIONS: Array<{ value: ProductUnitType; label: string }> = [
+  { value: 'kg', label: 'kg' },
+  { value: 'g', label: 'grams (g)' },
+  { value: 'pcs', label: 'pieces (pcs)' },
+  { value: 'box', label: 'box' },
+  { value: 'dozen', label: 'dozen (12 pcs)' },
+  { value: 'pax', label: 'pax / guests' },
+  { value: 'custom', label: 'Custom text' },
+];
+
+export const PRODUCT_DIETARY_OPTIONS = [
+  'Sugar-Free',
+  'Jaggery',
+  'Stevia',
+  'Eggless',
+  'Gluten-Free',
+  'Vegan',
+  'Dates / Honey Sweetened',
+  'Keto / Low-Carb',
+] as const;
+
+export function formatProductServesLabel(
+  unitQty: string,
+  unitType: ProductUnitType,
+  customServes?: string
+): string {
+  if (unitType === 'custom') {
+    return (customServes || '').trim() || 'Custom';
+  }
+  const cleanQty = (unitQty || '').trim() || '1';
+  switch (unitType) {
+    case 'kg':
+      return `${cleanQty} kg`;
+    case 'g':
+      return `${cleanQty} g`;
+    case 'pcs':
+      return `${cleanQty} ${cleanQty === '1' ? 'piece' : 'pieces'}`;
+    case 'box':
+      return `${cleanQty} ${cleanQty === '1' ? 'box' : 'boxes'}`;
+    case 'dozen':
+      return `${cleanQty} dozen`;
+    case 'pax':
+      return `Serves ${cleanQty} pax`;
+  }
+}
+
+export function parseProductUnitFromServes(
+  serves: string,
+  unitQuantity?: string,
+  unitType?: ProductUnitType
+): { qty: string; unit: ProductUnitType; custom: string } {
+  if (unitType && unitType !== 'custom') {
+    return { qty: unitQuantity || '1', unit: unitType, custom: serves };
+  }
+  const s = (serves || '').trim();
+  const kgMatch = s.match(/^(\d+(?:\.\d+)?)\s*kgs?\b/i);
+  if (kgMatch) return { qty: kgMatch[1], unit: 'kg', custom: s };
+  const gMatch = s.match(/^(\d+(?:\.\d+)?)\s*(?:g|gm|gms|grams?)\b/i);
+  if (gMatch) return { qty: gMatch[1], unit: 'g', custom: s };
+  const pcsMatch = s.match(/^(\d+(?:\.\d+)?)\s*(?:pcs?|pieces?)\b/i);
+  if (pcsMatch) return { qty: pcsMatch[1], unit: 'pcs', custom: s };
+  const boxMatch = s.match(/^(\d+(?:\.\d+)?)\s*(?:box|boxes)\b/i);
+  if (boxMatch) return { qty: boxMatch[1], unit: 'box', custom: s };
+  const dozMatch = s.match(/^(\d+(?:\.\d+)?)\s*dozen\b/i);
+  if (dozMatch) return { qty: dozMatch[1], unit: 'dozen', custom: s };
+  const paxMatch = s.match(/^(?:serves\s+)?(\d+(?:\.\d+)?)\s*pax\b/i);
+  if (paxMatch) return { qty: paxMatch[1], unit: 'pax', custom: s };
+  return { qty: '1', unit: 'custom', custom: s || 'Custom' };
+}
+
 export interface VendorProduct {
   id: string;
   name: string;
   serves: string;
+  unitQuantity?: string;
+  unitType?: ProductUnitType;
+  dietaryTags?: string[];
   priceUsd: number;
   description: string;
   image: string;

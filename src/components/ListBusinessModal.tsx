@@ -40,13 +40,17 @@ import {
   LAUNCH_COUNTRIES,
   LaunchCountry,
   PARTY_CATEGORIES,
+  PRODUCT_DIETARY_OPTIONS,
+  PRODUCT_UNIT_OPTIONS,
   PlanTier,
   PriceTier,
+  ProductUnitType,
   SAAS_PLANS,
   STATES_BY_COUNTRY,
   Vendor,
   VendorProduct,
   formatPlanPrice,
+  formatProductServesLabel,
   localToUsd,
   usdToLocal,
 } from '../data/vendors';
@@ -67,7 +71,10 @@ interface ListBusinessModalProps {
 interface DraftProduct {
   id: string;
   name: string;
+  unitQuantity: string;
+  unitType: ProductUnitType;
   serves: string;
+  dietaryTags: string[];
   priceLocal: number;
   description: string;
   image: string;
@@ -155,7 +162,10 @@ export function ListBusinessModal({
     {
       id: 'draft-1',
       name: '',
-      serves: 'Custom / 50 pax',
+      unitQuantity: '1',
+      unitType: 'kg',
+      serves: '1 kg',
+      dietaryTags: [],
       priceLocal: usdToLocal(35, currency || 'INR'),
       description: '',
       image: '',
@@ -370,6 +380,21 @@ export function ListBusinessModal({
     );
   };
 
+  const toggleDraftDietaryTag = (id: string, tag: string) => {
+    setProducts((prev) =>
+      prev.map((p) =>
+        p.id === id
+          ? {
+              ...p,
+              dietaryTags: p.dietaryTags.includes(tag)
+                ? p.dietaryTags.filter((t) => t !== tag)
+                : [...p.dietaryTags, tag],
+            }
+          : p
+      )
+    );
+  };
+
   const addDraftProduct = () => {
     if (products.length >= 10) return;
     setProducts((prev) => [
@@ -377,7 +402,10 @@ export function ListBusinessModal({
       {
         id: `draft-${Date.now()}`,
         name: '',
-        serves: 'Custom',
+        unitQuantity: '1',
+        unitType: 'kg',
+        serves: '1 kg',
+        dietaryTags: [],
         priceLocal: usdToLocal(50, formCurrency),
         description: '',
         image: '',
@@ -439,10 +467,14 @@ export function ListBusinessModal({
 
     const finalProducts: VendorProduct[] = products.map((p, idx) => {
       const priceUsd = Math.max(1, localToUsd(p.priceLocal, formCurrency));
+      const formattedServes = formatProductServesLabel(p.unitQuantity, p.unitType, p.serves);
       return {
         id: `prod-${Date.now()}-${idx + 1}`,
         name: p.name.trim() || `${category} Package ${idx + 1}`,
-        serves: p.serves.trim() || 'Custom',
+        serves: formattedServes,
+        ...(p.unitType !== 'custom' ? { unitQuantity: p.unitQuantity.trim() || '1' } : {}),
+        unitType: p.unitType,
+        ...(p.dietaryTags.length > 0 ? { dietaryTags: p.dietaryTags } : {}),
         priceUsd,
         description:
           p.description.trim() ||
@@ -504,7 +536,10 @@ export function ListBusinessModal({
         {
           id: `draft-${Date.now()}`,
           name: '',
-          serves: 'Custom / 50 pax',
+          unitQuantity: '1',
+          unitType: 'kg',
+          serves: '1 kg',
+          dietaryTags: [],
           priceLocal: usdToLocal(35, formCurrency),
           description: '',
           image: '',
@@ -1011,12 +1046,12 @@ export function ListBusinessModal({
                   <div className="flex items-start gap-3">
                     {/* Product Photo Upload */}
                     <div className="shrink-0">
-                      <label className="group relative block size-20 cursor-pointer overflow-hidden rounded-xl border border-dashed border-border bg-muted">
+                      <label className="group relative flex aspect-[4/3] w-24 cursor-pointer items-center justify-center overflow-hidden rounded-xl border border-dashed border-border bg-white dark:bg-neutral-900">
                         {prod.image ? (
                           <img
                             src={prod.image}
                             alt={prod.name || `Product ${index + 1}`}
-                            className="h-full w-full object-cover"
+                            className="h-full w-full object-contain object-center"
                           />
                         ) : (
                           <div className="flex h-full w-full flex-col items-center justify-center p-1 text-center text-[10px] font-semibold text-muted-foreground group-hover:text-brand">
@@ -1070,14 +1105,49 @@ export function ListBusinessModal({
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                        <input
-                          type="text"
-                          value={prod.serves}
-                          onChange={(e) => updateProductField(prod.id, 'serves', e.target.value)}
-                          placeholder="Serves (e.g. 1 kg / 50 pax)"
-                          className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-foreground focus:border-brand focus:outline-none"
-                        />
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-12">
+                        <div className="flex items-center gap-1.5 sm:col-span-5">
+                          {prod.unitType === 'custom' ? (
+                            <input
+                              type="text"
+                              value={prod.serves}
+                              onChange={(e) => updateProductField(prod.id, 'serves', e.target.value)}
+                              placeholder="Custom (e.g. Serves 15)"
+                              className="min-w-0 flex-1 rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs text-foreground focus:border-brand focus:outline-none"
+                            />
+                          ) : (
+                            <input
+                              type="number"
+                              step="any"
+                              min="0.1"
+                              value={prod.unitQuantity}
+                              onChange={(e) =>
+                                updateProductField(prod.id, 'unitQuantity', e.target.value)
+                              }
+                              aria-label="Quantity"
+                              className="w-16 rounded-lg border border-border bg-card px-2 py-1.5 font-mono text-xs tabular-nums text-foreground focus:border-brand focus:outline-none"
+                            />
+                          )}
+                          <select
+                            aria-label="Unit"
+                            value={prod.unitType}
+                            onChange={(e) =>
+                              updateProductField(
+                                prod.id,
+                                'unitType',
+                                e.target.value as ProductUnitType
+                              )
+                            }
+                            className="min-w-0 flex-1 rounded-lg border border-border bg-card px-2 py-1.5 text-xs font-semibold text-foreground focus:border-brand focus:outline-none"
+                          >
+                            {PRODUCT_UNIT_OPTIONS.map((opt) => (
+                              <option key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
                         <input
                           type="text"
                           value={prod.description}
@@ -1085,8 +1155,29 @@ export function ListBusinessModal({
                             updateProductField(prod.id, 'description', e.target.value)
                           }
                           placeholder="Short description / flavors / inclusions"
-                          className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-foreground focus:border-brand focus:outline-none sm:col-span-2"
+                          className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-foreground focus:border-brand focus:outline-none sm:col-span-7"
                         />
+                      </div>
+
+                      {/* Sweetener & Dietary Options */}
+                      <div className="flex flex-wrap items-center gap-1">
+                        {PRODUCT_DIETARY_OPTIONS.map((opt) => {
+                          const selected = prod.dietaryTags.includes(opt);
+                          return (
+                            <button
+                              key={opt}
+                              type="button"
+                              onClick={() => toggleDraftDietaryTag(prod.id, opt)}
+                              className={`cursor-pointer rounded-md border px-2 py-0.5 text-[10px] font-semibold transition-colors ${
+                                selected
+                                  ? 'border-emerald-600 bg-emerald-600 text-white'
+                                  : 'border-border bg-card text-muted-foreground hover:border-emerald-500/60 hover:text-foreground'
+                              }`}
+                            >
+                              {selected ? `✓ ${opt}` : opt}
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
 

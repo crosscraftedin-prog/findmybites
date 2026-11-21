@@ -2,6 +2,7 @@ import { ChangeEvent, FormEvent, useEffect, useState } from 'react';
 import type { User } from 'firebase/auth';
 import {
   BarChart3,
+  Calculator,
   Calendar,
   CheckCircle2,
   Crown,
@@ -37,15 +38,20 @@ import {
   CloudVendorMetric,
   CurrencyCode,
   EventRequest,
+  PRODUCT_DIETARY_OPTIONS,
+  PRODUCT_UNIT_OPTIONS,
   PlanTier,
+  ProductUnitType,
   SAAS_PLANS,
   Vendor,
   VendorBioLink,
   VendorProduct,
   formatMoney,
   formatPlanPrice,
+  formatProductServesLabel,
   getVendorBioHandle,
   localToUsd,
+  parseProductUnitFromServes,
   usdToLocal,
 } from '../data/vendors';
 import {
@@ -75,6 +81,7 @@ interface VendorDashboardModalProps {
   onOpenListModal: (plan?: PlanTier) => void;
   onOpenVendorWebsite: (vendor: Vendor) => void;
   onOpenBioLink?: (vendor: Vendor) => void;
+  onOpenPricingKit?: () => void;
   onTrackShare?: (vendorId: string) => void;
   onNotify: (msg: string) => void;
 }
@@ -174,16 +181,22 @@ export function VendorDashboardModal({
   onOpenListModal,
   onOpenVendorWebsite,
   onOpenBioLink,
+  onOpenPricingKit,
   onTrackShare,
   onNotify,
 }: VendorDashboardModalProps) {
   const [tab, setTab] = useState<'storefronts' | 'board' | 'leads'>('storefronts');
   const [addingProductForId, setAddingProductForId] = useState<string | null>(null);
+  const [editingProductId, setEditingProductId] = useState<string | null>(null);
+  const [confirmDeleteProdKey, setConfirmDeleteProdKey] = useState<string | null>(null);
   const [editingVendorId, setEditingVendorId] = useState<string | null>(null);
 
-  // Add product state
+  // Add / Edit product state
   const [prodName, setProdName] = useState('');
-  const [prodServes, setProdServes] = useState('Custom / 50 pax');
+  const [prodUnitQty, setProdUnitQty] = useState('1');
+  const [prodUnitType, setProdUnitType] = useState<ProductUnitType>('kg');
+  const [prodServes, setProdServes] = useState('1 kg');
+  const [prodDietaryTags, setProdDietaryTags] = useState<string[]>([]);
   const [prodPriceLocal, setProdPriceLocal] = useState(usdToLocal(40, currency));
   const [prodDesc, setProdDesc] = useState('');
   const [prodImage, setProdImage] = useState('');
@@ -449,43 +462,112 @@ export function VendorDashboardModal({
     }
   };
 
-  const handleAddProduct = async (e: FormEvent, vendor: Vendor) => {
+  const resetProductForm = () => {
+    setProdName('');
+    setProdUnitQty('1');
+    setProdUnitType('kg');
+    setProdServes('1 kg');
+    setProdDietaryTags([]);
+    setProdPriceLocal(usdToLocal(40, currency));
+    setProdDesc('');
+    setProdImage('');
+    setEditingProductId(null);
+  };
+
+  const openAddProductForm = (vendorId: string) => {
+    if (addingProductForId === vendorId && !editingProductId) {
+      setAddingProductForId(null);
+      resetProductForm();
+      return;
+    }
+    resetProductForm();
+    setAddingProductForId(vendorId);
+    setConfirmDeleteProdKey(null);
+  };
+
+  const openEditProductForm = (vendorId: string, product: VendorProduct) => {
+    const parsed = parseProductUnitFromServes(
+      product.serves,
+      product.unitQuantity,
+      product.unitType
+    );
+    setAddingProductForId(vendorId);
+    setEditingProductId(product.id);
+    setConfirmDeleteProdKey(null);
+    setProdName(product.name);
+    setProdUnitQty(parsed.qty);
+    setProdUnitType(parsed.unit);
+    setProdServes(parsed.custom);
+    setProdDietaryTags(product.dietaryTags ? [...product.dietaryTags] : []);
+    setProdPriceLocal(Math.max(1, usdToLocal(product.priceUsd, currency)));
+    setProdDesc(product.description || '');
+    setProdImage(product.image || '');
+  };
+
+  const toggleProdDietaryTag = (tag: string) => {
+    setProdDietaryTags((prev) =>
+      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
+    );
+  };
+
+  const handleSaveProduct = async (e: FormEvent, vendor: Vendor) => {
     e.preventDefault();
     if (!prodName.trim()) return;
     setBusyId(vendor.id);
     try {
+      const formattedServes = formatProductServesLabel(prodUnitQty, prodUnitType, prodServes);
       const nextProd: VendorProduct = {
-        id: `prod-${Date.now()}`,
+        id: editingProductId || `prod-${Date.now()}`,
         name: prodName.trim().slice(0, 100),
-        serves: prodServes.trim().slice(0, 60) || 'Custom',
+        serves: formattedServes.slice(0, 60),
+        ...(prodUnitType !== 'custom' ? { unitQuantity: prodUnitQty.trim() || '1' } : {}),
+        unitType: prodUnitType,
+        ...(prodDietaryTags.length > 0 ? { dietaryTags: prodDietaryTags } : {}),
         priceUsd: Math.max(1, localToUsd(prodPriceLocal, currency)),
         description: prodDesc.trim().slice(0, 400) || prodName.trim(),
         image: prodImage || vendor.image,
       };
+      const updatedProducts = editingProductId
+        ? vendor.products.map((p) => (p.id === editingProductId ? { ...p, ...nextProd } : p))
+        : [...vendor.products, nextProd];
+      const nextStartingUsd =
+        updatedProducts.length > 0
+          ? Math.min(...updatedProducts.map((p) => p.priceUsd))
+          : vendor.startingPriceUsd;
+
       await updateVendorInCloud(vendor.id, {
-        products: [...vendor.products, nextProd],
+        products: updatedProducts,
+        startingPriceUsd: nextStartingUsd,
       });
-      setProdName('');
-      setProdDesc('');
-      setProdImage('');
+      const wasEdit = Boolean(editingProductId);
+      resetProductForm();
       setAddingProductForId(null);
-      onNotify(`Added "${nextProd.name}" to ${vendor.name} in the cloud!`);
+      onNotify(
+        wasEdit
+          ? `Updated "${nextProd.name}" on ${vendor.name} in the cloud!`
+          : `Added "${nextProd.name}" to ${vendor.name} in the cloud!`
+      );
     } finally {
       setBusyId(null);
     }
   };
 
   const handleRemoveProduct = async (vendor: Vendor, productId: string) => {
-    if (vendor.products.length <= 1) {
-      onNotify('Each storefront must keep at least 1 product listed.');
-      return;
-    }
     setBusyId(vendor.id);
     try {
+      const remaining = vendor.products.filter((p) => p.id !== productId);
       await updateVendorInCloud(vendor.id, {
-        products: vendor.products.filter((p) => p.id !== productId),
+        products: remaining,
+        ...(remaining.length > 0
+          ? { startingPriceUsd: Math.min(...remaining.map((p) => p.priceUsd)) }
+          : {}),
       });
-      onNotify(`Updated catalog for ${vendor.name}.`);
+      if (editingProductId === productId) {
+        resetProductForm();
+        setAddingProductForId(null);
+      }
+      setConfirmDeleteProdKey(null);
+      onNotify(`Deleted product from ${vendor.name}.`);
     } finally {
       setBusyId(null);
     }
@@ -586,6 +668,19 @@ export function VendorDashboardModal({
           </div>
 
           <div className="flex items-center gap-2">
+            {onOpenPricingKit && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenPricingKit();
+                }}
+                className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-brand-border bg-brand-soft px-3 py-1.5 text-xs font-bold text-brand hover:bg-brand hover:text-brand-foreground"
+              >
+                <Calculator className="size-3.5" aria-hidden="true" />
+                Cake Pricing Kit
+              </button>
+            )}
             {user && (
               <button
                 type="button"
@@ -1223,67 +1318,179 @@ export function VendorDashboardModal({
                               </p>
                               <button
                                 type="button"
-                                onClick={() =>
-                                  setAddingProductForId((cur) => (cur === v.id ? null : v.id))
-                                }
+                                onClick={() => openAddProductForm(v.id)}
                                 className="inline-flex cursor-pointer items-center gap-1 text-xs font-semibold text-brand hover:underline"
                               >
                                 <Plus className="size-3.5" aria-hidden="true" />
-                                Add Product
+                                {addingProductForId === v.id && !editingProductId
+                                  ? 'Close Form'
+                                  : 'Add Product'}
                               </button>
                             </div>
 
-                            <div className="mt-2.5 grid gap-2 sm:grid-cols-2">
-                              {v.products.map((p) => (
-                                <div
-                                  key={p.id}
-                                  className="flex items-center justify-between gap-2 rounded-xl border border-border bg-card px-3 py-2 text-xs"
-                                >
-                                  <div className="min-w-0">
-                                    <p className="truncate font-semibold text-foreground">
-                                      {p.name}
-                                    </p>
-                                    <p className="font-mono text-[11px] text-muted-foreground">
-                                      {formatMoney(p.priceUsd, currency)} · {p.serves}
-                                    </p>
-                                  </div>
-                                  {v.products.length > 1 && (
-                                    <button
-                                      type="button"
-                                      disabled={isBusy}
-                                      onClick={() => void handleRemoveProduct(v, p.id)}
-                                      aria-label={`Remove ${p.name}`}
-                                      className="cursor-pointer text-muted-foreground hover:text-red-500"
+                            {v.products.length === 0 ? (
+                              <p className="mt-2 rounded-xl border border-dashed border-border px-3 py-4 text-center text-xs text-muted-foreground">
+                                No products listed yet. Click <strong>+ Add Product</strong> to add
+                                your cakes or packages.
+                              </p>
+                            ) : (
+                              <div className="mt-2.5 grid gap-2 sm:grid-cols-2">
+                                {v.products.map((p) => {
+                                  const delKey = `${v.id}:${p.id}`;
+                                  const isEditingThis =
+                                    addingProductForId === v.id && editingProductId === p.id;
+                                  return (
+                                    <div
+                                      key={p.id}
+                                      className={`flex items-start justify-between gap-2.5 rounded-xl border px-3 py-2.5 text-xs transition-colors ${
+                                        isEditingThis
+                                          ? 'border-brand bg-brand-soft/30'
+                                          : 'border-border bg-card'
+                                      }`}
                                     >
-                                      <Trash2 className="size-3.5" />
-                                    </button>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
+                                      <div className="flex min-w-0 flex-1 items-start gap-2.5">
+                                        {p.image && (
+                                          <div className="flex aspect-[4/3] w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-white dark:bg-neutral-900">
+                                            <img
+                                              src={p.image}
+                                              alt={p.name}
+                                              className="h-full w-full object-contain object-center"
+                                            />
+                                          </div>
+                                        )}
+                                        <div className="min-w-0 flex-1">
+                                          <p className="truncate font-semibold text-foreground">
+                                            {p.name}
+                                          </p>
+                                          <p className="font-mono text-[11px] tabular-nums text-muted-foreground">
+                                            {formatMoney(p.priceUsd, currency)} · {p.serves}
+                                          </p>
+                                          {p.dietaryTags && p.dietaryTags.length > 0 && (
+                                            <div className="mt-1 flex flex-wrap gap-1">
+                                              {p.dietaryTags.map((tag) => (
+                                                <span
+                                                  key={tag}
+                                                  className="rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300"
+                                                >
+                                                  {tag}
+                                                </span>
+                                              ))}
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+
+                                      <div className="flex shrink-0 items-center gap-1">
+                                        <button
+                                          type="button"
+                                          disabled={isBusy}
+                                          onClick={() => openEditProductForm(v.id, p)}
+                                          aria-label={`Edit ${p.name}`}
+                                          title="Edit product"
+                                          className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-[11px] font-semibold text-foreground transition-colors hover:border-brand hover:text-brand disabled:opacity-50"
+                                        >
+                                          <Edit3 className="size-3" aria-hidden="true" />
+                                          Edit
+                                        </button>
+
+                                        {confirmDeleteProdKey === delKey ? (
+                                          <button
+                                            type="button"
+                                            disabled={isBusy}
+                                            onClick={() => void handleRemoveProduct(v, p.id)}
+                                            className="cursor-pointer rounded-md bg-rose-600 px-2 py-1 text-[11px] font-bold text-white hover:bg-rose-700 disabled:opacity-50"
+                                          >
+                                            Confirm
+                                          </button>
+                                        ) : (
+                                          <button
+                                            type="button"
+                                            disabled={isBusy}
+                                            onClick={() => setConfirmDeleteProdKey(delKey)}
+                                            aria-label={`Delete ${p.name}`}
+                                            title="Delete product"
+                                            className="grid size-7 cursor-pointer place-items-center rounded-md border border-border bg-background text-muted-foreground transition-colors hover:border-rose-500/50 hover:text-rose-600 disabled:opacity-50"
+                                          >
+                                            <Trash2 className="size-3.5" aria-hidden="true" />
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
 
                             {addingProductForId === v.id && (
                               <form
-                                onSubmit={(e) => void handleAddProduct(e, v)}
-                                className="mt-3 space-y-2 rounded-xl border border-brand-border bg-brand-soft/30 p-3"
+                                onSubmit={(e) => void handleSaveProduct(e, v)}
+                                className="mt-3 space-y-3 rounded-xl border border-brand-border bg-brand-soft/25 p-3.5"
                               >
-                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                                <div className="flex items-center justify-between gap-2">
+                                  <p className="text-xs font-extrabold text-foreground">
+                                    {editingProductId ? 'Edit Product Details' : 'Add New Product'}
+                                  </p>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      resetProductForm();
+                                      setAddingProductForId(null);
+                                    }}
+                                    className="cursor-pointer text-[11px] font-semibold text-muted-foreground hover:text-foreground"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+
+                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-12">
                                   <input
                                     type="text"
                                     required
                                     value={prodName}
                                     onChange={(e) => setProdName(e.target.value)}
-                                    placeholder="Product / Package Name"
-                                    className="rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs text-foreground"
+                                    placeholder="Product Name (e.g. Belgian Truffle Cake)"
+                                    className="rounded-lg border border-border bg-background px-2.5 py-2 text-xs font-medium text-foreground focus:border-brand focus:outline-none sm:col-span-5"
                                   />
-                                  <input
-                                    type="text"
-                                    value={prodServes}
-                                    onChange={(e) => setProdServes(e.target.value)}
-                                    placeholder="Serves (e.g. 2kg / 50 pax)"
-                                    className="rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs text-foreground"
-                                  />
-                                  <div className="relative">
+
+                                  {/* Quantity + Unit (kg / g / pcs / box / dozen / pax / custom) */}
+                                  <div className="flex items-center gap-1.5 sm:col-span-4">
+                                    {prodUnitType === 'custom' ? (
+                                      <input
+                                        type="text"
+                                        value={prodServes}
+                                        onChange={(e) => setProdServes(e.target.value)}
+                                        placeholder="e.g. Serves 10-12"
+                                        className="min-w-0 flex-1 rounded-lg border border-border bg-background px-2.5 py-2 text-xs text-foreground focus:border-brand focus:outline-none"
+                                      />
+                                    ) : (
+                                      <input
+                                        type="number"
+                                        step="any"
+                                        min="0.1"
+                                        value={prodUnitQty}
+                                        onChange={(e) => setProdUnitQty(e.target.value)}
+                                        placeholder="Qty"
+                                        aria-label="Quantity"
+                                        className="w-20 rounded-lg border border-border bg-background px-2.5 py-2 font-mono text-xs tabular-nums text-foreground focus:border-brand focus:outline-none"
+                                      />
+                                    )}
+                                    <select
+                                      aria-label="Product Unit"
+                                      value={prodUnitType}
+                                      onChange={(e) =>
+                                        setProdUnitType(e.target.value as ProductUnitType)
+                                      }
+                                      className="min-w-0 flex-1 rounded-lg border border-border bg-background px-2 py-2 text-xs font-semibold text-foreground focus:border-brand focus:outline-none"
+                                    >
+                                      {PRODUCT_UNIT_OPTIONS.map((opt) => (
+                                        <option key={opt.value} value={opt.value}>
+                                          {opt.label}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+
+                                  <div className="relative sm:col-span-3">
                                     <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 font-mono text-xs font-bold text-muted-foreground">
                                       {currencyMeta.symbol.trim()}
                                     </span>
@@ -1297,8 +1504,71 @@ export function VendorDashboardModal({
                                         setProdPriceLocal(Math.max(1, Number(e.target.value) || 0))
                                       }
                                       placeholder={`Price (${currencyMeta.code})`}
-                                      className="w-full rounded-lg border border-border bg-background py-1.5 pl-9 pr-2.5 font-mono text-xs text-foreground"
+                                      className="w-full rounded-lg border border-border bg-background py-2 pl-9 pr-2.5 font-mono text-xs tabular-nums text-foreground focus:border-brand focus:outline-none"
                                     />
+                                  </div>
+                                </div>
+
+                                {/* 1-Tap Quick Weight / Pieces Presets */}
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  <span className="text-[11px] font-semibold text-muted-foreground">
+                                    Quick Size:
+                                  </span>
+                                  {(
+                                    [
+                                      { qty: '0.5', unit: 'kg', label: '0.5 kg' },
+                                      { qty: '1', unit: 'kg', label: '1 kg' },
+                                      { qty: '2', unit: 'kg', label: '2 kg' },
+                                      { qty: '6', unit: 'pcs', label: '6 pcs' },
+                                      { qty: '12', unit: 'pcs', label: '12 pcs' },
+                                      { qty: '1', unit: 'box', label: '1 box' },
+                                    ] as const
+                                  ).map((preset) => {
+                                    const active =
+                                      prodUnitType === preset.unit && prodUnitQty === preset.qty;
+                                    return (
+                                      <button
+                                        key={preset.label}
+                                        type="button"
+                                        onClick={() => {
+                                          setProdUnitQty(preset.qty);
+                                          setProdUnitType(preset.unit);
+                                        }}
+                                        className={`cursor-pointer rounded-md border px-2 py-0.5 font-mono text-[11px] font-semibold transition-colors ${
+                                          active
+                                            ? 'border-brand bg-brand text-brand-foreground'
+                                            : 'border-border bg-background text-muted-foreground hover:text-foreground'
+                                        }`}
+                                      >
+                                        {preset.label}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+
+                                {/* Sweetener & Dietary Options (Sugar-Free, Jaggery, Stevia, Eggless, etc.) */}
+                                <div>
+                                  <p className="text-[11px] font-semibold text-muted-foreground">
+                                    Sweetener &amp; Dietary Options (Optional — tap to select):
+                                  </p>
+                                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                                    {PRODUCT_DIETARY_OPTIONS.map((option) => {
+                                      const selected = prodDietaryTags.includes(option);
+                                      return (
+                                        <button
+                                          key={option}
+                                          type="button"
+                                          onClick={() => toggleProdDietaryTag(option)}
+                                          className={`cursor-pointer rounded-md border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                                            selected
+                                              ? 'border-emerald-600 bg-emerald-600 text-white'
+                                              : 'border-border bg-background text-foreground/80 hover:border-emerald-500/60 hover:text-emerald-700 dark:hover:text-emerald-300'
+                                          }`}
+                                        >
+                                          {selected ? `✓ ${option}` : option}
+                                        </button>
+                                      );
+                                    })}
                                   </div>
                                 </div>
 
@@ -1317,15 +1587,15 @@ export function VendorDashboardModal({
                                     type="text"
                                     value={prodDesc}
                                     onChange={(e) => setProdDesc(e.target.value)}
-                                    placeholder="Short description (flavors, inclusions...)"
-                                    className="min-w-0 flex-1 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs text-foreground"
+                                    placeholder="Short description (flavors, fillings, inclusions...)"
+                                    className="min-w-0 flex-1 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs text-foreground focus:border-brand focus:outline-none"
                                   />
                                   <button
                                     type="submit"
                                     disabled={isBusy}
-                                    className="cursor-pointer rounded-lg bg-brand px-3.5 py-1.5 text-xs font-bold text-brand-foreground hover:bg-brand-hover disabled:opacity-50"
+                                    className="cursor-pointer rounded-lg bg-brand px-4 py-1.5 text-xs font-bold text-brand-foreground hover:bg-brand-hover disabled:opacity-50"
                                   >
-                                    Save to Cloud
+                                    {editingProductId ? 'Update Product' : 'Save to Cloud'}
                                   </button>
                                 </div>
                               </form>

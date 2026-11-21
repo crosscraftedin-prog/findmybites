@@ -4,6 +4,7 @@ import {
   deleteDoc,
   doc,
   getDoc,
+  limit,
   onSnapshot,
   query,
   serverTimestamp,
@@ -61,33 +62,51 @@ function sanitizeDigits(raw: string): string {
   return digits.length >= 7 ? digits : '919820001122';
 }
 
-function sanitizeProducts(products: VendorProduct[]): VendorProduct[] {
-  const list = products.slice(0, 20).map((p, idx) => ({
-    id: sanitizeId(p.id || `prod-${idx + 1}`),
-    name: clampStr(p.name, 2, 100, 'Signature Package'),
-    serves: clampStr(p.serves || 'Custom', 1, 60, 'Custom'),
-    priceUsd: Math.max(0, Math.min(100000, Number(p.priceUsd) || 0)),
-    description: clampStr(p.description || p.name, 2, 400, 'Custom package'),
-    image: clampStr(
-      p.image || '/src/assets/images/cat-bakers.png',
-      1,
-      110000,
-      '/src/assets/images/cat-bakers.png'
-    ),
-    ...(p.tag ? { tag: p.tag.trim().slice(0, 40) } : {}),
-  }));
-  return list.length > 0
-    ? list
-    : [
-        {
-          id: `prod-${Date.now()}`,
-          name: 'Signature Event Package',
-          serves: 'Custom',
-          priceUsd: 99,
-          description: 'Customizable local package.',
-          image: '/src/assets/images/cat-bakers.png',
-        },
-      ];
+function sanitizeProducts(products: VendorProduct[], allowEmpty = false): VendorProduct[] {
+  const validUnits = new Set(['kg', 'g', 'pcs', 'box', 'dozen', 'pax', 'custom']);
+  const list = products.slice(0, 20).map((p, idx) => {
+    const cleanDietary = Array.isArray(p.dietaryTags)
+      ? p.dietaryTags
+          .map((t) => (typeof t === 'string' ? t.trim().slice(0, 32) : ''))
+          .filter(Boolean)
+          .slice(0, 8)
+      : [];
+    const unitType =
+      typeof p.unitType === 'string' && validUnits.has(p.unitType) ? p.unitType : undefined;
+    const unitQuantity =
+      typeof p.unitQuantity === 'string' && p.unitQuantity.trim()
+        ? p.unitQuantity.trim().slice(0, 16)
+        : undefined;
+
+    return {
+      id: sanitizeId(p.id || `prod-${idx + 1}`),
+      name: clampStr(p.name, 2, 100, 'Signature Package'),
+      serves: clampStr(p.serves || 'Custom', 1, 60, 'Custom'),
+      ...(unitQuantity ? { unitQuantity } : {}),
+      ...(unitType ? { unitType } : {}),
+      ...(cleanDietary.length > 0 ? { dietaryTags: cleanDietary } : {}),
+      priceUsd: Math.max(0, Math.min(100000, Number(p.priceUsd) || 0)),
+      description: clampStr(p.description || p.name, 2, 400, 'Custom package'),
+      image: clampStr(
+        p.image || '/src/assets/images/cat-bakers.png',
+        1,
+        110000,
+        '/src/assets/images/cat-bakers.png'
+      ),
+      ...(p.tag ? { tag: p.tag.trim().slice(0, 40) } : {}),
+    };
+  });
+  if (list.length > 0 || allowEmpty) return list;
+  return [
+    {
+      id: `prod-${Date.now()}`,
+      name: 'Signature Event Package',
+      serves: 'Custom',
+      priceUsd: 99,
+      description: 'Customizable local package.',
+      image: '/src/assets/images/cat-bakers.png',
+    },
+  ];
 }
 
 function sanitizeBioHandle(raw: string): string | undefined {
@@ -451,7 +470,7 @@ export async function updateVendorInCloud(
       .slice(0, 6);
   if (updates.lat !== undefined) clean.lat = Math.max(-90, Math.min(90, Number(updates.lat) || 0));
   if (updates.lng !== undefined) clean.lng = Math.max(-180, Math.min(180, Number(updates.lng) || 0));
-  if (updates.products !== undefined) clean.products = sanitizeProducts(updates.products);
+  if (updates.products !== undefined) clean.products = sanitizeProducts(updates.products, true);
 
   try {
     await updateDoc(doc(db, 'vendors', vendorId), clean);
@@ -615,7 +634,7 @@ export function subscribeVendorReviews(
   onData: (reviews: VendorReview[]) => void
 ): () => void {
   const safeVendorId = sanitizeId(vendorId);
-  const q = query(collection(db, 'reviews'), where('vendorId', '==', safeVendorId));
+  const q = query(collection(db, 'reviews'), where('vendorId', '==', safeVendorId), limit(50));
   return onSnapshot(
     q,
     (snap) => {
@@ -1453,7 +1472,7 @@ export function subscribeAllBookingsForAdmin(
 export function subscribeAllReviewsForAdmin(
   onData: (reviews: AdminReviewRecord[]) => void
 ): () => void {
-  const q = query(collection(db, 'reviews'));
+  const q = query(collection(db, 'reviews'), limit(100));
   return onSnapshot(
     q,
     (snap) => {
