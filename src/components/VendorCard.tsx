@@ -50,7 +50,7 @@ export function VendorCard({
   const isPaid = vendor.planTier === 'business' || vendor.planTier === 'pro';
   const coverageLabel = getVendorCoverageLabel(vendor, browsingState);
   const isMultiState = Boolean(coverageLabel);
-  const hasCustomBuilder = Boolean(vendor.customBuilderEnabled && vendor.products.length > 0);
+  const hasCustomBuilder = Boolean(vendor.customBuilderEnabled);
   const builderModeConfig = hasCustomBuilder
     ? getCustomBuilderModeConfig(
         vendor.customBuilderMode ?? suggestBuilderModeForCategory(vendor.category)
@@ -93,11 +93,21 @@ export function VendorCard({
 
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/20" />
 
-        {/* Paid SaaS Priority Indicator (Top Listed / Featured Pro) */}
-        {isPaid && (
-          <div className="absolute left-3 top-3 inline-flex items-center gap-1 rounded-full bg-brand px-2.5 py-1 text-[11px] font-bold text-brand-foreground shadow-md">
-            <Crown className="size-3" aria-hidden="true" />
-            {vendor.planTier === 'business' ? 'Top Listed' : 'Featured Pro'}
+        {/* Top-Left Card Badges: Paid Priority + Custom Box / Plate Builder Highlight */}
+        {(isPaid || builderModeConfig) && (
+          <div className="absolute left-3 top-3 flex flex-col items-start gap-1.5">
+            {isPaid && (
+              <div className="inline-flex items-center gap-1 rounded-full bg-brand px-2.5 py-1 text-[11px] font-bold text-brand-foreground shadow-md">
+                <Crown className="size-3" aria-hidden="true" />
+                {vendor.planTier === 'business' ? 'Top Listed' : 'Featured Pro'}
+              </div>
+            )}
+            {builderModeConfig && (
+              <div className="inline-flex items-center gap-1 rounded-full bg-neutral-950/85 px-2.5 py-1 text-[11px] font-extrabold text-white ring-1 ring-brand/80 shadow-md backdrop-blur-md">
+                <Package className="size-3 text-brand" aria-hidden="true" />
+                {builderModeConfig.customerTitle}
+              </div>
+            )}
           </div>
         )}
 
@@ -234,11 +244,15 @@ export function VendorCard({
             <button
               type="button"
               onClick={() => onSelect(vendor)}
-              className="inline-flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-border bg-background px-2.5 text-xs font-semibold text-foreground transition-colors hover:border-brand hover:text-brand whitespace-nowrap"
+              className={`inline-flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-lg border px-2.5 text-xs font-bold transition-colors whitespace-nowrap ${
+                builderModeConfig
+                  ? 'border-brand bg-brand text-brand-foreground hover:bg-brand-hover'
+                  : 'border-border bg-background font-semibold text-foreground hover:border-brand hover:text-brand'
+              }`}
             >
               {builderModeConfig ? (
                 <>
-                  <Package className="size-3.5 text-brand" aria-hidden="true" />
+                  <Package className="size-3.5" aria-hidden="true" />
                   Build {builderModeConfig.id === 'catering' ? 'Plate' : 'Box'}
                 </>
               ) : (

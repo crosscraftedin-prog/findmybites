@@ -418,8 +418,15 @@ export function AdminApprovalsTab({
     try {
       await updateVendorInCloud(vendor.id, patch);
       onToast(toastMsg);
-    } catch {
-      onToast('Could not update store status.');
+    } catch (err) {
+      const raw = err instanceof Error ? err.message : '';
+      let detail = 'Could not update store.';
+      if (raw.toLowerCase().includes('permission')) {
+        detail = 'Permission denied by Firestore rules. Please sign in as Admin and retry.';
+      } else if (raw) {
+        detail = `Update failed: ${raw.slice(0, 120)}`;
+      }
+      onToast(detail);
     } finally {
       setBusyId(null);
     }
@@ -624,6 +631,14 @@ export function AdminApprovalsTab({
                           <Snowflake className="size-2.5" /> Xmas
                         </span>
                       )}
+                      {v.customBuilderEnabled && (
+                        <span className="inline-flex items-center gap-0.5 rounded-full bg-brand px-2 py-0.5 text-[10px] font-extrabold text-brand-foreground">
+                          <Package className="size-2.5" />
+                          {getCustomBuilderModeConfig(
+                            v.customBuilderMode ?? suggestBuilderModeForCategory(v.category)
+                          ).label}
+                        </span>
+                      )}
                       {(() => {
                         const covLabel = getVendorCoverageLabel(v);
                         return covLabel ? (
@@ -752,37 +767,39 @@ export function AdminApprovalsTab({
                         {v.christmasSpecial ? 'In Xmas' : 'Xmas'}
                       </button>
 
-                      {v.marketplace === 'food' && (
-                        <button
-                          type="button"
-                          disabled={isBusy}
-                          onClick={() => {
-                            const nextEnabled = !v.customBuilderEnabled;
-                            const nextMode =
-                              v.customBuilderMode ?? suggestBuilderModeForCategory(v.category);
-                            const modeCfg = getCustomBuilderModeConfig(nextMode);
-                            void handleUpdate(
-                              v,
-                              {
-                                customBuilderEnabled: nextEnabled,
-                                customBuilderMode: nextMode,
-                                customBuilderMinQty: v.customBuilderMinQty ?? modeCfg.defaultMinQty,
-                              },
-                              nextEnabled
-                                ? `Enabled ${modeCfg.label} on ${v.name}!`
-                                : `Disabled Custom Builder on ${v.name}.`
-                            );
-                          }}
-                          className={`inline-flex cursor-pointer items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold ${
-                            v.customBuilderEnabled
-                              ? 'border-brand bg-brand text-brand-foreground'
-                              : 'border-border bg-background text-muted-foreground hover:border-brand hover:text-brand'
-                          }`}
-                        >
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() => {
+                          const nextEnabled = !v.customBuilderEnabled;
+                          const nextMode =
+                            v.customBuilderMode ?? suggestBuilderModeForCategory(v.category);
+                          const modeCfg = getCustomBuilderModeConfig(nextMode);
+                          void handleUpdate(
+                            v,
+                            {
+                              customBuilderEnabled: nextEnabled,
+                              customBuilderMode: nextMode,
+                              customBuilderMinQty: v.customBuilderMinQty ?? modeCfg.defaultMinQty,
+                            },
+                            nextEnabled
+                              ? `Enabled ${modeCfg.label} on ${v.name}!`
+                              : `Disabled Custom Builder on ${v.name}.`
+                          );
+                        }}
+                        className={`inline-flex cursor-pointer items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition-colors disabled:opacity-50 ${
+                          v.customBuilderEnabled
+                            ? 'border-brand bg-brand text-brand-foreground shadow-xs hover:bg-brand-hover'
+                            : 'border-border bg-background text-muted-foreground hover:border-brand hover:text-brand'
+                        }`}
+                      >
+                        {isBusy ? (
+                          <Loader2 className="size-3 animate-spin" />
+                        ) : (
                           <Package className="size-3" />
-                          {v.customBuilderEnabled ? 'Builder ON' : 'Custom Builder'}
-                        </button>
-                      )}
+                        )}
+                        {v.customBuilderEnabled ? 'Builder ON' : 'Custom Builder'}
+                      </button>
 
                       <button
                         type="button"

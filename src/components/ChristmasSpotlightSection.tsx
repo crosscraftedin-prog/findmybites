@@ -8,6 +8,7 @@ import {
   Gift,
   MapPin,
   MessageCircle,
+  Package,
   PartyPopper,
   Share2,
   Snowflake,
@@ -21,8 +22,10 @@ import {
   Vendor,
   buildWhatsAppUrl,
   formatMoney,
+  getCustomBuilderModeConfig,
   isChristmasVendor,
   planRankWeight,
+  suggestBuilderModeForCategory,
 } from '../data/vendors';
 import type { CustomMenuDish } from '../data/christmasMenu';
 import { ChristmasCustomMenuBuilder } from './ChristmasCustomMenuBuilder';
@@ -258,6 +261,11 @@ export function ChristmasSpotlightSection({
           <div className="mt-7 grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
             {festiveVendors.map((vendor) => {
               const editable = canEditVendor(vendor);
+              const builderModeConfig = vendor.customBuilderEnabled
+                ? getCustomBuilderModeConfig(
+                    vendor.customBuilderMode ?? suggestBuilderModeForCategory(vendor.category)
+                  )
+                : null;
               const festiveHeadline =
                 vendor.christmasOffer ||
                 vendor.promoBanner ||
@@ -279,9 +287,17 @@ export function ChristmasSpotlightSection({
                     />
                     <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/75 via-black/15 to-black/30" />
 
-                    <div className="absolute left-3 top-3 inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-[#C81E3A] to-[#991B1B] px-2.5 py-1 text-[11px] font-extrabold text-white shadow-md">
-                      <Snowflake className="size-3 text-amber-200" aria-hidden="true" />
-                      {vendor.christmasSpecial ? 'Christmas Special' : 'Festive Pick'}
+                    <div className="absolute left-3 top-3 flex flex-col items-start gap-1.5">
+                      <div className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-[#C81E3A] to-[#991B1B] px-2.5 py-1 text-[11px] font-extrabold text-white shadow-md">
+                        <Snowflake className="size-3 text-amber-200" aria-hidden="true" />
+                        {vendor.christmasSpecial ? 'Christmas Special' : 'Festive Pick'}
+                      </div>
+                      {builderModeConfig && (
+                        <div className="inline-flex items-center gap-1 rounded-full bg-neutral-950/85 px-2.5 py-1 text-[11px] font-extrabold text-amber-200 ring-1 ring-amber-400/70 shadow-md backdrop-blur-md">
+                          <Package className="size-3 text-amber-300" aria-hidden="true" />
+                          {builderModeConfig.customerTitle}
+                        </div>
+                      )}
                     </div>
 
                     {(vendor.planTier === 'business' || vendor.planTier === 'pro') && (
@@ -376,10 +392,23 @@ export function ChristmasSpotlightSection({
                         <button
                           type="button"
                           onClick={() => onSelectVendor(vendor)}
-                          className="inline-flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-white/25 bg-white/10 px-2.5 text-xs font-bold text-white transition-colors hover:bg-white/20 whitespace-nowrap"
+                          className={`inline-flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-lg border px-2.5 text-xs font-bold transition-colors whitespace-nowrap ${
+                            builderModeConfig
+                              ? 'border-amber-300 bg-amber-400 text-neutral-950 hover:bg-amber-300'
+                              : 'border-white/25 bg-white/10 text-white hover:bg-white/20'
+                          }`}
                         >
-                          <ExternalLink className="size-3.5" aria-hidden="true" />
-                          View Menu
+                          {builderModeConfig ? (
+                            <>
+                              <Package className="size-3.5" aria-hidden="true" />
+                              Build {builderModeConfig.id === 'catering' ? 'Plate' : 'Box'}
+                            </>
+                          ) : (
+                            <>
+                              <ExternalLink className="size-3.5" aria-hidden="true" />
+                              View Menu
+                            </>
+                          )}
                         </button>
                         <a
                           href={buildWhatsAppUrl(

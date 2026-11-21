@@ -356,6 +356,45 @@ export function VendorDashboardModal({
           ? `${v.name} is now highlighted in the Christmas & New Year Spotlight!`
           : `Removed ${v.name} from the Christmas Spotlight.`
       );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '';
+      onNotify(
+        msg.toLowerCase().includes('permission')
+          ? 'Could not update — permission denied. Please refresh or sign in again.'
+          : 'Could not update Christmas highlight. Please try again.'
+      );
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleToggleCustomBuilder = async (v: Vendor) => {
+    setBusyId(v.id);
+    try {
+      const next = !v.customBuilderEnabled;
+      const mode = v.customBuilderMode ?? suggestBuilderModeForCategory(v.category);
+      const modeCfg = getCustomBuilderModeConfig(mode);
+      await updateVendorInCloud(v.id, {
+        customBuilderEnabled: next,
+        customBuilderMode: mode,
+        customBuilderMinQty: v.customBuilderMinQty ?? modeCfg.defaultMinQty,
+      });
+      if (editingVendorId === v.id) {
+        setEditCustomBuilderEnabled(next);
+        setEditCustomBuilderMode(mode);
+      }
+      onNotify(
+        next
+          ? `Enabled ${modeCfg.label} on ${v.name}! Customers can now build custom boxes/plates.`
+          : `Turned OFF Custom Builder on ${v.name}.`
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '';
+      onNotify(
+        msg.toLowerCase().includes('permission')
+          ? 'Could not toggle Custom Builder — permission denied. Please check your sign-in.'
+          : 'Could not toggle Custom Builder. Please try again.'
+      );
     } finally {
       setBusyId(null);
     }
@@ -410,6 +449,13 @@ export function VendorDashboardModal({
       });
       setEditingVendorId(null);
       onNotify(`Saved storefront & Bio-Link updates for ${editName} to Cloud Firestore!`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '';
+      onNotify(
+        msg.toLowerCase().includes('permission')
+          ? 'Could not save storefront — permission denied. Please check your sign-in.'
+          : 'Could not save storefront updates. Please check your inputs and try again.'
+      );
     } finally {
       setBusyId(null);
     }
@@ -894,6 +940,17 @@ export function VendorDashboardModal({
                                     {v.planTier === 'business' ? 'Business Spotlight' : 'Pro Partner'}
                                   </span>
                                 )}
+                                {v.customBuilderEnabled && (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-brand px-2 py-0.5 text-[10px] font-extrabold text-brand-foreground">
+                                    <Package className="size-3" aria-hidden="true" />
+                                    {
+                                      getCustomBuilderModeConfig(
+                                        v.customBuilderMode ??
+                                          suggestBuilderModeForCategory(v.category)
+                                      ).label
+                                    }
+                                  </span>
+                                )}
                               </div>
                               <p className="mt-1 text-xs text-muted-foreground">
                                 {v.category} · {v.city}, {v.state}, {v.country} · Bio:{' '}
@@ -971,6 +1028,19 @@ export function VendorDashboardModal({
                               >
                                 <LocateFixed className="size-3.5 text-brand" aria-hidden="true" />
                                 Set GPS
+                              </button>
+                              <button
+                                type="button"
+                                disabled={isBusy}
+                                onClick={() => void handleToggleCustomBuilder(v)}
+                                className={`inline-flex cursor-pointer items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-bold transition-colors disabled:opacity-50 ${
+                                  v.customBuilderEnabled
+                                    ? 'border-brand bg-brand text-brand-foreground hover:bg-brand-hover'
+                                    : 'border-brand-border bg-brand-soft/45 text-brand hover:bg-brand-soft'
+                                }`}
+                              >
+                                <Package className="size-3.5" aria-hidden="true" />
+                                {v.customBuilderEnabled ? 'Builder ON' : 'Custom Builder'}
                               </button>
                               <button
                                 type="button"

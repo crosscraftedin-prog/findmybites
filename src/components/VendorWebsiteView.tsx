@@ -689,6 +689,18 @@ export function VendorWebsiteView({
 
             return (
               <>
+                {vendor.customBuilderEnabled && vendor.products.length === 0 && (
+                  <div className="mb-6 rounded-2xl border border-brand-border bg-brand-soft/35 p-4 text-xs text-foreground">
+                    <p className="inline-flex items-center gap-1.5 font-extrabold text-brand">
+                      <Package className="size-4" aria-hidden="true" />
+                      {builderModeConfig.label} is enabled for {vendor.name}
+                    </p>
+                    <p className="mt-1 text-muted-foreground">
+                      Add individual menu items in <strong>Edit Storefront</strong> so customers can mix &amp; match their own custom {builderModeConfig.unitSingular}.
+                    </p>
+                  </div>
+                )}
+
                 {hasCustomBuilder && (
                   <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-brand-border bg-brand-soft/35 p-3">
                     <div className="inline-flex flex-wrap rounded-xl bg-background/80 p-1 ring-1 ring-border">
