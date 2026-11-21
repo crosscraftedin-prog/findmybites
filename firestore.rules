@@ -62,6 +62,12 @@ service cloud.firestore {
         listVal[0] is map;
     }
 
+    function isValidCustomLinksList(listVal) {
+      return listVal is list &&
+        listVal.size() <= 8 &&
+        (listVal.size() == 0 || listVal[0] is map);
+    }
+
     function isValidVendor(data) {
       return data.keys().hasAll([
           'ownerId', 'slug', 'name', 'marketplace', 'category',
@@ -78,6 +84,8 @@ service cloud.firestore {
           'whatsappNumber', 'planTier', 'monthlyAutoPay', 'priceTier',
           'startingPriceUsd', 'rating', 'reviewCount', 'responseTime',
           'verified', 'status', 'tagline', 'description', 'promoBanner',
+          'christmasSpecial', 'christmasOffer',
+          'bioHandle', 'bioTheme', 'instagramHandle', 'customLinks',
           'serviceAreas', 'specialties', 'image', 'logo', 'gallery', 'products',
           'createdAt', 'updatedAt'
         ]) &&
@@ -105,6 +113,12 @@ service cloud.firestore {
         data.tagline is string && data.tagline.size() >= 3 && data.tagline.size() <= 180 &&
         data.description is string && data.description.size() >= 5 && data.description.size() <= 1200 &&
         (!('promoBanner' in data) || (data.promoBanner is string && data.promoBanner.size() <= 120)) &&
+        (!('christmasSpecial' in data) || data.christmasSpecial is bool) &&
+        (!('christmasOffer' in data) || (data.christmasOffer is string && data.christmasOffer.size() <= 140)) &&
+        (!('bioHandle' in data) || (data.bioHandle is string && data.bioHandle.size() >= 2 && data.bioHandle.size() <= 50 && data.bioHandle.matches('^[a-z0-9\\-]+$'))) &&
+        (!('bioTheme' in data) || data.bioTheme in ['saffron', 'midnight', 'party', 'cream']) &&
+        (!('instagramHandle' in data) || (data.instagramHandle is string && data.instagramHandle.size() <= 80)) &&
+        (!('customLinks' in data) || isValidCustomLinksList(data.customLinks)) &&
         isValidStringList(data.serviceAreas, 10, 100) &&
         isValidStringList(data.specialties, 10, 100) &&
         data.image is string && data.image.size() >= 1 && data.image.size() <= 150000 &&
@@ -270,7 +284,7 @@ service cloud.firestore {
         incoming().ownerId == existing().ownerId &&
         incoming().createdAt == existing().createdAt &&
         incoming().updatedAt == request.time && (
-          // Tier 1: Owner editing storefront details, promoBanner, gallery, products, or plan
+          // Tier 1: Owner editing storefront details, Christmas promo, bio-link settings, gallery, products, or plan
           (
             isOwner(existing().ownerId) &&
             incoming().verified == existing().verified &&
@@ -280,15 +294,18 @@ service cloud.firestore {
               'name', 'category', 'country', 'state', 'city', 'area',
               'lat', 'lng', 'whatsappNumber', 'planTier', 'monthlyAutoPay',
               'priceTier', 'startingPriceUsd', 'responseTime', 'status',
-              'tagline', 'description', 'promoBanner', 'serviceAreas',
+              'tagline', 'description', 'promoBanner', 'christmasSpecial',
+              'christmasOffer', 'bioHandle', 'bioTheme',
+              'instagramHandle', 'customLinks', 'serviceAreas',
               'specialties', 'image', 'logo', 'gallery', 'products', 'updatedAt'
             ])
           ) ||
-          // Tier 2: Admin verification & moderation
+          // Tier 2: Admin verification, moderation & Christmas spotlight promotion
           (
             isAdmin() &&
             incoming().diff(existing()).affectedKeys().hasOnly([
-              'verified', 'status', 'planTier', 'monthlyAutoPay', 'updatedAt'
+              'verified', 'status', 'planTier', 'monthlyAutoPay',
+              'christmasSpecial', 'christmasOffer', 'updatedAt'
             ])
           )
         );

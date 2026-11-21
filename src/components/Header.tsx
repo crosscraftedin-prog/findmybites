@@ -3,6 +3,7 @@ import {
   LogIn,
   Moon,
   PartyPopper,
+  Snowflake,
   Sparkles,
   Store,
   Sun,
@@ -81,6 +82,13 @@ export function Header({
             className="rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground whitespace-nowrap shrink-0"
           >
             Categories
+          </a>
+          <a
+            href="#christmas-special"
+            className="inline-flex items-center gap-1 rounded-md bg-emerald-600/10 px-3 py-2 text-sm font-bold text-emerald-700 transition-colors hover:bg-emerald-600/20 dark:bg-emerald-500/15 dark:text-emerald-300 whitespace-nowrap shrink-0"
+          >
+            <Snowflake className="size-3.5" aria-hidden="true" />
+            Christmas
           </a>
           <a
             href="#featured"

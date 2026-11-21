@@ -10,6 +10,7 @@ import {
   Eye,
   ImagePlus,
   Instagram,
+  Link2,
   LocateFixed,
   LogIn,
   LogOut,
@@ -22,6 +23,7 @@ import {
   QrCode,
   Send,
   Share2,
+  Snowflake,
   Sparkles,
   Store,
   Trash2,
@@ -29,6 +31,7 @@ import {
   X,
 } from 'lucide-react';
 import {
+  BioTheme,
   BookingEnquiry,
   CURRENCIES,
   CloudVendorMetric,
@@ -37,9 +40,11 @@ import {
   PlanTier,
   SAAS_PLANS,
   Vendor,
+  VendorBioLink,
   VendorProduct,
   formatMoney,
   formatPlanPrice,
+  getVendorBioHandle,
   localToUsd,
   usdToLocal,
 } from '../data/vendors';
@@ -69,6 +74,7 @@ interface VendorDashboardModalProps {
   onSignOut: () => Promise<void>;
   onOpenListModal: (plan?: PlanTier) => void;
   onOpenVendorWebsite: (vendor: Vendor) => void;
+  onOpenBioLink?: (vendor: Vendor) => void;
   onTrackShare?: (vendorId: string) => void;
   onNotify: (msg: string) => void;
 }
@@ -167,6 +173,7 @@ export function VendorDashboardModal({
   onSignOut,
   onOpenListModal,
   onOpenVendorWebsite,
+  onOpenBioLink,
   onTrackShare,
   onNotify,
 }: VendorDashboardModalProps) {
@@ -187,6 +194,15 @@ export function VendorDashboardModal({
   const [editDescription, setEditDescription] = useState('');
   const [editWhatsapp, setEditWhatsapp] = useState('');
   const [editPromoBanner, setEditPromoBanner] = useState('');
+  const [editChristmasSpecial, setEditChristmasSpecial] = useState(false);
+  const [editChristmasOffer, setEditChristmasOffer] = useState('');
+  const [editBioHandle, setEditBioHandle] = useState('');
+  const [editBioTheme, setEditBioTheme] = useState<BioTheme>('saffron');
+  const [editInstagram, setEditInstagram] = useState('');
+  const [editCustomLinks, setEditCustomLinks] = useState<VendorBioLink[]>([]);
+  const [newLinkTitle, setNewLinkTitle] = useState('');
+  const [newLinkUrl, setNewLinkUrl] = useState('');
+  const [newLinkBadge, setNewLinkBadge] = useState('');
   const [editPlanTier, setEditPlanTier] = useState<PlanTier>('free');
   const [editLogo, setEditLogo] = useState('');
   const [editCover, setEditCover] = useState('');
@@ -224,6 +240,15 @@ export function VendorDashboardModal({
     setEditDescription(target.description);
     setEditWhatsapp(target.whatsappNumber);
     setEditPromoBanner(target.promoBanner || '');
+    setEditChristmasSpecial(Boolean(target.christmasSpecial));
+    setEditChristmasOffer(target.christmasOffer || '');
+    setEditBioHandle(getVendorBioHandle(target));
+    setEditBioTheme(target.bioTheme ?? (target.marketplace === 'party' ? 'party' : 'saffron'));
+    setEditInstagram(target.instagramHandle || '');
+    setEditCustomLinks(target.customLinks ? [...target.customLinks] : []);
+    setNewLinkTitle('');
+    setNewLinkUrl('');
+    setNewLinkBadge('');
     setEditPlanTier(target.planTier);
     setEditLogo(target.logo || '');
     setEditCover(target.image);
@@ -255,10 +280,52 @@ export function VendorDashboardModal({
     setEditDescription(v.description);
     setEditWhatsapp(v.whatsappNumber);
     setEditPromoBanner(v.promoBanner || '');
+    setEditChristmasSpecial(Boolean(v.christmasSpecial));
+    setEditChristmasOffer(v.christmasOffer || '');
+    setEditBioHandle(getVendorBioHandle(v));
+    setEditBioTheme(v.bioTheme ?? (v.marketplace === 'party' ? 'party' : 'saffron'));
+    setEditInstagram(v.instagramHandle || '');
+    setEditCustomLinks(v.customLinks ? [...v.customLinks] : []);
+    setNewLinkTitle('');
+    setNewLinkUrl('');
+    setNewLinkBadge('');
     setEditPlanTier(v.planTier);
     setEditLogo(v.logo || '');
     setEditCover(v.image);
     setEditGallery(v.gallery ? [...v.gallery] : []);
+  };
+
+  const handleToggleChristmasHighlight = async (v: Vendor) => {
+    setBusyId(v.id);
+    try {
+      const next = !v.christmasSpecial;
+      await updateVendorInCloud(v.id, { christmasSpecial: next });
+      onNotify(
+        next
+          ? `${v.name} is now highlighted in the Christmas & New Year Spotlight!`
+          : `Removed ${v.name} from the Christmas Spotlight.`
+      );
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleAddCustomBioLink = () => {
+    const title = newLinkTitle.trim();
+    const url = newLinkUrl.trim();
+    if (!title || !url || editCustomLinks.length >= 8) return;
+    setEditCustomLinks((prev) => [
+      ...prev,
+      {
+        id: `link-${Date.now()}`,
+        title: title.slice(0, 60),
+        url: url.slice(0, 300),
+        ...(newLinkBadge.trim() ? { badge: newLinkBadge.trim().slice(0, 24) } : {}),
+      },
+    ]);
+    setNewLinkTitle('');
+    setNewLinkUrl('');
+    setNewLinkBadge('');
   };
 
   const handleSaveVendorEdit = async (e: FormEvent, vendor: Vendor) => {
@@ -271,6 +338,12 @@ export function VendorDashboardModal({
         description: editDescription,
         whatsappNumber: editWhatsapp,
         promoBanner: editPromoBanner,
+        christmasSpecial: editChristmasSpecial,
+        christmasOffer: editChristmasOffer,
+        bioHandle: editBioHandle,
+        bioTheme: editBioTheme,
+        instagramHandle: editInstagram,
+        customLinks: editCustomLinks,
         planTier: editPlanTier,
         monthlyAutoPay: editPlanTier !== 'free',
         logo: editLogo,
@@ -278,7 +351,7 @@ export function VendorDashboardModal({
         gallery: editGallery,
       });
       setEditingVendorId(null);
-      onNotify(`Saved storefront updates for ${editName} to Cloud Firestore!`);
+      onNotify(`Saved storefront & Bio-Link updates for ${editName} to Cloud Firestore!`);
     } finally {
       setBusyId(null);
     }
@@ -666,8 +739,10 @@ export function VendorDashboardModal({
                                 )}
                               </div>
                               <p className="mt-1 text-xs text-muted-foreground">
-                                {v.category} · {v.city}, {v.state}, {v.country} ·{' '}
-                                <span className="font-mono">findmybites.com/v/{v.slug}</span>
+                                {v.category} · {v.city}, {v.state}, {v.country} · Bio:{' '}
+                                <span className="font-mono font-semibold text-brand">
+                                  findmybites.com/fmb/{getVendorBioHandle(v)}
+                                </span>
                               </p>
                               {v.promoBanner && (
                                 <p className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-brand">
@@ -678,6 +753,19 @@ export function VendorDashboardModal({
                             </div>
 
                             <div className="flex flex-wrap items-center gap-1.5">
+                              {onOpenBioLink && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    onClose();
+                                    onOpenBioLink(v);
+                                  }}
+                                  className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1.5 text-xs font-bold text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300"
+                                >
+                                  <Link2 className="size-3.5" aria-hidden="true" />
+                                  Bio Link
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 onClick={() => {
@@ -687,7 +775,7 @@ export function VendorDashboardModal({
                                 className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs font-semibold text-foreground hover:border-brand hover:text-brand"
                               >
                                 <ExternalLink className="size-3.5" aria-hidden="true" />
-                                Open
+                                Storefront
                               </button>
                               <button
                                 type="button"
@@ -726,6 +814,19 @@ export function VendorDashboardModal({
                               >
                                 <LocateFixed className="size-3.5 text-brand" aria-hidden="true" />
                                 Set GPS
+                              </button>
+                              <button
+                                type="button"
+                                disabled={isBusy}
+                                onClick={() => void handleToggleChristmasHighlight(v)}
+                                className={`inline-flex cursor-pointer items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-bold transition-colors disabled:opacity-50 ${
+                                  v.christmasSpecial
+                                    ? 'border-emerald-500 bg-emerald-700 text-white hover:bg-emerald-800'
+                                    : 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300'
+                                }`}
+                              >
+                                <Snowflake className="size-3.5" aria-hidden="true" />
+                                {v.christmasSpecial ? 'In Christmas' : 'Highlight Xmas'}
                               </button>
                               <button
                                 type="button"
@@ -851,6 +952,30 @@ export function VendorDashboardModal({
                                 />
                               </div>
 
+                              {/* Christmas & New Year Spotlight Controls */}
+                              <div className="rounded-xl border border-emerald-500/35 bg-emerald-950/85 p-3 text-white">
+                                <label className="flex cursor-pointer items-center gap-2 text-xs font-bold text-amber-200">
+                                  <input
+                                    type="checkbox"
+                                    checked={editChristmasSpecial}
+                                    onChange={(e) => setEditChristmasSpecial(e.target.checked)}
+                                    className="size-4 accent-amber-400"
+                                  />
+                                  <Snowflake className="size-3.5" aria-hidden="true" />
+                                  <span>Highlight in Christmas &amp; New Year 2026 Spotlight</span>
+                                </label>
+                                {editChristmasSpecial && (
+                                  <input
+                                    type="text"
+                                    maxLength={140}
+                                    value={editChristmasOffer}
+                                    onChange={(e) => setEditChristmasOffer(e.target.value)}
+                                    placeholder="Christmas menu highlight (e.g. Rum Plum Cakes, Yule Logs & NYE Hampers)"
+                                    className="mt-2 w-full rounded-lg border border-white/25 bg-black/30 px-2.5 py-1.5 text-xs text-white placeholder:text-white/50"
+                                  />
+                                )}
+                              </div>
+
                               {/* Branding + Plan */}
                               <div className="flex flex-wrap items-center gap-2">
                                 <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-semibold text-foreground hover:border-brand hover:text-brand">
@@ -934,6 +1059,148 @@ export function VendorDashboardModal({
                                     ))}
                                   </div>
                                 )}
+                              </div>
+
+                              {/* FMB Bio-Link (Linktree) Settings */}
+                              <div className="space-y-3 border-t border-border pt-3">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <p className="inline-flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wide text-brand">
+                                    <Link2 className="size-3.5" aria-hidden="true" />
+                                    FindMyBites Link-in-Bio (Your Short Bio Page)
+                                  </p>
+                                  <span className="font-mono text-[11px] text-muted-foreground">
+                                    findmybites.com/fmb/{editBioHandle || v.slug}
+                                  </span>
+                                </div>
+
+                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                                  <div>
+                                    <label className="block text-[11px] font-semibold text-foreground">
+                                      Short Bio Handle
+                                    </label>
+                                    <input
+                                      type="text"
+                                      maxLength={50}
+                                      value={editBioHandle}
+                                      onChange={(e) =>
+                                        setEditBioHandle(
+                                          e.target.value
+                                            .toLowerCase()
+                                            .replace(/[^a-z0-9-]+/g, '-')
+                                        )
+                                      }
+                                      placeholder="e.g. govada-bakery"
+                                      className="mt-1 w-full rounded-lg border border-border bg-background px-2.5 py-1.5 font-mono text-xs text-foreground"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[11px] font-semibold text-foreground">
+                                      Bio Page Theme
+                                    </label>
+                                    <select
+                                      value={editBioTheme}
+                                      onChange={(e) => setEditBioTheme(e.target.value as BioTheme)}
+                                      className="mt-1 w-full rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-semibold text-foreground"
+                                    >
+                                      <option value="saffron">Sunset Saffron (Food)</option>
+                                      <option value="party">PimpMyParty Neon (Events)</option>
+                                      <option value="cream">Artisan Cream (Bakery)</option>
+                                      <option value="midnight">Midnight Luxe (Gold)</option>
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="block text-[11px] font-semibold text-foreground">
+                                      Instagram Handle (Optional)
+                                    </label>
+                                    <input
+                                      type="text"
+                                      maxLength={80}
+                                      value={editInstagram}
+                                      onChange={(e) => setEditInstagram(e.target.value)}
+                                      placeholder="@yourbakery"
+                                      className="mt-1 w-full rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs text-foreground"
+                                    />
+                                  </div>
+                                </div>
+
+                                {/* Custom External Bio Links (Swiggy, Zomato, Talabat, Reviews, Website, Reels) */}
+                                <div className="rounded-xl border border-border bg-card p-3">
+                                  <p className="text-[11px] font-bold text-foreground">
+                                    Extra Bio Links ({editCustomLinks.length}/8) — Swiggy, Zomato,
+                                    Talabat, Google Reviews, Menu PDF, YouTube
+                                  </p>
+
+                                  {editCustomLinks.length > 0 && (
+                                    <div className="mt-2 space-y-1.5">
+                                      {editCustomLinks.map((lnk) => (
+                                        <div
+                                          key={lnk.id}
+                                          className="flex items-center justify-between gap-2 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs"
+                                        >
+                                          <div className="min-w-0">
+                                            <span className="font-semibold text-foreground">
+                                              {lnk.title}
+                                            </span>
+                                            {lnk.badge && (
+                                              <span className="ml-1.5 rounded bg-brand-soft px-1.5 py-0.5 text-[10px] font-bold text-brand">
+                                                {lnk.badge}
+                                              </span>
+                                            )}
+                                            <p className="truncate font-mono text-[10px] text-muted-foreground">
+                                              {lnk.url}
+                                            </p>
+                                          </div>
+                                          <button
+                                            type="button"
+                                            aria-label={`Remove ${lnk.title}`}
+                                            onClick={() =>
+                                              setEditCustomLinks((prev) =>
+                                                prev.filter((item) => item.id !== lnk.id)
+                                              )
+                                            }
+                                            className="cursor-pointer text-muted-foreground hover:text-red-500"
+                                          >
+                                            <Trash2 className="size-3.5" />
+                                          </button>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+
+                                  {editCustomLinks.length < 8 && (
+                                    <div className="mt-2.5 grid grid-cols-1 gap-2 sm:grid-cols-12">
+                                      <input
+                                        type="text"
+                                        value={newLinkTitle}
+                                        onChange={(e) => setNewLinkTitle(e.target.value)}
+                                        placeholder="Button title (e.g. Order on Zomato)"
+                                        className="rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs text-foreground sm:col-span-4"
+                                      />
+                                      <input
+                                        type="text"
+                                        value={newLinkUrl}
+                                        onChange={(e) => setNewLinkUrl(e.target.value)}
+                                        placeholder="https://..."
+                                        className="rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs text-foreground sm:col-span-4"
+                                      />
+                                      <input
+                                        type="text"
+                                        value={newLinkBadge}
+                                        onChange={(e) => setNewLinkBadge(e.target.value)}
+                                        placeholder="Subtitle (optional)"
+                                        className="rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs text-foreground sm:col-span-2"
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={handleAddCustomBioLink}
+                                        className="inline-flex cursor-pointer items-center justify-center gap-1 rounded-lg bg-foreground px-2.5 py-1.5 text-xs font-bold text-background hover:opacity-90 sm:col-span-2"
+                                      >
+                                        <Plus className="size-3.5" />
+                                        Add
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
                               </div>
 
                               <div className="flex justify-end">

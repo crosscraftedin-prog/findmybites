@@ -13,6 +13,7 @@ import {
   where,
 } from 'firebase/firestore';
 import {
+  BioTheme,
   BookingEnquiry,
   CloudVendorMetric,
   EventQuote,
@@ -21,8 +22,10 @@ import {
   PlanTier,
   PriceTier,
   Vendor,
+  VendorBioLink,
   VendorProduct,
   VendorReview,
+  sanitizeSafeHttpUrl,
 } from '../data/vendors';
 import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 
@@ -79,6 +82,31 @@ function sanitizeProducts(products: VendorProduct[]): VendorProduct[] {
       ];
 }
 
+function sanitizeBioHandle(raw: string): string | undefined {
+  const cleaned = raw
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 50);
+  return cleaned.length >= 2 ? cleaned : undefined;
+}
+
+function sanitizeCustomLinks(links: VendorBioLink[]): VendorBioLink[] {
+  const result: VendorBioLink[] = [];
+  for (const [idx, item] of links.slice(0, 8).entries()) {
+    const safeUrl = sanitizeSafeHttpUrl(item.url || '');
+    const title = (item.title || '').trim().slice(0, 60);
+    if (!safeUrl || title.length < 1) continue;
+    result.push({
+      id: sanitizeId(item.id || `link-${idx + 1}`),
+      title,
+      url: safeUrl.slice(0, 300),
+      ...(item.badge && item.badge.trim() ? { badge: item.badge.trim().slice(0, 24) } : {}),
+    });
+  }
+  return result;
+}
+
 function docToVendor(id: string, data: Record<string, unknown>): Vendor {
   const products = Array.isArray(data.products) ? (data.products as VendorProduct[]) : [];
   return {
@@ -111,6 +139,31 @@ function docToVendor(id: string, data: Record<string, unknown>): Vendor {
       typeof data.promoBanner === 'string' && data.promoBanner.trim().length > 0
         ? data.promoBanner
         : undefined,
+    christmasSpecial: Boolean(data.christmasSpecial),
+    christmasOffer:
+      typeof data.christmasOffer === 'string' && data.christmasOffer.trim().length > 0
+        ? data.christmasOffer
+        : undefined,
+    bioHandle:
+      typeof data.bioHandle === 'string' && data.bioHandle.trim().length >= 2
+        ? data.bioHandle
+        : undefined,
+    bioTheme:
+      data.bioTheme === 'saffron' ||
+      data.bioTheme === 'midnight' ||
+      data.bioTheme === 'party' ||
+      data.bioTheme === 'cream'
+        ? data.bioTheme
+        : undefined,
+    instagramHandle:
+      typeof data.instagramHandle === 'string' && data.instagramHandle.trim().length > 0
+        ? data.instagramHandle
+        : undefined,
+    customLinks: Array.isArray(data.customLinks)
+      ? (data.customLinks as VendorBioLink[])
+          .filter((l) => l && typeof l.title === 'string' && typeof l.url === 'string')
+          .slice(0, 8)
+      : undefined,
     serviceAreas: Array.isArray(data.serviceAreas) ? (data.serviceAreas as string[]) : [],
     specialties: Array.isArray(data.specialties) ? (data.specialties as string[]) : [],
     image: typeof data.image === 'string' ? data.image : '/src/assets/images/cat-bakers.png',
@@ -240,6 +293,12 @@ export async function createVendorInCloud(
     ...(vendor.promoBanner && vendor.promoBanner.trim().length > 0
       ? { promoBanner: vendor.promoBanner.trim().slice(0, 120) }
       : {}),
+    ...(vendor.christmasSpecial !== undefined
+      ? { christmasSpecial: Boolean(vendor.christmasSpecial) }
+      : {}),
+    ...(vendor.christmasOffer && vendor.christmasOffer.trim().length > 0
+      ? { christmasOffer: vendor.christmasOffer.trim().slice(0, 140) }
+      : {}),
     serviceAreas: serviceAreas.length > 0 ? serviceAreas : [vendor.city],
     specialties: specialties.length > 0 ? specialties : [vendor.category],
     image: clampStr(vendor.image, 1, 150000, '/src/assets/images/cat-bakers.png'),
@@ -287,6 +346,12 @@ export async function updateVendorInCloud(
     tagline: string;
     description: string;
     promoBanner: string;
+    christmasSpecial: boolean;
+    christmasOffer: string;
+    bioHandle: string;
+    bioTheme: BioTheme;
+    instagramHandle: string;
+    customLinks: VendorBioLink[];
     whatsappNumber: string;
     planTier: PlanTier;
     monthlyAutoPay: boolean;
@@ -309,6 +374,19 @@ export async function updateVendorInCloud(
   if (updates.description !== undefined)
     clean.description = clampStr(updates.description, 5, 1200, 'Local vendor');
   if (updates.promoBanner !== undefined) clean.promoBanner = updates.promoBanner.trim().slice(0, 120);
+  if (updates.christmasSpecial !== undefined)
+    clean.christmasSpecial = Boolean(updates.christmasSpecial);
+  if (updates.christmasOffer !== undefined)
+    clean.christmasOffer = updates.christmasOffer.trim().slice(0, 140);
+  if (updates.bioHandle !== undefined) {
+    const cleanHandle = sanitizeBioHandle(updates.bioHandle);
+    if (cleanHandle) clean.bioHandle = cleanHandle;
+  }
+  if (updates.bioTheme !== undefined) clean.bioTheme = updates.bioTheme;
+  if (updates.instagramHandle !== undefined)
+    clean.instagramHandle = updates.instagramHandle.trim().slice(0, 80);
+  if (updates.customLinks !== undefined)
+    clean.customLinks = sanitizeCustomLinks(updates.customLinks);
   if (updates.whatsappNumber !== undefined)
     clean.whatsappNumber = sanitizeDigits(updates.whatsappNumber);
   if (updates.planTier !== undefined) clean.planTier = updates.planTier;

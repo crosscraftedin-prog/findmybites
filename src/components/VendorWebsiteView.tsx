@@ -12,6 +12,7 @@ import {
   Heart,
   Image as ImageIcon,
   Instagram,
+  Link2,
   LogIn,
   MapPin,
   MessageCircle,
@@ -59,6 +60,7 @@ interface VendorWebsiteViewProps {
   canEdit?: boolean;
   onSignIn?: () => Promise<void>;
   onEditStorefront?: (vendor: Vendor) => void;
+  onOpenBioLink?: (vendor: Vendor) => void;
   onClose: () => void;
   onToggleSave: (vendorId: string) => void;
   onCreateBooking: (booking: BookingEnquiry) => void;
@@ -76,6 +78,7 @@ export function VendorWebsiteView({
   canEdit = false,
   onSignIn,
   onEditStorefront,
+  onOpenBioLink,
   onClose,
   onToggleSave,
   onCreateBooking,
@@ -335,6 +338,17 @@ export function VendorWebsiteView({
               >
                 <Edit3 className="size-4" aria-hidden="true" />
                 <span>Edit Storefront</span>
+              </button>
+            )}
+            {onOpenBioLink && (
+              <button
+                type="button"
+                onClick={() => onOpenBioLink(vendor)}
+                className="inline-flex h-10 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-card px-3 text-xs font-semibold text-foreground hover:border-brand hover:text-brand whitespace-nowrap"
+                title="Open short FindMyBites Link-in-Bio page"
+              >
+                <Link2 className="size-4 text-brand" aria-hidden="true" />
+                <span className="hidden md:inline">Bio Link</span>
               </button>
             )}
             <button

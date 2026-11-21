@@ -166,6 +166,15 @@ export interface VendorReview {
   isCloud?: boolean;
 }
 
+export type BioTheme = 'saffron' | 'midnight' | 'party' | 'cream';
+
+export interface VendorBioLink {
+  id: string;
+  title: string;
+  url: string;
+  badge?: string;
+}
+
 export interface Vendor {
   id: string;
   ownerId?: string;
@@ -192,6 +201,12 @@ export interface Vendor {
   tagline: string;
   description: string;
   promoBanner?: string;
+  christmasSpecial?: boolean;
+  christmasOffer?: string;
+  bioHandle?: string;
+  bioTheme?: BioTheme;
+  instagramHandle?: string;
+  customLinks?: VendorBioLink[];
   serviceAreas: string[];
   specialties: string[];
   image: string;
@@ -199,6 +214,44 @@ export interface Vendor {
   gallery?: string[];
   products: VendorProduct[];
   reviews: VendorReview[];
+}
+
+export function isChristmasVendor(vendor: Vendor): boolean {
+  if (vendor.christmasSpecial) return true;
+  const hay = `${vendor.category} ${vendor.tagline} ${vendor.promoBanner ?? ''} ${vendor.christmasOffer ?? ''} ${vendor.specialties.join(' ')} ${vendor.products.map((p) => p.name).join(' ')}`.toLowerCase();
+  return (
+    hay.includes('christmas') ||
+    hay.includes('xmas') ||
+    hay.includes('plum cake') ||
+    hay.includes('yule') ||
+    hay.includes('new year') ||
+    hay.includes('nye') ||
+    hay.includes('gingerbread') ||
+    vendor.category === 'Bakers & Cakes' ||
+    vendor.category === 'Home Bakers & Cloud Kitchens'
+  );
+}
+
+export function getVendorBioHandle(vendor: Pick<Vendor, 'slug' | 'bioHandle'>): string {
+  const raw = (vendor.bioHandle || vendor.slug || 'vendor')
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 50);
+  return raw.length >= 2 ? raw : vendor.slug;
+}
+
+export function sanitizeSafeHttpUrl(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const candidate = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  try {
+    const parsed = new URL(candidate);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+    return parsed.toString();
+  } catch {
+    return null;
+  }
 }
 
 export interface BookingEnquiry {
@@ -611,6 +664,8 @@ export const INITIAL_VENDORS: Vendor[] = [
     responseTime: 'Under 15 mins on WhatsApp',
     verified: true,
     tagline: 'Custom tiered wedding & birthday cakes, 100% eggless sponges, and live dessert tables.',
+    christmasSpecial: true,
+    christmasOffer: 'Christmas Rich Rum & Eggless Plum Cakes, Belgian Yule Logs & NYE Bento Boxes — Pre-book now!',
     description:
       'Bandra’s award-winning boutique bakery crafting sculptural wedding cakes, kids theme birthday cakes, and Belgian chocolate dessert bars across Mumbai & Navi Mumbai. Every cake is baked to order with 100% eggless & vegan options.',
     serviceAreas: ['Bandra', 'Juhu', 'South Mumbai', 'Powai', 'Thane', 'Navi Mumbai'],
@@ -745,6 +800,8 @@ export const INITIAL_VENDORS: Vendor[] = [
     responseTime: 'Under 15 mins on WhatsApp',
     verified: true,
     tagline: 'Bespoke zero-proof botanical mocktail bars, smoked cocktail counters, and luxury glassware.',
+    christmasSpecial: true,
+    christmasOffer: 'NYE Countdown Glow Mocktail Bar & Spiced Winter Mulled Cider Carts for house parties!',
     description:
       'Dubai’s premier mobile bar studio for villa parties, yacht celebrations, corporate launches, and weddings across Dubai & Abu Dhabi. Custom backlit brass bar counters, dry-ice signatures, and certified mixologists.',
     serviceAreas: ['Downtown Dubai', 'Palm Jumeirah', 'Dubai Marina', 'JBR', 'Abu Dhabi', 'Sharjah'],
@@ -861,6 +918,8 @@ export const INITIAL_VENDORS: Vendor[] = [
     responseTime: 'Under 20 mins on WhatsApp',
     verified: true,
     tagline: 'Freshly packed party snack boxes, kids birthday return boxes, and luxury wedding & Diwali hampers.',
+    christmasSpecial: true,
+    christmasOffer: 'Secret Santa & Corporate Christmas Hampers — Plum Cake, Gingerbread & Hot Cocoa Bombs!',
     description:
       'Trusted by 400+ Bengaluru families and tech teams for hygienic, delicious individual snack boxes and ribbon-tied festive gifting hampers delivered hot and on time across the city.',
     serviceAreas: ['Indiranagar', 'Koramangala', 'Whitefield', 'HSR Layout', 'JP Nagar', 'Yelahanka'],
@@ -1033,6 +1092,8 @@ export const INITIAL_VENDORS: Vendor[] = [
     responseTime: 'Under 20 mins on WhatsApp',
     verified: true,
     tagline: 'Holud wedding gifting hampers, custom celebration cakes, and gourmet snack boxes in Dhaka.',
+    christmasSpecial: true,
+    christmasOffer: 'Christmas Fruit Cakes, Red Velvet Yule Logs & 2026 New Year Celebration Cupcake Boxes!',
     description:
       'Crafting bespoke Gaye Holud sweet boxes, Eid gifting hampers, and velvet celebration cakes from our Gulshan atelier with express temperature-controlled delivery across Dhaka.',
     serviceAreas: ['Gulshan', 'Banani', 'Dhanmondi', 'Uttara', 'Bashundhara R/A'],
@@ -1204,6 +1265,8 @@ export const INITIAL_VENDORS: Vendor[] = [
     responseTime: 'Under 1 hr on WhatsApp',
     verified: true,
     tagline: 'Fresh home-baked tres leches, Korean bento cakes, and weekend dessert boxes in Clifton.',
+    christmasSpecial: true,
+    christmasOffer: 'Holiday Brownie Trees, Gingerbread Cookie Tins & Midnight NYE Bento Cakes (Same-week delivery)!',
     description:
       'Small-batch home bakery in Karachi creating delicate lotus tres leches, vintage buttercream birthday cakes, and brownie gift boxes.',
     serviceAreas: ['Clifton', 'DHA Karachi', 'PECHS'],
@@ -1308,6 +1371,8 @@ export const INITIAL_VENDORS: Vendor[] = [
     responseTime: 'Under 15 mins on WhatsApp',
     verified: true,
     tagline: 'Organic balloon garlands, kids theme backdrops, custom neon signs & baby shower setups.',
+    christmasSpecial: true,
+    christmasOffer: 'Winter Wonderland Balloon Arches, Christmas Tree Styling & Gold/Black 2026 NYE Photo Backdrops!',
     description:
       'Bengaluru’s favorite birthday & baby shower decor studio crafting pastel arches, safari & princess kids themes, cake plinths, and soft-play add-ons with 3-hour setup at homes or clubhouses.',
     serviceAreas: ['Whitefield', 'Indiranagar', 'Koramangala', 'HSR Layout', 'Sarjapur', 'Hebbal'],

@@ -25,6 +25,7 @@ import {
   RefreshCw,
   Search,
   ShieldCheck,
+  Snowflake,
   Sparkles,
   Star,
   TrendingUp,
@@ -34,12 +35,15 @@ import {
   X,
 } from 'lucide-react';
 import { onAuthStateChanged, type User as FirebaseUser } from 'firebase/auth';
+import { ChristmasSpotlightSection } from './components/ChristmasSpotlightSection';
 import { Ecosystem, Header } from './components/Header';
 import { JoshPlannerDrawer } from './components/JoshPlannerDrawer';
 import { ListBusinessModal } from './components/ListBusinessModal';
 import { LocationPickerModal, SelectedLocation } from './components/LocationPickerModal';
 import { PostEventRequestModal } from './components/PostEventRequestModal';
 import { SavedBookingsDrawer } from './components/SavedBookingsDrawer';
+import { SnowfallOverlay } from './components/SnowfallOverlay';
+import { VendorBioLinkView } from './components/VendorBioLinkView';
 import { VendorCard } from './components/VendorCard';
 import { VendorDashboardModal } from './components/VendorDashboardModal';
 import { VendorMetrics, VendorWebsiteView } from './components/VendorWebsiteView';
@@ -66,6 +70,7 @@ import {
   STATES_BY_COUNTRY,
   Vendor,
   formatPlanPrice,
+  getVendorBioHandle,
   getVendorQuickTags,
   haversineKm,
   planRankWeight,
@@ -440,11 +445,14 @@ export default function App() {
   const [heroImgFailed, setHeroImgFailed] = useState(false);
 
   const [activeVendor, setActiveVendor] = useState<Vendor | null>(null);
+  const [bioVendor, setBioVendor] = useState<Vendor | null>(null);
   const [drawerTab, setDrawerTab] = useState<'saved' | 'bookings' | null>(null);
   const [aiPlannerOpen, setAiPlannerOpen] = useState(false);
   const [eventRequestModalOpen, setEventRequestModalOpen] = useState(false);
   const [listModalOpen, setListModalOpen] = useState(false);
   const [listModalPlan, setListModalPlan] = useState<PlanTier>('free');
+  const [listModalChristmas, setListModalChristmas] = useState(false);
+  const [snowEnabled, setSnowEnabled] = useState(true);
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [editVendorId, setEditVendorId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -609,6 +617,11 @@ export default function App() {
     return allVendors.find((v) => v.id === activeVendor.id) ?? activeVendor;
   }, [activeVendor, allVendors]);
 
+  const resolvedBioVendor = useMemo(() => {
+    if (!bioVendor) return null;
+    return allVendors.find((v) => v.id === bioVendor.id) ?? bioVendor;
+  }, [bioVendor, allVendors]);
+
   const isAdminUser = Boolean(
     authUser?.email && authUser.email.toLowerCase() === ADMIN_EMAIL.toLowerCase()
   );
@@ -636,46 +649,97 @@ export default function App() {
 
   const handleEditStorefront = (vendor: Vendor) => {
     setActiveVendor(null);
+    setBioVendor(null);
     setEditVendorId(vendor.id);
     setDashboardOpen(true);
+  };
+
+  const handleOpenBioLink = (vendor: Vendor) => {
+    setActiveVendor(null);
+    setBioVendor(vendor);
+  };
+
+  const handleOpenStorefrontFromBio = (vendor: Vendor) => {
+    setBioVendor(null);
+    setActiveVendor(vendor);
   };
 
   const effectiveBookings = authUser ? cloudBookings : bookings;
   const ecoKey: 'food' | 'party' = ecosystem === 'FINDMYBITES' ? 'food' : 'party';
 
   useSeoMeta({
-    activeVendor: resolvedActiveVendor,
+    activeVendor: resolvedActiveVendor ?? resolvedBioVendor,
     selectedCategory,
     selectedCountry,
     selectedState,
     ecosystem,
   });
 
-  // Hydrate /v/<slug> deep links for BOTH built-in & Cloud Firestore vendors + handle browser Back button
+  // Track cloud view when Bio Link opens
   useEffect(() => {
-    const syncSlugFromUrl = (fromPopState: boolean) => {
+    if (!bioVendor) return;
+    void incrementVendorMetricInCloud(bioVendor.id, 'views');
+  }, [bioVendor]);
+
+  // Hydrate /v/<slug>, /fmb/<handle>, and /@<handle> deep links for BOTH built-in & Cloud Firestore vendors + Back button
+  useEffect(() => {
+    const findByBioHandleOrSlug = (raw: string) => {
+      const target = raw.toLowerCase();
+      return allVendors.find(
+        (v) => getVendorBioHandle(v).toLowerCase() === target || v.slug.toLowerCase() === target
+      );
+    };
+
+    const syncRouteFromUrl = (fromPopState: boolean) => {
       const pathname = window.location.pathname;
-      if (pathname.startsWith('/v/')) {
+      if (pathname.startsWith('/fmb/')) {
+        const handle = decodeURIComponent(pathname.slice(5)).replace(/\/$/, '').toLowerCase();
+        const matched = findByBioHandleOrSlug(handle);
+        if (matched) {
+          setActiveVendor(null);
+          setBioVendor((prev) => (prev?.id === matched.id ? prev : matched));
+        }
+      } else if (pathname.startsWith('/@')) {
+        const handle = decodeURIComponent(pathname.slice(2)).replace(/\/$/, '').toLowerCase();
+        const matched = findByBioHandleOrSlug(handle);
+        if (matched) {
+          setActiveVendor(null);
+          setBioVendor((prev) => (prev?.id === matched.id ? prev : matched));
+        }
+      } else if (pathname.startsWith('/v/')) {
         const slug = decodeURIComponent(pathname.slice(3)).replace(/\/$/, '').toLowerCase();
-        const matchedVendor = allVendors.find((v) => v.slug.toLowerCase() === slug);
-        if (matchedVendor) {
-          setActiveVendor((prev) => (prev?.id === matchedVendor.id ? prev : matchedVendor));
+        const matched = allVendors.find((v) => v.slug.toLowerCase() === slug);
+        if (matched) {
+          setBioVendor(null);
+          setActiveVendor((prev) => (prev?.id === matched.id ? prev : matched));
         }
       } else if (fromPopState) {
         setActiveVendor(null);
+        setBioVendor(null);
       }
     };
 
-    syncSlugFromUrl(false);
-    const onPopState = () => syncSlugFromUrl(true);
+    syncRouteFromUrl(false);
+    const onPopState = () => syncRouteFromUrl(true);
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
   }, [allVendors]);
 
-  // Keep browser address bar synced with /v/<slug> when browsing storefronts on www.findmybites.com
+  // Keep browser address bar synced with /fmb/<handle> or /v/<slug> on www.findmybites.com
   useEffect(() => {
     const pathname = window.location.pathname;
-    if (resolvedActiveVendor) {
+    if (resolvedBioVendor) {
+      const bioHandle = getVendorBioHandle(resolvedBioVendor);
+      const targetFmb = `/fmb/${bioHandle}`;
+      const targetAt = `/@${bioHandle}`;
+      if (pathname !== targetFmb && pathname !== targetAt) {
+        try {
+          window.history.pushState({ bioHandle }, '', targetFmb);
+        } catch {
+          // ignore sandbox history restrictions
+        }
+      }
+    } else if (resolvedActiveVendor) {
       const targetPath = `/v/${resolvedActiveVendor.slug}`;
       if (pathname !== targetPath) {
         try {
@@ -684,10 +748,16 @@ export default function App() {
           // ignore sandbox history restrictions
         }
       }
-    } else if (pathname.startsWith('/v/')) {
-      // Only reset URL to '/' if the user explicitly closed a matched vendor (not while waiting for cloudVendors to load)
-      const slug = decodeURIComponent(pathname.slice(3)).replace(/\/$/, '').toLowerCase();
-      const existsInCatalog = allVendors.some((v) => v.slug.toLowerCase() === slug);
+    } else if (pathname.startsWith('/v/') || pathname.startsWith('/fmb/') || pathname.startsWith('/@')) {
+      const raw = pathname.startsWith('/fmb/')
+        ? pathname.slice(5)
+        : pathname.startsWith('/@')
+          ? pathname.slice(2)
+          : pathname.slice(3);
+      const key = decodeURIComponent(raw).replace(/\/$/, '').toLowerCase();
+      const existsInCatalog = allVendors.some(
+        (v) => v.slug.toLowerCase() === key || getVendorBioHandle(v).toLowerCase() === key
+      );
       if (existsInCatalog) {
         try {
           window.history.pushState({}, '', '/');
@@ -696,7 +766,7 @@ export default function App() {
         }
       }
     }
-  }, [resolvedActiveVendor, allVendors]);
+  }, [resolvedActiveVendor, resolvedBioVendor, allVendors]);
 
   // Hydrate query deep links from Google Search / sitemap.xml (?q=, ?country=, ?category=)
   useEffect(() => {
@@ -1052,8 +1122,9 @@ export default function App() {
     setBookings((prev) => prev.filter((b) => b.id !== bookingId));
   };
 
-  const handleOpenListModal = (plan: PlanTier = 'free') => {
+  const handleOpenListModal = (plan: PlanTier = 'free', christmasDefault = false) => {
     setListModalPlan(plan);
+    setListModalChristmas(christmasDefault);
     setListModalOpen(true);
   };
 
@@ -1195,6 +1266,34 @@ export default function App() {
       )}
 
       <main id="main-content" className="flex-1">
+        {/* Festive Christmas & New Year 2026 Promotion Strip */}
+        <div className="border-b border-emerald-800/40 bg-gradient-to-r from-[#0B2B22] via-[#154234] to-[#6A1123] text-white">
+          <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 px-4 py-2 text-xs sm:px-6 lg:px-8">
+            <div className="flex items-center gap-2 font-semibold">
+              <Snowflake className="size-3.5 shrink-0 text-amber-300" aria-hidden="true" />
+              <span>
+                <strong>Christmas &amp; New Year 2026 Special:</strong> Pre-order Plum Cakes, Yule
+                Logs, Gift Hampers &amp; NYE Party Decor
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <a
+                href="#christmas-special"
+                className="rounded-full bg-amber-400 px-3 py-1 text-[11px] font-extrabold text-neutral-950 transition-colors hover:bg-amber-300"
+              >
+                Explore Christmas Bakers →
+              </a>
+              <button
+                type="button"
+                onClick={() => handleOpenListModal('free', true)}
+                className="cursor-pointer rounded-full border border-white/30 bg-white/10 px-3 py-1 text-[11px] font-bold text-white transition-colors hover:bg-white/20"
+              >
+                List Christmas Cakes Free
+              </button>
+            </div>
+          </div>
+        </div>
+
         {/* 1. EXACT PREMIUM HERO FROM WWW.FINDMYBITES.COM */}
         <section className="relative overflow-hidden border-b border-border">
           <div className="absolute inset-0">
@@ -1396,6 +1495,17 @@ export default function App() {
             </div>
           </div>
         </section>
+
+        {/* 1B. CHRISTMAS & NEW YEAR 2026 BAKERS & FESTIVE SPOTLIGHT */}
+        <ChristmasSpotlightSection
+          vendors={allVendors}
+          currency={currency}
+          canEditVendor={canEditVendor}
+          onSelectVendor={setActiveVendor}
+          onEditVendor={handleEditStorefront}
+          onOpenChristmasListModal={() => handleOpenListModal('free', true)}
+          onTrackWhatsAppClick={trackWhatsAppClick}
+        />
 
         {/* 2. TRUST STRIP */}
         <section className="border-b border-border bg-background" aria-label="Platform highlights">
@@ -2645,10 +2755,27 @@ export default function App() {
         canEdit={resolvedActiveVendor ? canEditVendor(resolvedActiveVendor) : false}
         onSignIn={handleSignIn}
         onEditStorefront={handleEditStorefront}
+        onOpenBioLink={handleOpenBioLink}
         onClose={() => setActiveVendor(null)}
         onToggleSave={toggleSave}
         onCreateBooking={handleCreateBooking}
         onOpenBookings={() => setDrawerTab('bookings')}
+        onTrackWhatsAppClick={trackWhatsAppClick}
+        onTrackShare={trackShare}
+      />
+
+      {/* FindMyBites Bio-Link (Linktree) Page: /fmb/<handle> & /@<handle> */}
+      <VendorBioLinkView
+        vendor={resolvedBioVendor}
+        currency={currency}
+        canEdit={resolvedBioVendor ? canEditVendor(resolvedBioVendor) : false}
+        onClose={() => setBioVendor(null)}
+        onOpenStorefront={handleOpenStorefrontFromBio}
+        onEditStorefront={handleEditStorefront}
+        onClaimOwnBioLink={() => {
+          setBioVendor(null);
+          handleOpenListModal('free');
+        }}
         onTrackWhatsAppClick={trackWhatsAppClick}
         onTrackShare={trackShare}
       />
@@ -2669,6 +2796,7 @@ export default function App() {
       <ListBusinessModal
         isOpen={listModalOpen}
         initialPlanTier={listModalPlan}
+        initialChristmasSpecial={listModalChristmas}
         currency={currency}
         user={authUser}
         onSignIn={handleSignIn}
@@ -2690,6 +2818,7 @@ export default function App() {
         onSignOut={handleSignOut}
         onOpenListModal={handleOpenListModal}
         onOpenVendorWebsite={setActiveVendor}
+        onOpenBioLink={handleOpenBioLink}
         onTrackShare={trackShare}
         onNotify={setNotice}
       />
@@ -2711,6 +2840,9 @@ export default function App() {
         onClose={() => setLocationPickerOpen(false)}
         onSelectLocation={handleSelectLocation}
       />
+
+      {/* Festive Winter Snowfall Overlay + On/Off Toggle */}
+      <SnowfallOverlay enabled={snowEnabled} onToggle={() => setSnowEnabled((prev) => !prev)} />
     </div>
   );
 }

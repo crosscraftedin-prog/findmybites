@@ -12,6 +12,7 @@ import {
   MessageCircle,
   Plus,
   RefreshCw,
+  Snowflake,
   Trash2,
   Upload,
   X,
@@ -55,6 +56,7 @@ import { requestBrowserGpsLocation, resolveRegionFromCoords } from '../utils/geo
 interface ListBusinessModalProps {
   isOpen: boolean;
   initialPlanTier?: PlanTier;
+  initialChristmasSpecial?: boolean;
   currency: CurrencyCode;
   user: User | null;
   onSignIn: () => Promise<void>;
@@ -115,6 +117,7 @@ const DEFAULT_IMAGE_BY_CATEGORY: Record<string, string> = {
 export function ListBusinessModal({
   isOpen,
   initialPlanTier = 'free',
+  initialChristmasSpecial = false,
   currency,
   user,
   onSignIn,
@@ -138,6 +141,8 @@ export function ListBusinessModal({
   const [gpsStatus, setGpsStatus] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const [whatsappNumber, setWhatsappNumber] = useState('919820001122');
   const [tagline, setTagline] = useState('');
+  const [christmasSpecial, setChristmasSpecial] = useState(initialChristmasSpecial);
+  const [christmasOffer, setChristmasOffer] = useState('');
   const [planTier, setPlanTier] = useState<PlanTier>(initialPlanTier);
   const [autoPayAccepted, setAutoPayAccepted] = useState(true);
 
@@ -160,6 +165,12 @@ export function ListBusinessModal({
   useEffect(() => {
     setPlanTier(initialPlanTier);
   }, [initialPlanTier, isOpen]);
+
+  useEffect(() => {
+    if (isOpen) {
+      setChristmasSpecial(initialChristmasSpecial);
+    }
+  }, [initialChristmasSpecial, isOpen]);
 
   useEffect(() => {
     setCategory(marketplace === 'food' ? FOOD_CATEGORIES[0] : PARTY_CATEGORIES[0]);
@@ -468,6 +479,8 @@ export function ListBusinessModal({
       verified: false,
       tagline: tagline.trim(),
       description: `${tagline.trim()} Published directly on FindMyBites × PimpMyParty with a dedicated one-page storefront and direct WhatsApp ordering across ${area.trim() || city.trim()}, ${city.trim()}, ${stateName}.`,
+      christmasSpecial,
+      christmasOffer: christmasOffer.trim() || undefined,
       serviceAreas: [area.trim() || city.trim(), city.trim(), stateName, `${city.trim()} Metro`].filter(
         (v, i, arr) => v && arr.indexOf(v) === i
       ),
@@ -483,6 +496,7 @@ export function ListBusinessModal({
       setName('');
       setArea('');
       setTagline('');
+      setChristmasOffer('');
       setLogoDataUrl('');
       setCoverDataUrl('');
       setMapsPaste('');
@@ -1090,6 +1104,43 @@ export function ListBusinessModal({
                 </div>
               ))}
             </div>
+          </div>
+
+          {/* Christmas & New Year 2026 Free Spotlight Opt-In */}
+          <div className="rounded-xl border border-emerald-500/40 bg-gradient-to-r from-emerald-950/90 via-emerald-900/90 to-rose-950/90 p-4 text-white">
+            <label className="flex cursor-pointer items-start gap-2.5 text-xs">
+              <input
+                type="checkbox"
+                checked={christmasSpecial}
+                onChange={(e) => setChristmasSpecial(e.target.checked)}
+                className="mt-0.5 size-4 accent-amber-400"
+              />
+              <div className="flex-1">
+                <p className="inline-flex items-center gap-1.5 font-extrabold text-amber-200">
+                  <Snowflake className="size-3.5" aria-hidden="true" />
+                  Feature in Christmas &amp; New Year 2026 Spotlight (Free Holiday Boost)
+                </p>
+                <p className="mt-0.5 text-emerald-100/85">
+                  Selling plum cakes, Christmas bakes, festive hampers, or NYE party packages?
+                  Get highlighted in our promoted homepage Christmas section!
+                </p>
+              </div>
+            </label>
+            {christmasSpecial && (
+              <div className="mt-3">
+                <label className="block text-[11px] font-bold text-amber-200">
+                  Christmas &amp; New Year Special Offer / Menu Highlight
+                </label>
+                <input
+                  type="text"
+                  maxLength={140}
+                  value={christmasOffer}
+                  onChange={(e) => setChristmasOffer(e.target.value)}
+                  placeholder="e.g. Rich Rum & Eggless Plum Cakes, Yule Logs & Secret Santa Hampers — Pre-book by Dec 22!"
+                  className="mt-1 w-full rounded-lg border border-white/25 bg-black/30 px-3 py-2 text-xs text-white placeholder:text-white/50 focus:border-amber-300 focus:outline-none"
+                />
+              </div>
+            )}
           </div>
 
           {isPaidPlan && (

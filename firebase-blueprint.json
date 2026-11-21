@@ -132,6 +132,36 @@
           "maxLength": 120,
           "description": "Optional seasonal or festival offer banner shown on the storefront."
         },
+        "christmasSpecial": {
+          "type": "boolean",
+          "description": "Whether the storefront is highlighted in the Christmas & New Year 2026 Spotlight section."
+        },
+        "christmasOffer": {
+          "type": "string",
+          "maxLength": 140,
+          "description": "Optional Christmas & New Year menu highlight (e.g. Plum Cakes, Yule Logs, NYE Hampers)."
+        },
+        "bioHandle": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 50,
+          "pattern": "^[a-z0-9\\-]+$",
+          "description": "Optional short link-in-bio handle for findmybites.com/fmb/<handle> and findmybites.com/@<handle>."
+        },
+        "bioTheme": {
+          "type": "string",
+          "enum": ["saffron", "midnight", "party", "cream"],
+          "description": "Visual theme preset for the vendor's Link-in-Bio page."
+        },
+        "instagramHandle": {
+          "type": "string",
+          "maxLength": 80,
+          "description": "Optional Instagram handle or profile URL displayed on the bio-link page."
+        },
+        "customLinks": {
+          "type": "array",
+          "description": "Up to 8 custom external bio links (Swiggy, Zomato, Talabat, Google Reviews, YouTube, Menu PDF, Website)."
+        },
         "serviceAreas": {
           "type": "array",
           "description": "Up to 10 covered local areas."
