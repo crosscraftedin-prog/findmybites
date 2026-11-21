@@ -18,11 +18,13 @@ import {
   BioTheme,
   BookingEnquiry,
   CloudVendorMetric,
+  DEFAULT_SITE_SETTINGS,
   EventQuote,
   EventRequest,
   LaunchCountry,
   PlanTier,
   PriceTier,
+  SiteSettings,
   StoreClaim,
   Vendor,
   VendorBioLink,
@@ -115,10 +117,16 @@ function sanitizeCustomLinks(links: VendorBioLink[]): VendorBioLink[] {
 
 function docToVendor(id: string, data: Record<string, unknown>): Vendor {
   const products = Array.isArray(data.products) ? (data.products as VendorProduct[]) : [];
+  const status: Vendor['status'] =
+    data.status === 'paused'
+      ? 'paused'
+      : data.status === 'pending_review'
+        ? 'pending_review'
+        : 'active';
   return {
     id,
     ownerId: typeof data.ownerId === 'string' ? data.ownerId : undefined,
-    status: data.status === 'paused' ? 'paused' : 'active',
+    status,
     slug: typeof data.slug === 'string' ? data.slug : sanitizeSlug(id),
     name: typeof data.name === 'string' ? data.name : 'Vendor',
     marketplace: data.marketplace === 'party' ? 'party' : 'food',
@@ -186,6 +194,18 @@ function docToVendor(id: string, data: Record<string, unknown>): Vendor {
     claimedByToken:
       typeof data.claimedByToken === 'string' && data.claimedByToken.length === 64
         ? data.claimedByToken
+        : undefined,
+    seoTitle:
+      typeof data.seoTitle === 'string' && data.seoTitle.trim().length > 0
+        ? data.seoTitle
+        : undefined,
+    seoDescription:
+      typeof data.seoDescription === 'string' && data.seoDescription.trim().length > 0
+        ? data.seoDescription
+        : undefined,
+    seoKeywords:
+      typeof data.seoKeywords === 'string' && data.seoKeywords.trim().length > 0
+        ? data.seoKeywords
         : undefined,
   };
 }
@@ -261,8 +281,10 @@ export function subscribeMyVendors(
 export async function createVendorInCloud(
   vendor: Vendor,
   ownerId: string,
-  isAdminUser = false
+  isAdminUser = false,
+  initialStatus: 'active' | 'pending_review' = 'active'
 ): Promise<Vendor> {
+  const resolvedStatus: 'active' | 'pending_review' = isAdminUser ? 'active' : initialStatus;
   const vendorId = sanitizeId(vendor.id || `${vendor.slug}-${Date.now().toString().slice(-4)}`);
   const docPath = `vendors/${vendorId}`;
   const cleanProducts = sanitizeProducts(vendor.products);
@@ -301,7 +323,7 @@ export async function createVendorInCloud(
       'Replies within 15 mins on WhatsApp'
     ),
     verified: isAdminUser ? Boolean(vendor.verified) : false,
-    status: 'active' as const,
+    status: resolvedStatus,
     tagline: clampStr(vendor.tagline, 3, 180, 'Local event specialist'),
     description: clampStr(vendor.description || vendor.tagline, 5, 1200, 'Local event specialist.'),
     ...(vendor.promoBanner && vendor.promoBanner.trim().length > 0
@@ -339,7 +361,7 @@ export async function createVendorInCloud(
       id: vendorId,
       ownerId,
       slug: payload.slug,
-      status: 'active',
+      status: resolvedStatus,
       verified: payload.verified,
       reviewCount: 0,
       image: payload.image,
@@ -357,6 +379,7 @@ export async function updateVendorInCloud(
   vendorId: string,
   updates: Partial<{
     name: string;
+    slug: string;
     tagline: string;
     description: string;
     promoBanner: string;
@@ -370,7 +393,11 @@ export async function updateVendorInCloud(
     planTier: PlanTier;
     monthlyAutoPay: boolean;
     startingPriceUsd: number;
-    status: 'active' | 'paused';
+    status: 'active' | 'pending_review' | 'paused';
+    verified: boolean;
+    seoTitle: string;
+    seoDescription: string;
+    seoKeywords: string;
     image: string;
     logo: string;
     gallery: string[];
@@ -384,6 +411,7 @@ export async function updateVendorInCloud(
     updatedAt: serverTimestamp(),
   };
   if (updates.name !== undefined) clean.name = clampStr(updates.name, 2, 100, 'Vendor');
+  if (updates.slug !== undefined) clean.slug = sanitizeSlug(updates.slug);
   if (updates.tagline !== undefined) clean.tagline = clampStr(updates.tagline, 3, 180, 'Local vendor');
   if (updates.description !== undefined)
     clean.description = clampStr(updates.description, 5, 1200, 'Local vendor');
@@ -408,6 +436,11 @@ export async function updateVendorInCloud(
   if (updates.startingPriceUsd !== undefined)
     clean.startingPriceUsd = Math.max(0, Math.min(100000, Number(updates.startingPriceUsd) || 0));
   if (updates.status !== undefined) clean.status = updates.status;
+  if (updates.verified !== undefined) clean.verified = Boolean(updates.verified);
+  if (updates.seoTitle !== undefined) clean.seoTitle = updates.seoTitle.trim().slice(0, 100);
+  if (updates.seoDescription !== undefined)
+    clean.seoDescription = updates.seoDescription.trim().slice(0, 220);
+  if (updates.seoKeywords !== undefined) clean.seoKeywords = updates.seoKeywords.trim().slice(0, 240);
   if (updates.image !== undefined)
     clean.image = clampStr(updates.image, 1, 150000, '/src/assets/images/cat-bakers.png');
   if (updates.logo !== undefined) clean.logo = updates.logo.trim().slice(0, 70000);
@@ -1284,4 +1317,237 @@ export async function redeemStoreClaim(
     handleFirestoreError(error, OperationType.UPDATE, `storeClaims/${claimId}`);
   }
 }
+
+// ============================================================================
+// GLOBAL SITE SETTINGS & SEO CONFIG (/siteSettings/global)
+// ============================================================================
+
+export function subscribeSiteSettings(
+  onData: (settings: SiteSettings) => void
+): () => void {
+  const ref = doc(db, 'siteSettings', 'global');
+  return onSnapshot(
+    ref,
+    (snap) => {
+      if (!snap.exists()) {
+        onData(DEFAULT_SITE_SETTINGS);
+        return;
+      }
+      const d = snap.data();
+      onData({
+        requireVendorApproval:
+          typeof d.requireVendorApproval === 'boolean'
+            ? d.requireVendorApproval
+            : DEFAULT_SITE_SETTINGS.requireVendorApproval,
+        snowfallEnabled:
+          typeof d.snowfallEnabled === 'boolean'
+            ? d.snowfallEnabled
+            : DEFAULT_SITE_SETTINGS.snowfallEnabled,
+        promoEnabled:
+          typeof d.promoEnabled === 'boolean'
+            ? d.promoEnabled
+            : DEFAULT_SITE_SETTINGS.promoEnabled,
+        promoText:
+          typeof d.promoText === 'string' && d.promoText.trim().length > 0
+            ? d.promoText
+            : DEFAULT_SITE_SETTINGS.promoText,
+        promoCtaLabel:
+          typeof d.promoCtaLabel === 'string' && d.promoCtaLabel.trim().length > 0
+            ? d.promoCtaLabel
+            : DEFAULT_SITE_SETTINGS.promoCtaLabel,
+        siteTitle:
+          typeof d.siteTitle === 'string' && d.siteTitle.trim().length > 0
+            ? d.siteTitle
+            : DEFAULT_SITE_SETTINGS.siteTitle,
+        siteDescription:
+          typeof d.siteDescription === 'string' && d.siteDescription.trim().length > 0
+            ? d.siteDescription
+            : DEFAULT_SITE_SETTINGS.siteDescription,
+        siteKeywords:
+          typeof d.siteKeywords === 'string' && d.siteKeywords.trim().length > 0
+            ? d.siteKeywords
+            : DEFAULT_SITE_SETTINGS.siteKeywords,
+        updatedBy: typeof d.updatedBy === 'string' ? d.updatedBy : undefined,
+      });
+    },
+    () => {
+      onData(DEFAULT_SITE_SETTINGS);
+    }
+  );
+}
+
+export async function saveSiteSettingsInCloud(
+  settings: SiteSettings,
+  adminUid: string
+): Promise<void> {
+  const docPath = 'siteSettings/global';
+  const payload = {
+    requireVendorApproval: Boolean(settings.requireVendorApproval),
+    snowfallEnabled: Boolean(settings.snowfallEnabled),
+    promoEnabled: Boolean(settings.promoEnabled),
+    promoText: clampStr(settings.promoText, 1, 200, DEFAULT_SITE_SETTINGS.promoText),
+    promoCtaLabel: clampStr(settings.promoCtaLabel, 1, 60, DEFAULT_SITE_SETTINGS.promoCtaLabel),
+    siteTitle: clampStr(settings.siteTitle, 5, 110, DEFAULT_SITE_SETTINGS.siteTitle),
+    siteDescription: clampStr(
+      settings.siteDescription,
+      10,
+      240,
+      DEFAULT_SITE_SETTINGS.siteDescription
+    ),
+    siteKeywords: clampStr(settings.siteKeywords, 3, 280, DEFAULT_SITE_SETTINGS.siteKeywords),
+    updatedBy: adminUid,
+    updatedAt: serverTimestamp(),
+  };
+  try {
+    await setDoc(doc(db, 'siteSettings', 'global'), payload, { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, docPath);
+  }
+}
+
+// ============================================================================
+// FULL ADMIN MODERATION & ANALYTICS SUBSCRIPTIONS (ROOT ADMIN ONLY)
+// ============================================================================
+
+export interface AdminReviewRecord {
+  id: string;
+  vendorId: string;
+  authorId: string;
+  authorName: string;
+  eventType: string;
+  rating: number;
+  comment: string;
+  createdAt: string;
+}
+
+export function subscribeAllVendorsForAdmin(
+  onData: (vendors: Vendor[]) => void
+): () => void {
+  const q = query(collection(db, 'vendors'));
+  return onSnapshot(
+    q,
+    (snap) => {
+      onData(snap.docs.map((d) => docToVendor(d.id, d.data())));
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'vendors');
+    }
+  );
+}
+
+export function subscribeAllBookingsForAdmin(
+  onData: (bookings: BookingEnquiry[]) => void
+): () => void {
+  const q = query(collection(db, 'bookings'));
+  return onSnapshot(
+    q,
+    (snap) => {
+      onData(snap.docs.map((d) => docToBooking(d.id, d.data())));
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'bookings');
+    }
+  );
+}
+
+export function subscribeAllReviewsForAdmin(
+  onData: (reviews: AdminReviewRecord[]) => void
+): () => void {
+  const q = query(collection(db, 'reviews'));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const rows: AdminReviewRecord[] = snap.docs.map((d) => {
+        const data = d.data();
+        return {
+          id: d.id,
+          vendorId: typeof data.vendorId === 'string' ? data.vendorId : '',
+          authorId: typeof data.authorId === 'string' ? data.authorId : '',
+          authorName: typeof data.authorName === 'string' ? data.authorName : 'Customer',
+          eventType: typeof data.eventType === 'string' ? data.eventType : 'Booking',
+          rating: typeof data.rating === 'number' ? Math.min(5, Math.max(1, data.rating)) : 5,
+          comment: typeof data.comment === 'string' ? data.comment : '',
+          createdAt: formatTs(data.createdAt),
+        };
+      });
+      onData(rows);
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'reviews');
+    }
+  );
+}
+
+export function subscribeAllEventRequestsForAdmin(
+  onData: (requests: EventRequest[]) => void
+): () => void {
+  const q = query(collection(db, 'eventRequests'));
+  return onSnapshot(
+    q,
+    (snap) => {
+      onData(snap.docs.map((d) => docToEventRequest(d.id, d.data())));
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'eventRequests');
+    }
+  );
+}
+
+export function subscribeAllVendorMetricsForAdmin(
+  onData: (metrics: CloudVendorMetric[]) => void
+): () => void {
+  const q = query(collection(db, 'vendorMetrics'));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const list: CloudVendorMetric[] = snap.docs.map((d) => {
+        const data = d.data();
+        return {
+          vendorId: typeof data.vendorId === 'string' ? data.vendorId : d.id,
+          views: typeof data.views === 'number' ? data.views : 0,
+          whatsappClicks: typeof data.whatsappClicks === 'number' ? data.whatsappClicks : 0,
+          shares: typeof data.shares === 'number' ? data.shares : 0,
+        };
+      });
+      onData(list);
+    },
+    () => {
+      onData([]);
+    }
+  );
+}
+
+export async function adminUpdateEventRequestStatus(
+  requestId: string,
+  status: 'open' | 'closed'
+): Promise<void> {
+  const docPath = `eventRequests/${requestId}`;
+  try {
+    await updateDoc(doc(db, 'eventRequests', requestId), {
+      status,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, docPath);
+  }
+}
+
+export async function adminDeleteEventRequestInCloud(requestId: string): Promise<void> {
+  const docPath = `eventRequests/${requestId}`;
+  try {
+    await deleteDoc(doc(db, 'eventRequests', requestId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, docPath);
+  }
+}
+
+export async function adminDeleteBookingInCloud(bookingId: string): Promise<void> {
+  const docPath = `bookings/${bookingId}`;
+  try {
+    await deleteDoc(doc(db, 'bookings', bookingId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, docPath);
+  }
+}
+
 

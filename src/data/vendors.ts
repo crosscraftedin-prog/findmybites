@@ -178,7 +178,7 @@ export interface VendorBioLink {
 export interface Vendor {
   id: string;
   ownerId?: string;
-  status?: 'active' | 'paused';
+  status?: 'active' | 'pending_review' | 'paused';
   slug: string;
   name: string;
   marketplace: 'food' | 'party';
@@ -216,7 +216,37 @@ export interface Vendor {
   reviews: VendorReview[];
   claimStatus?: 'none' | 'pending' | 'claimed';
   claimedByToken?: string;
+  seoTitle?: string;
+  seoDescription?: string;
+  seoKeywords?: string;
 }
+
+export interface SiteSettings {
+  siteTitle: string;
+  siteDescription: string;
+  siteKeywords: string;
+  promoEnabled: boolean;
+  promoText: string;
+  promoCtaLabel: string;
+  snowfallEnabled: boolean;
+  requireVendorApproval: boolean;
+  updatedBy?: string;
+  updatedAt?: string;
+}
+
+export const DEFAULT_SITE_SETTINGS: SiteSettings = {
+  siteTitle: 'FindMyBites × PimpMyParty – Bakers, Catering & Party Decor',
+  siteDescription:
+    'Find verified home bakers, Christmas plum cakes, catering, live counters, mocktail bars & wedding decor near you across India, Dubai, Sri Lanka, Pakistan, Bangladesh & Nepal.',
+  siteKeywords:
+    'home bakers near me, custom birthday cakes, christmas plum cakes, event catering, wedding decor, balloon decorators, FindMyBites, PimpMyParty',
+  promoEnabled: true,
+  promoText:
+    'Christmas & New Year 2026 Baker Spotlight — Plum Cakes, Yule Logs, Hampers & NYE Party Catering!',
+  promoCtaLabel: 'Explore Christmas Bakers',
+  snowfallEnabled: true,
+  requireVendorApproval: false,
+};
 
 export interface StoreClaim {
   id: string; // 64-char SHA-256 hex digest of phone + passcode

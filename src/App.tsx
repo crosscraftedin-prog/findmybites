@@ -37,6 +37,7 @@ import {
 import { onAuthStateChanged, type User as FirebaseUser } from 'firebase/auth';
 import { AdminPanelModal } from './components/AdminPanelModal';
 import { ChristmasSpotlightSection } from './components/ChristmasSpotlightSection';
+import { CityCategorySeoBanner } from './components/CityCategorySeoBanner';
 import { ClaimModalInitialTab, ClaimStoreModal } from './components/ClaimStoreModal';
 import { Ecosystem, Header } from './components/Header';
 import { JoshPlannerDrawer } from './components/JoshPlannerDrawer';
@@ -55,7 +56,9 @@ import {
   CATEGORY_CARDS,
   COUNTRY_REGION_LABEL,
   CURRENCIES,
+  CloudVendorMetric,
   CurrencyCode,
+  DEFAULT_SITE_SETTINGS,
   EventRequest,
   FOOD_CATEGORIES,
   HERO_FOOD_IMAGE,
@@ -71,6 +74,7 @@ import {
   QuickFilterTag,
   SAAS_PLANS,
   STATES_BY_COUNTRY,
+  SiteSettings,
   StoreClaim,
   Vendor,
   formatPlanPrice,
@@ -82,6 +86,7 @@ import {
 import { ADMIN_EMAIL, auth, signInWithGoogle, signOutUser } from './firebase';
 import { useSeoMeta } from './hooks/useSeoMeta';
 import {
+  AdminReviewRecord,
   createBookingInCloud,
   createVendorInCloud,
   ensureUserProfile,
@@ -89,15 +94,26 @@ import {
   subscribeActiveVendors,
   subscribeAdminStoreClaims,
   subscribeAdminTransfers,
+  subscribeAllBookingsForAdmin,
+  subscribeAllEventRequestsForAdmin,
+  subscribeAllReviewsForAdmin,
+  subscribeAllVendorMetricsForAdmin,
+  subscribeAllVendorsForAdmin,
   subscribeMyBookings,
   subscribeMyEventRequests,
   subscribeMyVendors,
   subscribeOpenEventRequests,
+  subscribeSiteSettings,
   subscribeVendorLeads,
   syncSavedVendorsToCloud,
   updateBookingStatusInCloud,
 } from './services/firestoreService';
 import { requestBrowserGpsLocation, resolveRegionFromCoords } from './utils/geolocation';
+import {
+  ResolvedSeoDirectoryRoute,
+  buildCityCategoryPath,
+  resolveSeoDirectoryRoute,
+} from './utils/seoDirectory';
 
 function slugifySeo(text: string): string {
   return text
@@ -478,6 +494,15 @@ export default function App() {
   const [openEventRequests, setOpenEventRequests] = useState<EventRequest[]>([]);
   const [adminTransfers, setAdminTransfers] = useState<AdminTransferRecord[]>([]);
   const [adminStoreClaims, setAdminStoreClaims] = useState<StoreClaim[]>([]);
+  const [adminAllVendors, setAdminAllVendors] = useState<Vendor[]>([]);
+  const [adminAllBookings, setAdminAllBookings] = useState<BookingEnquiry[]>([]);
+  const [adminAllReviews, setAdminAllReviews] = useState<AdminReviewRecord[]>([]);
+  const [adminAllEventRequests, setAdminAllEventRequests] = useState<EventRequest[]>([]);
+  const [adminAllMetrics, setAdminAllMetrics] = useState<CloudVendorMetric[]>([]);
+  const [siteSettings, setSiteSettings] = useState<SiteSettings>(DEFAULT_SITE_SETTINGS);
+  const [seoDirectoryRoute, setSeoDirectoryRoute] = useState<ResolvedSeoDirectoryRoute | null>(
+    null
+  );
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
@@ -488,16 +513,27 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    let unsub: (() => void) | undefined;
+    let unsubVendors: (() => void) | undefined;
+    let unsubSettings: (() => void) | undefined;
     try {
-      unsub = subscribeActiveVendors((list) => {
+      unsubVendors = subscribeActiveVendors((list) => {
         setCloudVendors(list);
+      });
+      unsubSettings = subscribeSiteSettings((cfg) => {
+        setSiteSettings(cfg);
       });
     } catch {
       // ignore if offline
     }
-    return () => unsub?.();
+    return () => {
+      unsubVendors?.();
+      unsubSettings?.();
+    };
   }, []);
+
+  useEffect(() => {
+    setSnowEnabled(siteSettings.snowfallEnabled);
+  }, [siteSettings.snowfallEnabled]);
 
   useEffect(() => {
     if (!authReady || !authUser) {
@@ -644,37 +680,63 @@ export default function App() {
     if (!authReady || !isAdminUser) {
       setAdminTransfers([]);
       setAdminStoreClaims([]);
+      setAdminAllVendors([]);
+      setAdminAllBookings([]);
+      setAdminAllReviews([]);
+      setAdminAllEventRequests([]);
+      setAdminAllMetrics([]);
       return;
     }
     const unsubTransfers = subscribeAdminTransfers(setAdminTransfers);
     const unsubClaims = subscribeAdminStoreClaims(setAdminStoreClaims);
+    const unsubAllVendors = subscribeAllVendorsForAdmin(setAdminAllVendors);
+    const unsubAllBookings = subscribeAllBookingsForAdmin(setAdminAllBookings);
+    const unsubAllReviews = subscribeAllReviewsForAdmin(setAdminAllReviews);
+    const unsubAllRequests = subscribeAllEventRequestsForAdmin(setAdminAllEventRequests);
+    const unsubAllMetrics = subscribeAllVendorMetricsForAdmin(setAdminAllMetrics);
     return () => {
       unsubTransfers();
       unsubClaims();
+      unsubAllVendors();
+      unsubAllBookings();
+      unsubAllReviews();
+      unsubAllRequests();
+      unsubAllMetrics();
     };
   }, [authReady, isAdminUser]);
+
+  const effectiveAdminVendors = useMemo(
+    () => (adminAllVendors.length > 0 ? adminAllVendors : cloudVendors),
+    [adminAllVendors, cloudVendors]
+  );
+
+  const pendingApprovalCount = useMemo(
+    () => effectiveAdminVendors.filter((v) => v.status === 'pending_review').length,
+    [effectiveAdminVendors]
+  );
 
   const pendingTransferCount = useMemo(() => {
     const claimedIds = new Set(
       adminStoreClaims.filter((c) => c.status === 'claimed').map((c) => c.id)
     );
-    return adminTransfers.filter(
-      (t) => t.status === 'pending' && !claimedIds.has(t.claimId)
-    ).length;
-  }, [adminTransfers, adminStoreClaims]);
+    return (
+      adminTransfers.filter((t) => t.status === 'pending' && !claimedIds.has(t.claimId)).length +
+      pendingApprovalCount
+    );
+  }, [adminTransfers, adminStoreClaims, pendingApprovalCount]);
 
   const dashboardVendors = useMemo(() => {
     if (!isAdminUser) return myCloudVendors;
     const seen = new Set<string>();
     const combined: Vendor[] = [];
-    for (const v of [...myCloudVendors, ...cloudVendors]) {
+    for (const v of [...myCloudVendors, ...effectiveAdminVendors]) {
       if (!seen.has(v.id)) {
         seen.add(v.id);
         combined.push(v);
       }
     }
     return combined;
-  }, [isAdminUser, myCloudVendors, cloudVendors]);
+  }, [isAdminUser, myCloudVendors, effectiveAdminVendors]);
 
   const dashboardVendorIds = useMemo(
     () => new Set(dashboardVendors.map((v) => v.id)),
@@ -704,13 +766,61 @@ export default function App() {
   const effectiveBookings = authUser ? cloudBookings : bookings;
   const ecoKey: 'food' | 'party' = ecosystem === 'FINDMYBITES' ? 'food' : 'party';
 
-  useSeoMeta({
-    activeVendor: resolvedActiveVendor ?? resolvedBioVendor,
-    selectedCategory,
-    selectedCountry,
-    selectedState,
-    ecosystem,
-  });
+  const applySeoDirectoryRoute = (resolved: ResolvedSeoDirectoryRoute) => {
+    setSeoDirectoryRoute(resolved);
+    setActiveVendor(null);
+    setBioVendor(null);
+    setClaimModalOpen(false);
+    if (resolved.categoryEntry) {
+      setEcosystem(resolved.categoryEntry.marketplace === 'party' ? 'PIMPMYPARTY' : 'FINDMYBITES');
+      setSelectedCategory(resolved.categoryEntry.category);
+      setNearMeAllEcosystems(false);
+    } else {
+      setSelectedCategory('All');
+      setNearMeAllEcosystems(true);
+    }
+    if (resolved.cityEntry) {
+      setSelectedCountry(resolved.cityEntry.country);
+      setSelectedState(resolved.cityEntry.state);
+      setUserCoords({
+        lat: resolved.cityEntry.lat,
+        lng: resolved.cityEntry.lng,
+        label: `${resolved.cityEntry.city}, ${resolved.cityEntry.state}`,
+      });
+      setNearMeRadiusKm(0);
+      setSortBy('nearest');
+    } else {
+      setSelectedCountry('All');
+      setSelectedState('All');
+      setUserCoords(null);
+    }
+    setSearchQuery('');
+    setLocationQuery('');
+  };
+
+  const handleNavigateSeoPath = (path: string) => {
+    const resolved = resolveSeoDirectoryRoute(path);
+    if (!resolved) return;
+    applySeoDirectoryRoute(resolved);
+    try {
+      window.history.pushState({ seoPath: resolved.canonicalPath }, '', resolved.canonicalPath);
+    } catch {
+      // ignore sandbox history restrictions
+    }
+    window.setTimeout(() => {
+      document.getElementById('seo-directory-top')?.scrollIntoView({ behavior: 'smooth' });
+    }, 60);
+  };
+
+  const handleClearSeoRoute = () => {
+    setSeoDirectoryRoute(null);
+    resetFilters();
+    try {
+      window.history.pushState({}, '', '/');
+    } catch {
+      // ignore
+    }
+  };
 
   // Track cloud view when Bio Link opens
   useEffect(() => {
@@ -718,7 +828,7 @@ export default function App() {
     void incrementVendorMetricInCloud(bioVendor.id, 'views');
   }, [bioVendor]);
 
-  // Hydrate /v/<slug>, /fmb/<handle>, and /@<handle> deep links for BOTH built-in & Cloud Firestore vendors + Back button
+  // Hydrate /v/<slug>, /fmb/<handle>, /@<handle>, /claim/<slug>, and Programmatic City × Category SEO URLs
   useEffect(() => {
     const findByBioHandleOrSlug = (raw: string) => {
       const target = raw.toLowerCase();
@@ -735,6 +845,7 @@ export default function App() {
           : '';
         setActiveVendor(null);
         setBioVendor(null);
+        setSeoDirectoryRoute(null);
         setClaimHintSlug(slugPart || null);
         setClaimModalTab('claim');
         setClaimModalOpen(true);
@@ -759,10 +870,16 @@ export default function App() {
           setBioVendor(null);
           setActiveVendor((prev) => (prev?.id === matched.id ? prev : matched));
         }
-      } else if (fromPopState) {
-        setActiveVendor(null);
-        setBioVendor(null);
-        setClaimModalOpen(false);
+      } else {
+        const seoResolved = resolveSeoDirectoryRoute(pathname);
+        if (seoResolved) {
+          applySeoDirectoryRoute(seoResolved);
+        } else if (fromPopState) {
+          setActiveVendor(null);
+          setBioVendor(null);
+          setClaimModalOpen(false);
+          setSeoDirectoryRoute(null);
+        }
       }
     };
 
@@ -770,6 +887,7 @@ export default function App() {
     const onPopState = () => syncRouteFromUrl(true);
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allVendors]);
 
   // Keep browser address bar synced with /fmb/<handle> or /v/<slug> on www.findmybites.com
@@ -1065,6 +1183,17 @@ export default function App() {
     nearMeRadiusKm,
   ]);
 
+  useSeoMeta({
+    activeVendor: resolvedActiveVendor ?? resolvedBioVendor,
+    seoDirectoryRoute,
+    matchingVendors: filteredVendors,
+    siteSettings,
+    selectedCategory,
+    selectedCountry,
+    selectedState,
+    ecosystem,
+  });
+
   const featuredVendors = useMemo(
     () =>
       [...ecoVendors]
@@ -1177,10 +1306,14 @@ export default function App() {
 
   const handleAddVendor = async (vendor: Vendor) => {
     let savedVendor = vendor;
+    const requiresApproval = !isAdminUser && siteSettings.requireVendorApproval;
     if (authUser) {
-      const isAdminUser =
-        authUser.emailVerified && authUser.email?.toLowerCase() === ADMIN_EMAIL;
-      savedVendor = await createVendorInCloud(vendor, authUser.uid, isAdminUser);
+      savedVendor = await createVendorInCloud(
+        vendor,
+        authUser.uid,
+        isAdminUser,
+        requiresApproval ? 'pending_review' : 'active'
+      );
     } else {
       setCustomVendors((prev) => [vendor, ...prev]);
     }
@@ -1191,9 +1324,11 @@ export default function App() {
     setSelectedState('All');
     setNearMeAllEcosystems(false);
     setNotice(
-      savedVendor.planTier === 'free'
-        ? `${savedVendor.name} published live to Cloud! Opening your new one-page vendor website.`
-        : `${savedVendor.name} activated on ${savedVendor.planTier === 'business' ? 'Business Spotlight' : 'Pro Auto-Pay'} — now pinned at the top!`
+      savedVendor.status === 'pending_review'
+        ? `"${savedVendor.name}" submitted for Admin Review! We will verify & publish it live shortly.`
+        : savedVendor.planTier === 'free'
+          ? `${savedVendor.name} published live to Cloud! Opening your new one-page vendor website.`
+          : `${savedVendor.name} activated on ${savedVendor.planTier === 'business' ? 'Business Spotlight' : 'Pro Auto-Pay'} — now pinned at the top!`
     );
     setActiveVendor(savedVendor);
   };
@@ -1325,33 +1460,46 @@ export default function App() {
       )}
 
       <main id="main-content" className="flex-1">
-        {/* Festive Christmas & New Year 2026 Promotion Strip */}
-        <div className="border-b border-emerald-800/40 bg-gradient-to-r from-[#0B2B22] via-[#154234] to-[#6A1123] text-white">
-          <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 px-4 py-2 text-xs sm:px-6 lg:px-8">
-            <div className="flex items-center gap-2 font-semibold">
-              <Snowflake className="size-3.5 shrink-0 text-amber-300" aria-hidden="true" />
-              <span>
-                <strong>Christmas &amp; New Year 2026 Special:</strong> Pre-order Plum Cakes, Yule
-                Logs, Gift Hampers &amp; NYE Party Decor
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <a
-                href="#christmas-special"
-                className="rounded-full bg-amber-400 px-3 py-1 text-[11px] font-extrabold text-neutral-950 transition-colors hover:bg-amber-300"
-              >
-                Explore Christmas Bakers →
-              </a>
-              <button
-                type="button"
-                onClick={() => handleOpenListModal('free', true)}
-                className="cursor-pointer rounded-full border border-white/30 bg-white/10 px-3 py-1 text-[11px] font-bold text-white transition-colors hover:bg-white/20"
-              >
-                List Christmas Cakes Free
-              </button>
+        {/* Dynamic Seasonal Promotion Strip (Controlled Live from Admin Site Controls) */}
+        {siteSettings.promoEnabled && (
+          <div className="border-b border-emerald-800/40 bg-gradient-to-r from-[#0B2B22] via-[#154234] to-[#6A1123] text-white">
+            <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 px-4 py-2 text-xs sm:px-6 lg:px-8">
+              <div className="flex items-center gap-2 font-semibold">
+                <Snowflake className="size-3.5 shrink-0 text-amber-300" aria-hidden="true" />
+                <span>{siteSettings.promoText}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <a
+                  href="#christmas-special"
+                  className="rounded-full bg-amber-400 px-3 py-1 text-[11px] font-extrabold text-neutral-950 transition-colors hover:bg-amber-300"
+                >
+                  {siteSettings.promoCtaLabel}
+                </a>
+                <button
+                  type="button"
+                  onClick={() => handleOpenListModal('free', true)}
+                  className="cursor-pointer rounded-full border border-white/30 bg-white/10 px-3 py-1 text-[11px] font-bold text-white transition-colors hover:bg-white/20"
+                >
+                  List Christmas Cakes Free
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        )}
+
+        {/* Programmatic City × Category Local SEO Directory Banner (Justdial-style landing view) */}
+        {seoDirectoryRoute && (
+          <div id="seo-directory-top">
+            <CityCategorySeoBanner
+              route={seoDirectoryRoute}
+              matchingCount={filteredVendors.length}
+              onNavigateSeoPath={handleNavigateSeoPath}
+              onClearRoute={handleClearSeoRoute}
+              onOpenEventRequest={() => setEventRequestModalOpen(true)}
+              onOpenListBusiness={() => handleOpenListModal('free')}
+            />
+          </div>
+        )}
 
         {/* 1. EXACT PREMIUM HERO FROM WWW.FINDMYBITES.COM */}
         <section className="relative overflow-hidden border-b border-border">
@@ -2504,21 +2652,14 @@ export default function App() {
 
               <div className="mt-6 flex flex-wrap gap-2.5">
                 {POPULAR_LOCAL_SEARCHES.map((item) => {
-                  const href = `/?category=${encodeURIComponent(slugifySeo(item.category))}&country=${encodeURIComponent(slugifySeo(item.country))}`;
+                  const href = buildCityCategoryPath(item.cityHint, item.category);
                   return (
                     <a
                       key={item.label}
                       href={href}
                       onClick={(e) => {
                         e.preventDefault();
-                        setEcosystem(item.ecosystem);
-                        setSelectedCategory(item.category);
-                        setSelectedCountry(item.country);
-                        setSelectedState(item.state);
-                        setLocationQuery('');
-                        setSearchQuery('');
-                        setNearMeAllEcosystems(false);
-                        document.getElementById('explore')?.scrollIntoView({ behavior: 'smooth' });
+                        handleNavigateSeoPath(href);
                       }}
                       className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3.5 py-2 text-xs font-semibold text-foreground transition-colors hover:border-brand hover:bg-brand-soft hover:text-brand"
                     >
@@ -2900,18 +3041,25 @@ export default function App() {
         onSelectLocation={handleSelectLocation}
       />
 
-      {/* Admin Concierge Panel: Build Baker Stores, Add Products & Generate Phone Passcode Transfers */}
+      {/* Full 7-Tab Admin Command Center */}
       {isAdminUser && authUser && (
         <AdminPanelModal
           open={adminPanelOpen}
           onClose={() => setAdminPanelOpen(false)}
           adminUser={authUser}
-          cloudVendors={cloudVendors}
+          cloudVendors={effectiveAdminVendors}
+          allCatalogVendors={allVendors}
           transfers={adminTransfers}
           claims={adminStoreClaims}
+          bookings={adminAllBookings}
+          reviews={adminAllReviews}
+          eventRequests={adminAllEventRequests}
+          vendorMetrics={adminAllMetrics}
+          siteSettings={siteSettings}
           currency={currency}
           onEditVendor={handleEditStorefront}
           onPreviewVendor={setActiveVendor}
+          onNavigateSeoPath={handleNavigateSeoPath}
           onToast={setNotice}
         />
       )}

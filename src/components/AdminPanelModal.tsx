@@ -1,25 +1,27 @@
 import { FormEvent, useMemo, useState } from 'react';
 import type { User } from 'firebase/auth';
 import {
+  BarChart3,
   BadgeCheck,
   Cake,
   Check,
+  ClipboardCheck,
   Copy,
   Edit3,
   ExternalLink,
+  Globe2,
   KeyRound,
   Loader2,
-  MapPin,
   MessageCircle,
+  MessageSquareWarning,
   Navigation,
   Plus,
   RefreshCw,
-  Search,
   Send,
+  Settings2,
   ShieldCheck,
   Snowflake,
   Sparkles,
-  Store,
   Trash2,
   Upload,
   X,
@@ -27,20 +29,23 @@ import {
 import {
   ALL_CATEGORIES,
   AdminTransferRecord,
+  BookingEnquiry,
   CATEGORY_CARDS,
   COUNTRY_DEFAULT_CURRENCY,
   COUNTRY_REGION_LABEL,
   CURRENCIES,
+  CloudVendorMetric,
   CurrencyCode,
+  EventRequest,
   FOOD_CATEGORIES,
   LAUNCH_COUNTRIES,
   LaunchCountry,
   PlanTier,
   STATES_BY_COUNTRY,
+  SiteSettings,
   StoreClaim,
   Vendor,
   VendorProduct,
-  formatMoney,
   generateTransferPasscode,
   getVendorBioHandle,
   localToUsd,
@@ -48,27 +53,48 @@ import {
   normalizePhoneDigits,
 } from '../data/vendors';
 import {
+  AdminReviewRecord,
   adminCreateStoreWithTransfer,
   adminIssueTransferForExistingStore,
   adminRevokeTransfer,
-  updateVendorInCloud,
 } from '../services/firestoreService';
 import { compressImageFile } from '../utils/imageUpload';
+import {
+  AdminApprovalsTab,
+  AdminCampaignsTab,
+  AdminModerationTab,
+  AdminOverviewTab,
+  AdminSeoManagerTab,
+} from './AdminCommandTabs';
 
 interface AdminPanelModalProps {
   open: boolean;
   onClose: () => void;
   adminUser: User;
   cloudVendors: Vendor[];
+  allCatalogVendors: Vendor[];
   transfers: AdminTransferRecord[];
   claims: StoreClaim[];
+  bookings: BookingEnquiry[];
+  reviews: AdminReviewRecord[];
+  eventRequests: EventRequest[];
+  vendorMetrics: CloudVendorMetric[];
+  siteSettings: SiteSettings;
   currency: CurrencyCode;
   onEditVendor: (vendor: Vendor) => void;
   onPreviewVendor: (vendor: Vendor) => void;
+  onNavigateSeoPath: (path: string) => void;
   onToast: (message: string) => void;
 }
 
-type AdminTab = 'create' | 'transfers' | 'stores';
+type AdminTab =
+  | 'overview'
+  | 'approvals'
+  | 'create'
+  | 'transfers'
+  | 'seo'
+  | 'moderation'
+  | 'campaigns';
 
 interface DraftProductRow {
   id: string;
@@ -190,14 +216,21 @@ export function AdminPanelModal({
   onClose,
   adminUser,
   cloudVendors,
+  allCatalogVendors,
   transfers,
   claims,
+  bookings,
+  reviews,
+  eventRequests,
+  vendorMetrics,
+  siteSettings,
   currency,
   onEditVendor,
   onPreviewVendor,
+  onNavigateSeoPath,
   onToast,
 }: AdminPanelModalProps) {
-  const [activeTab, setActiveTab] = useState<AdminTab>('create');
+  const [activeTab, setActiveTab] = useState<AdminTab>('overview');
 
   // --- Create & Transfer Store Form State ---
   const [name, setName] = useState('');
@@ -242,11 +275,6 @@ export function AdminPanelModal({
   } | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
-  // --- Transfers / Existing Store Handover State ---
-  const [storeSearch, setStoreSearch] = useState('');
-  const [transferTargetVendor, setTransferTargetVendor] = useState<Vendor | null>(null);
-  const [existingPhone, setExistingPhone] = useState('');
-  const [existingPasscode, setExistingPasscode] = useState('');
   const [busyVendorId, setBusyVendorId] = useState<string | null>(null);
 
   const formCurrency: CurrencyCode = COUNTRY_DEFAULT_CURRENCY[country] || currency;
@@ -295,18 +323,7 @@ export function AdminPanelModal({
 
   const pendingCount = enrichedTransfers.filter((t) => t.liveStatus === 'pending').length;
   const claimedCount = enrichedTransfers.filter((t) => t.liveStatus === 'claimed').length;
-
-  const filteredStores = useMemo(() => {
-    const q = storeSearch.trim().toLowerCase();
-    if (!q) return cloudVendors;
-    return cloudVendors.filter(
-      (v) =>
-        v.name.toLowerCase().includes(q) ||
-        v.city.toLowerCase().includes(q) ||
-        v.whatsappNumber.includes(q) ||
-        v.category.toLowerCase().includes(q)
-    );
-  }, [cloudVendors, storeSearch]);
+  const pendingApprovalCount = cloudVendors.filter((v) => v.status === 'pending_review').length;
 
   if (!open) return null;
 
@@ -542,28 +559,26 @@ export function AdminPanelModal({
     }
   };
 
-  const handleIssueTransferForExisting = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!transferTargetVendor) return;
+  const handleIssueTransferForExistingVendor = async (
+    vendor: Vendor,
+    phone: string,
+    pass: string
+  ) => {
     setError(null);
-    setBusyVendorId(transferTargetVendor.id);
     try {
-      const prevTransfer = transfers.find((t) => t.vendorId === transferTargetVendor.id);
+      const prevTransfer = transfers.find((t) => t.vendorId === vendor.id);
       const record = await adminIssueTransferForExistingStore(
-        transferTargetVendor,
+        vendor,
         adminUser.uid,
-        existingPhone,
-        existingPasscode,
+        phone,
+        pass,
         prevTransfer?.claimId
       );
-      setCreatedHandover({ vendor: transferTargetVendor, transfer: record });
-      setTransferTargetVendor(null);
+      setCreatedHandover({ vendor, transfer: record });
       setActiveTab('create');
-      onToast(`Transfer passcode generated for ${transferTargetVendor.name}!`);
+      onToast(`Transfer passcode generated for ${vendor.name}!`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not issue transfer passcode.');
-    } finally {
-      setBusyVendorId(null);
     }
   };
 
@@ -600,24 +615,6 @@ export function AdminPanelModal({
     }
   };
 
-  const handleToggleChristmas = async (vendor: Vendor) => {
-    setBusyVendorId(vendor.id);
-    try {
-      const next = !vendor.christmasSpecial;
-      await updateVendorInCloud(vendor.id, {
-        christmasSpecial: next,
-        ...(next && !vendor.christmasOffer
-          ? { christmasOffer: 'Christmas Plum Cakes & NYE Specials · Pre-orders Open' }
-          : {}),
-      });
-      onToast(next ? `${vendor.name} added to Christmas Spotlight!` : `${vendor.name} removed from Christmas Spotlight.`);
-    } catch {
-      onToast('Could not update Christmas status.');
-    } finally {
-      setBusyVendorId(null);
-    }
-  };
-
   const origin = getSiteOrigin();
 
   return (
@@ -637,14 +634,14 @@ export function AdminPanelModal({
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-base font-extrabold tracking-tight sm:text-lg">
-                  Admin Panel · Fast Baker Store &amp; Transfer
+                  FindMyBites Admin Command Center
                 </h2>
                 <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-300">
-                  Concierge Mode
+                  Full Control
                 </span>
               </div>
               <p className="text-xs text-white/70">
-                Build a baker&apos;s store + products in 60 seconds, then send a phone passcode so she can claim it &amp; set her password.
+                Approve vendors, review stores, manage Google SEO &amp; live sitemap, moderate leads, and transfer baker storefronts.
               </p>
             </div>
           </div>
@@ -659,61 +656,64 @@ export function AdminPanelModal({
           </button>
         </div>
 
-        {/* Navigation Tabs */}
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-muted/40 px-5 py-2.5">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => setActiveTab('create')}
-              className={`inline-flex cursor-pointer items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition-colors ${
-                activeTab === 'create'
-                  ? 'bg-brand text-brand-foreground shadow-sm'
-                  : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-              }`}
-            >
-              <Cake className="size-3.5" aria-hidden="true" />
-              Create &amp; Transfer Store
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveTab('transfers')}
-              className={`inline-flex cursor-pointer items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition-colors ${
-                activeTab === 'transfers'
-                  ? 'bg-brand text-brand-foreground shadow-sm'
-                  : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-              }`}
-            >
-              <KeyRound className="size-3.5" aria-hidden="true" />
-              Transfers &amp; Passcodes
-              {pendingCount > 0 && (
-                <span className="rounded-full bg-amber-500 px-1.5 py-0.5 font-mono text-[10px] font-extrabold text-white">
-                  {pendingCount}
-                </span>
-              )}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveTab('stores')}
-              className={`inline-flex cursor-pointer items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition-colors ${
-                activeTab === 'stores'
-                  ? 'bg-brand text-brand-foreground shadow-sm'
-                  : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-              }`}
-            >
-              <Store className="size-3.5" aria-hidden="true" />
-              All Cloud Stores ({cloudVendors.length})
-            </button>
-          </div>
-
-          <div className="flex items-center gap-3 text-[11px] font-semibold text-muted-foreground">
-            <span>
-              Pending: <strong className="text-amber-600 dark:text-amber-400">{pendingCount}</strong>
-            </span>
-            <span>
-              Claimed: <strong className="text-emerald-600 dark:text-emerald-400">{claimedCount}</strong>
-            </span>
+        {/* 7-Tab Navigation Bar */}
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-muted/40 px-4 py-2.5 sm:px-5">
+          <div className="flex flex-wrap items-center gap-1">
+            {(
+              [
+                { id: 'overview', label: 'Overview', icon: BarChart3, badge: 0 },
+                {
+                  id: 'approvals',
+                  label: 'Approvals & Stores',
+                  icon: ClipboardCheck,
+                  badge: pendingApprovalCount,
+                  badgeTone: 'bg-rose-600 text-white',
+                },
+                { id: 'create', label: 'Create & Transfer', icon: Cake, badge: 0 },
+                {
+                  id: 'transfers',
+                  label: 'Passcodes',
+                  icon: KeyRound,
+                  badge: pendingCount,
+                  badgeTone: 'bg-amber-500 text-white',
+                },
+                { id: 'seo', label: 'SEO & Google', icon: Globe2, badge: 0 },
+                {
+                  id: 'moderation',
+                  label: 'Reviews & Leads',
+                  icon: MessageSquareWarning,
+                  badge: 0,
+                },
+                { id: 'campaigns', label: 'Site Controls', icon: Settings2, badge: 0 },
+              ] as const
+            ).map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`inline-flex cursor-pointer items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold transition-colors ${
+                    isActive
+                      ? 'bg-brand text-brand-foreground shadow-sm'
+                      : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+                  }`}
+                >
+                  <Icon className="size-3.5" aria-hidden="true" />
+                  <span>{tab.label}</span>
+                  {tab.badge > 0 && (
+                    <span
+                      className={`rounded-full px-1.5 py-0.5 font-mono text-[10px] font-extrabold leading-none ${
+                        'badgeTone' in tab ? tab.badgeTone : 'bg-amber-500 text-white'
+                      }`}
+                    >
+                      {tab.badge}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -725,7 +725,46 @@ export function AdminPanelModal({
             </div>
           )}
 
-          {/* TAB 1: CREATE & TRANSFER STORE */}
+          {/* TAB 1: OVERVIEW & LIVE KPIs */}
+          {activeTab === 'overview' && (
+            <AdminOverviewTab
+              allCloudVendors={cloudVendors}
+              allCatalogVendors={allCatalogVendors}
+              pendingTransfersCount={pendingCount}
+              claimedTransfersCount={claimedCount}
+              bookings={bookings}
+              reviews={reviews}
+              eventRequests={eventRequests}
+              vendorMetrics={vendorMetrics}
+              onSwitchTab={(t) => setActiveTab(t)}
+              onPreviewVendor={(v) => {
+                onClose();
+                onPreviewVendor(v);
+              }}
+            />
+          )}
+
+          {/* TAB 2: APPROVALS & STORE REVIEW QUEUE */}
+          {activeTab === 'approvals' && (
+            <AdminApprovalsTab
+              adminUser={adminUser}
+              allCloudVendors={cloudVendors}
+              transfers={transfers}
+              currency={currency}
+              onEditVendor={(v) => {
+                onClose();
+                onEditVendor(v);
+              }}
+              onPreviewVendor={(v) => {
+                onClose();
+                onPreviewVendor(v);
+              }}
+              onIssueTransfer={handleIssueTransferForExistingVendor}
+              onToast={onToast}
+            />
+          )}
+
+          {/* TAB 3: CREATE & TRANSFER STORE */}
           {activeTab === 'create' && (
             createdHandover ? (
               /* INSTANT HANDOVER SUCCESS KIT */
@@ -1544,187 +1583,40 @@ export function AdminPanelModal({
             </div>
           )}
 
-          {/* TAB 3: ALL CLOUD STORES (Quick Admin Control + Transfer Existing Store) */}
-          {activeTab === 'stores' && (
-            <div className="space-y-4">
-              {/* Inline Transfer Existing Store Modal Banner */}
-              {transferTargetVendor && (
-                <form
-                  onSubmit={(e) => void handleIssueTransferForExisting(e)}
-                  className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <h4 className="text-sm font-extrabold text-foreground">
-                      Transfer &quot;{transferTargetVendor.name}&quot; to Baker&apos;s Phone
-                    </h4>
-                    <button
-                      type="button"
-                      onClick={() => setTransferTargetVendor(null)}
-                      className="cursor-pointer rounded-lg p-1 text-muted-foreground hover:text-foreground"
-                    >
-                      <X className="size-4" />
-                    </button>
-                  </div>
-                  <div className="mt-3 grid gap-3 sm:grid-cols-3">
-                    <div>
-                      <label className="mb-1 block text-[11px] font-bold">
-                        Baker Phone (with country code)
-                      </label>
-                      <input
-                        type="tel"
-                        required
-                        value={existingPhone}
-                        onChange={(e) => setExistingPhone(e.target.value)}
-                        placeholder="919876543210"
-                        className="w-full rounded-xl border border-border bg-background px-3 py-2 font-mono text-xs font-bold"
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-[11px] font-bold">Transfer Passcode</label>
-                      <div className="flex gap-1.5">
-                        <input
-                          type="text"
-                          required
-                          value={existingPasscode}
-                          onChange={(e) => setExistingPasscode(normalizePasscode(e.target.value))}
-                          className="min-w-0 flex-1 rounded-xl border border-border bg-background px-3 py-2 font-mono text-xs font-black tracking-wider"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setExistingPasscode(generateTransferPasscode('FMB'))}
-                          className="cursor-pointer rounded-xl border border-border bg-background px-2.5 text-xs"
-                        >
-                          <RefreshCw className="size-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                    <div className="flex items-end">
-                      <button
-                        type="submit"
-                        disabled={busyVendorId === transferTargetVendor.id}
-                        className="inline-flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-brand px-4 py-2 text-xs font-extrabold text-brand-foreground hover:bg-brand-hover disabled:opacity-50"
-                      >
-                        <KeyRound className="size-3.5" />
-                        Generate Handover Kit
-                      </button>
-                    </div>
-                  </div>
-                </form>
-              )}
+          {/* TAB 5: SEO & GOOGLE RANKING MANAGER */}
+          {activeTab === 'seo' && (
+            <AdminSeoManagerTab
+              adminUser={adminUser}
+              siteSettings={siteSettings}
+              allCloudVendors={cloudVendors}
+              allCatalogVendors={allCatalogVendors}
+              onNavigateSeoPath={(path) => {
+                onClose();
+                onNavigateSeoPath(path);
+              }}
+              onToast={onToast}
+            />
+          )}
 
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <input
-                  type="text"
-                  value={storeSearch}
-                  onChange={(e) => setStoreSearch(e.target.value)}
-                  placeholder="Search stores by name, city, phone, or category..."
-                  className="w-full rounded-xl border border-border bg-card py-2.5 pl-9 pr-3 text-xs text-foreground focus:border-brand focus:outline-none"
-                />
-              </div>
+          {/* TAB 6: REVIEWS, BOOKINGS & EVENT LEADS MODERATION */}
+          {activeTab === 'moderation' && (
+            <AdminModerationTab
+              reviews={reviews}
+              bookings={bookings}
+              eventRequests={eventRequests}
+              allCatalogVendors={allCatalogVendors}
+              currency={currency}
+              onToast={onToast}
+            />
+          )}
 
-              {filteredStores.length === 0 ? (
-                <p className="py-8 text-center text-xs text-muted-foreground">
-                  No cloud storefronts match your search.
-                </p>
-              ) : (
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {filteredStores.map((v) => {
-                    const isOwnedByAdmin = v.ownerId === adminUser.uid;
-                    const isBusy = busyVendorId === v.id;
-                    return (
-                      <div
-                        key={v.id}
-                        className="flex flex-col justify-between gap-3 rounded-2xl border border-border bg-card p-3.5"
-                      >
-                        <div className="flex gap-3">
-                          <img
-                            src={v.image}
-                            alt={v.name}
-                            className="size-16 shrink-0 rounded-xl object-cover ring-1 ring-border"
-                          />
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-1.5">
-                              <h4 className="truncate text-sm font-extrabold text-foreground">
-                                {v.name}
-                              </h4>
-                              {v.verified && <BadgeCheck className="size-4 shrink-0 text-sky-500" />}
-                            </div>
-                            <p className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground">
-                              <MapPin className="size-3" />
-                              {v.city}, {v.country} · {v.products.length} items · From{' '}
-                              {formatMoney(v.startingPriceUsd, currency)}
-                            </p>
-                            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                              {v.claimStatus === 'claimed' ? (
-                                <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:text-emerald-300">
-                                  Transferred to Baker
-                                </span>
-                              ) : v.claimStatus === 'pending' ? (
-                                <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold text-amber-800 dark:text-amber-300">
-                                  Pending Transfer
-                                </span>
-                              ) : isOwnedByAdmin ? (
-                                <span className="rounded-full bg-sky-500/15 px-2 py-0.5 text-[10px] font-bold text-sky-700 dark:text-sky-300">
-                                  Admin-Created
-                                </span>
-                              ) : (
-                                <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
-                                  Vendor-Owned
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-1.5 border-t border-border pt-2.5">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              onClose();
-                              onEditVendor(v);
-                            }}
-                            className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-border bg-background px-2.5 py-1.5 text-[11px] font-bold hover:border-brand"
-                          >
-                            <Edit3 className="size-3" />
-                            Edit Store &amp; Products
-                          </button>
-
-                          {isOwnedByAdmin && v.claimStatus !== 'claimed' && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setTransferTargetVendor(v);
-                                setExistingPhone(v.whatsappNumber);
-                                setExistingPasscode(generateTransferPasscode('CAKE'));
-                              }}
-                              className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-amber-500 px-2.5 py-1.5 text-[11px] font-extrabold text-white hover:bg-amber-600"
-                            >
-                              <KeyRound className="size-3" />
-                              Transfer to Phone
-                            </button>
-                          )}
-
-                          <button
-                            type="button"
-                            disabled={isBusy}
-                            onClick={() => void handleToggleChristmas(v)}
-                            className={`inline-flex cursor-pointer items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition-colors ${
-                              v.christmasSpecial
-                                ? 'border-emerald-600 bg-emerald-600 text-white'
-                                : 'border-border bg-background text-muted-foreground hover:border-emerald-600 hover:text-emerald-700'
-                            }`}
-                          >
-                            <Snowflake className="size-3" />
-                            {v.christmasSpecial ? 'In Christmas' : 'Highlight Xmas'}
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+          {/* TAB 7: CAMPAIGNS & GLOBAL SITE CONTROLS */}
+          {activeTab === 'campaigns' && (
+            <AdminCampaignsTab
+              adminUser={adminUser}
+              siteSettings={siteSettings}
+              onToast={onToast}
+            />
           )}
         </div>
       </div>

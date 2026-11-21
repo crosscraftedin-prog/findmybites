@@ -112,8 +112,8 @@
         },
         "status": {
           "type": "string",
-          "enum": ["active", "paused"],
-          "description": "Storefront visibility state."
+          "enum": ["active", "pending_review", "paused"],
+          "description": "Storefront visibility & moderation state."
         },
         "tagline": {
           "type": "string",
@@ -200,6 +200,21 @@
           "maxLength": 64,
           "pattern": "^[a-f0-9]{64}$",
           "description": "SHA-256 claim receipt ID recorded only after successful atomic transfer (never stored while pending)."
+        },
+        "seoTitle": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Custom Google SEO title override for this storefront."
+        },
+        "seoDescription": {
+          "type": "string",
+          "maxLength": 220,
+          "description": "Custom Google SEO meta description override for this storefront."
+        },
+        "seoKeywords": {
+          "type": "string",
+          "maxLength": 240,
+          "description": "Comma-separated target local search keywords for this storefront."
         },
         "createdAt": {
           "type": "string",
@@ -812,6 +827,66 @@
         }
       },
       "required": ["vendorId", "vendorName", "vendorSlug", "targetPhone", "passcode", "claimId", "status", "createdBy", "createdAt", "updatedAt"]
+    },
+    "SiteSettings": {
+      "title": "SiteSettings",
+      "description": "Global SEO metadata, campaign announcement banner, snowfall toggle, and vendor approval gate settings controlled by Admin.",
+      "type": "object",
+      "properties": {
+        "siteTitle": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 100
+        },
+        "siteDescription": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 240
+        },
+        "siteKeywords": {
+          "type": "string",
+          "maxLength": 400
+        },
+        "promoEnabled": {
+          "type": "boolean"
+        },
+        "promoText": {
+          "type": "string",
+          "maxLength": 180
+        },
+        "promoCtaLabel": {
+          "type": "string",
+          "maxLength": 60
+        },
+        "snowfallEnabled": {
+          "type": "boolean"
+        },
+        "requireVendorApproval": {
+          "type": "boolean"
+        },
+        "updatedBy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "siteTitle",
+        "siteDescription",
+        "siteKeywords",
+        "promoEnabled",
+        "promoText",
+        "promoCtaLabel",
+        "snowfallEnabled",
+        "requireVendorApproval",
+        "updatedBy",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -854,6 +929,10 @@
     "/adminTransfers/{vendorId}": {
       "schema": { "$ref": "#/entities/AdminTransferRecord" },
       "description": "Admin-only private transfer log containing target phone and handover passcode for WhatsApp dispatch."
+    },
+    "/siteSettings/{settingId}": {
+      "schema": { "$ref": "#/entities/SiteSettings" },
+      "description": "Publicly readable global SEO and campaign settings, writable strictly by verified admins."
     }
   }
 }

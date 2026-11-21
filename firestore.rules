@@ -107,6 +107,7 @@ service cloud.firestore {
           'bioHandle', 'bioTheme', 'instagramHandle', 'customLinks',
           'serviceAreas', 'specialties', 'image', 'logo', 'gallery', 'products',
           'claimStatus', 'claimedByToken',
+          'seoTitle', 'seoDescription', 'seoKeywords',
           'createdAt', 'updatedAt'
         ]) &&
         isValidId(data.ownerId) &&
@@ -129,7 +130,7 @@ service cloud.firestore {
         data.reviewCount is number && data.reviewCount >= 0 && data.reviewCount <= 100000 &&
         data.responseTime is string && data.responseTime.size() >= 2 && data.responseTime.size() <= 60 &&
         data.verified is bool &&
-        data.status in ['active', 'paused'] &&
+        data.status in ['active', 'pending_review', 'paused'] &&
         data.tagline is string && data.tagline.size() >= 3 && data.tagline.size() <= 180 &&
         data.description is string && data.description.size() >= 5 && data.description.size() <= 1200 &&
         (!('promoBanner' in data) || (data.promoBanner is string && data.promoBanner.size() <= 120)) &&
@@ -141,6 +142,9 @@ service cloud.firestore {
         (!('customLinks' in data) || isValidCustomLinksList(data.customLinks)) &&
         (!('claimStatus' in data) || data.claimStatus in ['none', 'pending', 'claimed']) &&
         (!('claimedByToken' in data) || isValidSha256Id(data.claimedByToken)) &&
+        (!('seoTitle' in data) || (data.seoTitle is string && data.seoTitle.size() <= 100)) &&
+        (!('seoDescription' in data) || (data.seoDescription is string && data.seoDescription.size() <= 220)) &&
+        (!('seoKeywords' in data) || (data.seoKeywords is string && data.seoKeywords.size() <= 240)) &&
         isValidStringList(data.serviceAreas, 10, 100) &&
         isValidStringList(data.specialties, 10, 100) &&
         data.image is string && data.image.size() >= 1 && data.image.size() <= 150000 &&
@@ -323,6 +327,31 @@ service cloud.firestore {
         data.updatedAt is timestamp;
     }
 
+    function isValidSiteSettings(data) {
+      return data.keys().hasAll([
+          'siteTitle', 'siteDescription', 'siteKeywords',
+          'promoEnabled', 'promoText', 'promoCtaLabel',
+          'snowfallEnabled', 'requireVendorApproval',
+          'updatedBy', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'siteTitle', 'siteDescription', 'siteKeywords',
+          'promoEnabled', 'promoText', 'promoCtaLabel',
+          'snowfallEnabled', 'requireVendorApproval',
+          'updatedBy', 'updatedAt'
+        ]) &&
+        data.siteTitle is string && data.siteTitle.size() >= 5 && data.siteTitle.size() <= 100 &&
+        data.siteDescription is string && data.siteDescription.size() >= 10 && data.siteDescription.size() <= 240 &&
+        data.siteKeywords is string && data.siteKeywords.size() <= 400 &&
+        data.promoEnabled is bool &&
+        data.promoText is string && data.promoText.size() <= 180 &&
+        data.promoCtaLabel is string && data.promoCtaLabel.size() <= 60 &&
+        data.snowfallEnabled is bool &&
+        data.requireVendorApproval is bool &&
+        isValidId(data.updatedBy) &&
+        data.updatedAt is timestamp;
+    }
+
     // --- Collection: /vendors/{vendorId} ---
     match /vendors/{vendorId} {
       allow get: if isValidId(vendorId) && (
@@ -341,6 +370,7 @@ service cloud.firestore {
         incoming().ownerId == request.auth.uid &&
         !('claimedByToken' in incoming()) &&
         (!('claimStatus' in incoming()) || incoming().claimStatus == 'none' || (incoming().claimStatus == 'pending' && isAdmin())) &&
+        incoming().status in ['active', 'pending_review'] &&
         incoming().createdAt == request.time &&
         incoming().updatedAt == request.time &&
         ((incoming().verified == false && incoming().reviewCount == 0) || isAdmin());
@@ -350,13 +380,17 @@ service cloud.firestore {
         isValidVendor(incoming()) &&
         incoming().createdAt == existing().createdAt &&
         incoming().updatedAt == request.time && (
-          // Tier 1: Owner editing storefront details, Christmas promo, bio-link settings, gallery, products, or plan
+          // Tier 1: Owner editing storefront details (cannot self-approve pending_review)
           (
             incoming().ownerId == existing().ownerId &&
             isOwner(existing().ownerId) &&
             incoming().verified == existing().verified &&
             incoming().rating == existing().rating &&
             incoming().reviewCount == existing().reviewCount &&
+            (
+              (existing().status != 'pending_review' && incoming().status in ['active', 'paused']) ||
+              incoming().status == existing().status
+            ) &&
             incoming().diff(existing()).affectedKeys().hasOnly([
               'name', 'category', 'country', 'state', 'city', 'area',
               'lat', 'lng', 'whatsappNumber', 'planTier', 'monthlyAutoPay',
@@ -367,18 +401,19 @@ service cloud.firestore {
               'specialties', 'image', 'logo', 'gallery', 'products', 'updatedAt'
             ])
           ) ||
-          // Tier 2: Admin verification, moderation, Christmas promotion, concierge product setup & handover status
+          // Tier 2: Admin approval, verification, SEO overrides, Christmas promotion & concierge setup
           (
             incoming().ownerId == existing().ownerId &&
             isAdmin() &&
             incoming().diff(existing()).affectedKeys().hasOnly([
-              'name', 'category', 'country', 'state', 'city', 'area',
+              'slug', 'name', 'category', 'country', 'state', 'city', 'area',
               'lat', 'lng', 'whatsappNumber', 'verified', 'status',
               'planTier', 'monthlyAutoPay', 'priceTier', 'startingPriceUsd',
               'tagline', 'description', 'promoBanner', 'christmasSpecial',
               'christmasOffer', 'bioHandle', 'bioTheme', 'instagramHandle',
               'customLinks', 'serviceAreas', 'specialties', 'image', 'logo',
-              'gallery', 'products', 'claimStatus', 'updatedAt'
+              'gallery', 'products', 'claimStatus',
+              'seoTitle', 'seoDescription', 'seoKeywords', 'updatedAt'
             ])
           ) ||
           // Tier 3: Atomic Baker Store Claim Transfer using a valid SHA-256 /storeClaims/{claimId} ticket
@@ -407,10 +442,7 @@ service cloud.firestore {
 
     // --- Collection: /storeClaims/{claimId} (Zero-PII Cryptographic Store Handover Tickets) ---
     match /storeClaims/{claimId} {
-      // Proof-of-knowledge lookup: caller must know exact SHA-256(phone + passcode)
       allow get: if isValidSha256Id(claimId);
-
-      // Strictly admin-only listing (O(1) token check, zero get()/exists() cost)
       allow list: if isRootAdminToken() || (isVerifiedUser() && existing().createdBy == request.auth.uid);
 
       allow create: if isAdmin() &&
@@ -481,6 +513,32 @@ service cloud.firestore {
       allow delete: if isAdmin() && isValidId(vendorId);
     }
 
+    // --- Collection: /siteSettings/{settingId} (Global SEO, Campaigns & Approval Controls) ---
+    match /siteSettings/{settingId} {
+      allow get: if isValidId(settingId);
+      allow list: if false;
+
+      allow create: if isAdmin() &&
+        isValidId(settingId) &&
+        isValidSiteSettings(incoming()) &&
+        incoming().updatedBy == request.auth.uid &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isAdmin() &&
+        isValidId(settingId) &&
+        isValidSiteSettings(incoming()) &&
+        incoming().updatedBy == request.auth.uid &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'siteTitle', 'siteDescription', 'siteKeywords',
+          'promoEnabled', 'promoText', 'promoCtaLabel',
+          'snowfallEnabled', 'requireVendorApproval',
+          'updatedBy', 'updatedAt'
+        ]);
+
+      allow delete: if isAdmin() && isValidId(settingId);
+    }
+
     // --- Collection: /users/{userId} (Private PII & Saved Shortlist) ---
     match /users/{userId} {
       allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
@@ -524,10 +582,10 @@ service cloud.firestore {
         isAdmin()
       );
 
-      allow list: if isAuthenticatedUser() && (
+      allow list: if isRootAdminToken() || (isAuthenticatedUser() && (
         existing().customerId == request.auth.uid ||
         existing().vendorOwnerId == request.auth.uid
-      );
+      ));
 
       allow create: if isAuthenticatedUser() &&
         isValidId(bookingId) &&
@@ -598,10 +656,10 @@ service cloud.firestore {
         isAdmin()
       );
 
-      allow list: if isAuthenticatedUser() && (
+      allow list: if isRootAdminToken() || (isAuthenticatedUser() && (
         existing().status == 'open' ||
         existing().customerId == request.auth.uid
-      );
+      ));
 
       allow create: if isAuthenticatedUser() &&
         isValidId(requestId) &&
@@ -671,7 +729,7 @@ service cloud.firestore {
     // --- Collection: /vendorMetrics/{vendorId} (Cloud Engagement Analytics) ---
     match /vendorMetrics/{vendorId} {
       allow get: if isValidId(vendorId);
-      allow list: if false;
+      allow list: if isRootAdminToken();
 
       allow create: if isAuthenticatedUser() &&
         isValidId(vendorId) &&

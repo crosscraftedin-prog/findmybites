@@ -19,6 +19,32 @@
   ],
   "rewrites": [
     {
+      "source": "/sitemap.xml",
+      "destination": "/api/sitemap"
+    },
+    {
+      "source": "/:prefix(v|fmb|city|category)/:slug",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": ".*(Googlebot|Bingbot|WhatsApp|facebookexternalhit|Twitterbot|LinkedInBot|Slackbot|TelegramBot|Applebot|DuckDuckBot).*"
+        }
+      ],
+      "destination": "/api/seo?path=:prefix/:slug"
+    },
+    {
+      "source": "/:city((?!api|assets|claim|v|fmb|city|category)[a-z0-9-]+)/:category([a-z0-9-]+)",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": ".*(Googlebot|Bingbot|WhatsApp|facebookexternalhit|Twitterbot|LinkedInBot|Slackbot|TelegramBot|Applebot|DuckDuckBot).*"
+        }
+      ],
+      "destination": "/api/seo?path=:city/:category"
+    },
+    {
       "source": "/((?!api/|assets/|robots\\.txt|sitemap\\.xml|favicon\\.svg|og-cover\\.png).*)",
       "destination": "/index.html"
     }

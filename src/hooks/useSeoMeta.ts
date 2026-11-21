@@ -1,17 +1,22 @@
 import { useEffect } from 'react';
-import { LaunchCountry, Vendor } from '../data/vendors';
+import {
+  DEFAULT_SITE_SETTINGS,
+  LaunchCountry,
+  SiteSettings,
+  Vendor,
+} from '../data/vendors';
+import { ResolvedSeoDirectoryRoute } from '../utils/seoDirectory';
 
 interface SeoMetaOptions {
   activeVendor: Vendor | null;
+  seoDirectoryRoute?: ResolvedSeoDirectoryRoute | null;
+  matchingVendors?: Vendor[];
+  siteSettings?: SiteSettings;
   selectedCategory: string;
   selectedCountry: LaunchCountry;
   selectedState: string;
   ecosystem: 'FINDMYBITES' | 'PIMPMYPARTY';
 }
-
-const DEFAULT_TITLE = 'FindMyBites × PimpMyParty – Bakers, Catering & Party Decor';
-const DEFAULT_DESC =
-  'Find bakers, live counters, catering, mocktail bars, snack boxes, gifting & wedding decor near you in India, Dubai, Sri Lanka, Pakistan, Bangladesh & Nepal.';
 
 function upsertMeta(attr: 'name' | 'property', key: string, content: string) {
   let el = document.head.querySelector(`meta[${attr}="${key}"]`) as HTMLMetaElement | null;
@@ -33,8 +38,26 @@ function upsertCanonical(href: string) {
   link.setAttribute('href', href);
 }
 
+function upsertJsonLd(id: string, payload: Record<string, unknown> | null) {
+  const existing = document.getElementById(id) as HTMLScriptElement | null;
+  if (!payload) {
+    existing?.remove();
+    return;
+  }
+  const script = existing ?? document.createElement('script');
+  script.id = id;
+  script.type = 'application/ld+json';
+  script.textContent = JSON.stringify(payload);
+  if (!existing) {
+    document.head.appendChild(script);
+  }
+}
+
 export function useSeoMeta({
   activeVendor,
+  seoDirectoryRoute = null,
+  matchingVendors = [],
+  siteSettings = DEFAULT_SITE_SETTINGS,
   selectedCategory,
   selectedCountry,
   selectedState,
@@ -44,14 +67,27 @@ export function useSeoMeta({
     const origin = window.location.origin;
     const baseUrl = origin + window.location.pathname;
 
-    let title = DEFAULT_TITLE;
-    let description = DEFAULT_DESC;
+    let title = siteSettings.siteTitle || DEFAULT_SITE_SETTINGS.siteTitle;
+    let description = siteSettings.siteDescription || DEFAULT_SITE_SETTINGS.siteDescription;
+    let keywords = siteSettings.siteKeywords || DEFAULT_SITE_SETTINGS.siteKeywords;
     let canonical = baseUrl;
 
     if (activeVendor) {
-      title = `${activeVendor.name} – ${activeVendor.category} in ${activeVendor.city}`;
-      description = `${activeVendor.tagline} Book ${activeVendor.name} in ${activeVendor.area}, ${activeVendor.city}, ${activeVendor.state} directly on WhatsApp via FindMyBites × PimpMyParty.`;
+      title =
+        activeVendor.seoTitle?.trim() ||
+        `${activeVendor.name} – ${activeVendor.category} in ${activeVendor.city}`;
+      description =
+        activeVendor.seoDescription?.trim() ||
+        `${activeVendor.tagline} Book ${activeVendor.name} in ${activeVendor.area}, ${activeVendor.city}, ${activeVendor.state} directly on WhatsApp via FindMyBites × PimpMyParty.`;
+      keywords =
+        activeVendor.seoKeywords?.trim() ||
+        `${activeVendor.name}, ${activeVendor.category} in ${activeVendor.city}, ${activeVendor.area} ${activeVendor.category.toLowerCase()}`;
       canonical = `${origin}/v/${activeVendor.slug}`;
+    } else if (seoDirectoryRoute) {
+      title = seoDirectoryRoute.title;
+      description = seoDirectoryRoute.description;
+      keywords = seoDirectoryRoute.keywords;
+      canonical = `${origin}${seoDirectoryRoute.canonicalPath}`;
     } else if (selectedCategory !== 'All' || selectedCountry !== 'All' || selectedState !== 'All') {
       const subject =
         selectedCategory !== 'All'
@@ -78,6 +114,7 @@ export function useSeoMeta({
 
     document.title = title;
     upsertMeta('name', 'description', description);
+    upsertMeta('name', 'keywords', keywords);
     upsertMeta('property', 'og:title', title);
     upsertMeta('property', 'og:description', description);
     upsertMeta('property', 'og:url', canonical);
@@ -87,18 +124,28 @@ export function useSeoMeta({
     upsertMeta('name', 'twitter:image', ogImage);
     upsertCanonical(canonical);
 
-    // Dynamic LocalBusiness JSON-LD when viewing a Vendor Mini-Website
-    const existingScript = document.getElementById('dynamic-vendor-jsonld');
+    // 1. Vendor LocalBusiness / Bakery + BreadcrumbList JSON-LD
     if (activeVendor) {
-      const schema = {
+      const schemaType = activeVendor.category.toLowerCase().includes('baker')
+        ? 'Bakery'
+        : activeVendor.marketplace === 'food'
+          ? 'FoodEstablishment'
+          : 'LocalBusiness';
+
+      upsertJsonLd('dynamic-vendor-jsonld', {
         '@context': 'https://schema.org',
-        '@type': 'LocalBusiness',
+        '@type': schemaType,
         name: activeVendor.name,
         description: activeVendor.description,
         url: canonical,
         image: ogImage,
         telephone: `+${activeVendor.whatsappNumber}`,
         priceRange: activeVendor.priceTier,
+        geo: {
+          '@type': 'GeoCoordinates',
+          latitude: activeVendor.lat,
+          longitude: activeVendor.lng,
+        },
         address: {
           '@type': 'PostalAddress',
           streetAddress: activeVendor.area,
@@ -109,7 +156,7 @@ export function useSeoMeta({
         aggregateRating: {
           '@type': 'AggregateRating',
           ratingValue: activeVendor.rating,
-          reviewCount: activeVendor.reviewCount,
+          reviewCount: Math.max(1, activeVendor.reviewCount),
         },
         hasOfferCatalog: {
           '@type': 'OfferCatalog',
@@ -117,7 +164,7 @@ export function useSeoMeta({
           itemListElement: activeVendor.products.map((p) => ({
             '@type': 'Offer',
             itemOffered: {
-              '@type': 'Service',
+              '@type': 'Product',
               name: p.name,
               description: p.description,
             },
@@ -125,17 +172,82 @@ export function useSeoMeta({
             priceCurrency: 'USD',
           })),
         },
-      };
+      });
+      upsertJsonLd('dynamic-directory-jsonld', null);
+      upsertJsonLd('dynamic-faq-jsonld', null);
+    } else if (seoDirectoryRoute) {
+      upsertJsonLd('dynamic-vendor-jsonld', null);
 
-      const script = (existingScript as HTMLScriptElement | null) ?? document.createElement('script');
-      script.id = 'dynamic-vendor-jsonld';
-      script.type = 'application/ld+json';
-      script.textContent = JSON.stringify(schema);
-      if (!existingScript) {
-        document.head.appendChild(script);
-      }
-    } else if (existingScript) {
-      existingScript.remove();
+      // 2. Programmatic City × Category ItemList + BreadcrumbList JSON-LD
+      upsertJsonLd('dynamic-directory-jsonld', {
+        '@context': 'https://schema.org',
+        '@graph': [
+          {
+            '@type': 'BreadcrumbList',
+            itemListElement: [
+              { '@type': 'ListItem', position: 1, name: 'Home', item: `${origin}/` },
+              ...(seoDirectoryRoute.cityEntry
+                ? [
+                    {
+                      '@type': 'ListItem',
+                      position: 2,
+                      name: seoDirectoryRoute.cityEntry.city,
+                      item: `${origin}/city/${seoDirectoryRoute.cityEntry.slug}`,
+                    },
+                  ]
+                : []),
+              ...(seoDirectoryRoute.categoryEntry
+                ? [
+                    {
+                      '@type': 'ListItem',
+                      position: seoDirectoryRoute.cityEntry ? 3 : 2,
+                      name: seoDirectoryRoute.categoryEntry.category,
+                      item: canonical,
+                    },
+                  ]
+                : []),
+            ],
+          },
+          {
+            '@type': 'ItemList',
+            name: seoDirectoryRoute.h1,
+            numberOfItems: matchingVendors.length,
+            itemListElement: matchingVendors.slice(0, 20).map((v, idx) => ({
+              '@type': 'ListItem',
+              position: idx + 1,
+              url: `${origin}/v/${v.slug}`,
+              name: v.name,
+            })),
+          },
+        ],
+      });
+
+      // 3. FAQPage Rich Snippet JSON-LD
+      upsertJsonLd('dynamic-faq-jsonld', {
+        '@context': 'https://schema.org',
+        '@type': 'FAQPage',
+        mainEntity: seoDirectoryRoute.faqs.map((f) => ({
+          '@type': 'Question',
+          name: f.question,
+          acceptedAnswer: {
+            '@type': 'Answer',
+            text: f.answer,
+          },
+        })),
+      });
+    } else {
+      upsertJsonLd('dynamic-vendor-jsonld', null);
+      upsertJsonLd('dynamic-directory-jsonld', null);
+      upsertJsonLd('dynamic-faq-jsonld', null);
     }
-  }, [activeVendor, selectedCategory, selectedCountry, selectedState, ecosystem]);
+  }, [
+    activeVendor,
+    seoDirectoryRoute,
+    matchingVendors,
+    siteSettings,
+    selectedCategory,
+    selectedCountry,
+    selectedState,
+    ecosystem,
+  ]);
 }
