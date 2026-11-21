@@ -655,6 +655,15 @@ export function VendorDashboardModal({
           ? `Updated "${nextProd.name}" on ${vendor.name} in the cloud!`
           : `Added "${nextProd.name}" to ${vendor.name} in the cloud!`
       );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '';
+      onNotify(
+        msg.toLowerCase().includes('permission')
+          ? 'Could not save product — permission denied. Please refresh or sign in again.'
+          : msg.toLowerCase().includes('exceeds the maximum') || msg.toLowerCase().includes('too large')
+            ? 'Storefront photo data is too large. Try using smaller or fewer product photos.'
+            : 'Could not save product right now. Please try again.'
+      );
     } finally {
       setBusyId(null);
     }
@@ -676,6 +685,13 @@ export function VendorDashboardModal({
       }
       setConfirmDeleteProdKey(null);
       onNotify(`Deleted product from ${vendor.name}.`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '';
+      onNotify(
+        msg.toLowerCase().includes('permission')
+          ? 'Could not remove product — permission denied. Please refresh or sign in again.'
+          : 'Could not remove product right now. Please try again.'
+      );
     } finally {
       setBusyId(null);
     }
@@ -686,6 +702,13 @@ export function VendorDashboardModal({
     try {
       await deleteVendorInCloud(vendor.id);
       onNotify(`${vendor.name} removed from cloud directory.`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '';
+      onNotify(
+        msg.toLowerCase().includes('permission')
+          ? 'Could not delete storefront — permission denied. Please refresh or sign in again.'
+          : 'Could not delete storefront right now. Please try again.'
+      );
     } finally {
       setBusyId(null);
     }
