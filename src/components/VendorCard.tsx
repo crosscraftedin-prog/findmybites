@@ -8,6 +8,7 @@ import {
   Heart,
   MapPin,
   MessageCircle,
+  Package,
   PartyPopper,
   Star,
   UtensilsCrossed,
@@ -17,7 +18,9 @@ import {
   Vendor,
   buildWhatsAppUrl,
   formatMoney,
+  getCustomBuilderModeConfig,
   getVendorCoverageLabel,
+  suggestBuilderModeForCategory,
 } from '../data/vendors';
 
 interface VendorCardProps {
@@ -47,6 +50,12 @@ export function VendorCard({
   const isPaid = vendor.planTier === 'business' || vendor.planTier === 'pro';
   const coverageLabel = getVendorCoverageLabel(vendor, browsingState);
   const isMultiState = Boolean(coverageLabel);
+  const hasCustomBuilder = Boolean(vendor.customBuilderEnabled && vendor.products.length > 0);
+  const builderModeConfig = hasCustomBuilder
+    ? getCustomBuilderModeConfig(
+        vendor.customBuilderMode ?? suggestBuilderModeForCategory(vendor.category)
+      )
+    : null;
   const cardWaText =
     browsingState && browsingState !== vendor.state && isMultiState
       ? `Hi ${vendor.name}, I found your storefront on FindMyBites while browsing ${browsingState}. I'd like to enquire about an order for ${browsingState}!`
@@ -175,10 +184,20 @@ export function VendorCard({
             </span>
           </div>
 
-          {coverageLabel && (
-            <div className="mt-1.5 inline-flex max-w-full items-center gap-1 rounded-md border border-indigo-500/30 bg-indigo-500/10 px-2 py-0.5 text-[11px] font-bold text-indigo-700 dark:text-indigo-300">
-              <Globe2 className="size-3 shrink-0" aria-hidden="true" />
-              <span className="truncate">{coverageLabel}</span>
+          {(coverageLabel || builderModeConfig) && (
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+              {builderModeConfig && (
+                <span className="inline-flex max-w-full items-center gap-1 rounded-md border border-brand-border bg-brand-soft px-2 py-0.5 text-[11px] font-bold text-brand">
+                  <Package className="size-3 shrink-0" aria-hidden="true" />
+                  <span className="truncate">{builderModeConfig.customerTitle}</span>
+                </span>
+              )}
+              {coverageLabel && (
+                <span className="inline-flex max-w-full items-center gap-1 rounded-md border border-indigo-500/30 bg-indigo-500/10 px-2 py-0.5 text-[11px] font-bold text-indigo-700 dark:text-indigo-300">
+                  <Globe2 className="size-3 shrink-0" aria-hidden="true" />
+                  <span className="truncate">{coverageLabel}</span>
+                </span>
+              )}
             </div>
           )}
 
@@ -217,8 +236,17 @@ export function VendorCard({
               onClick={() => onSelect(vendor)}
               className="inline-flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-border bg-background px-2.5 text-xs font-semibold text-foreground transition-colors hover:border-brand hover:text-brand whitespace-nowrap"
             >
-              <ExternalLink className="size-3.5" aria-hidden="true" />
-              View Website
+              {builderModeConfig ? (
+                <>
+                  <Package className="size-3.5 text-brand" aria-hidden="true" />
+                  Build {builderModeConfig.id === 'catering' ? 'Plate' : 'Box'}
+                </>
+              ) : (
+                <>
+                  <ExternalLink className="size-3.5" aria-hidden="true" />
+                  View Website
+                </>
+              )}
             </button>
 
             <a

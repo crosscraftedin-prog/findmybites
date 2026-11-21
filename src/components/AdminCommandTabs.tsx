@@ -20,6 +20,7 @@ import {
   MapPin,
   Megaphone,
   MessageCircle,
+  Package,
   RefreshCw,
   Save,
   Search,
@@ -44,9 +45,11 @@ import {
   Vendor,
   formatMoney,
   generateTransferPasscode,
+  getCustomBuilderModeConfig,
   getVendorCoverageLabel,
   normalizePasscode,
   normalizePhoneDigits,
+  suggestBuilderModeForCategory,
 } from '../data/vendors';
 import {
   AdminReviewRecord,
@@ -748,6 +751,38 @@ export function AdminApprovalsTab({
                         <Snowflake className="size-3" />
                         {v.christmasSpecial ? 'In Xmas' : 'Xmas'}
                       </button>
+
+                      {v.marketplace === 'food' && (
+                        <button
+                          type="button"
+                          disabled={isBusy}
+                          onClick={() => {
+                            const nextEnabled = !v.customBuilderEnabled;
+                            const nextMode =
+                              v.customBuilderMode ?? suggestBuilderModeForCategory(v.category);
+                            const modeCfg = getCustomBuilderModeConfig(nextMode);
+                            void handleUpdate(
+                              v,
+                              {
+                                customBuilderEnabled: nextEnabled,
+                                customBuilderMode: nextMode,
+                                customBuilderMinQty: v.customBuilderMinQty ?? modeCfg.defaultMinQty,
+                              },
+                              nextEnabled
+                                ? `Enabled ${modeCfg.label} on ${v.name}!`
+                                : `Disabled Custom Builder on ${v.name}.`
+                            );
+                          }}
+                          className={`inline-flex cursor-pointer items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold ${
+                            v.customBuilderEnabled
+                              ? 'border-brand bg-brand text-brand-foreground'
+                              : 'border-border bg-background text-muted-foreground hover:border-brand hover:text-brand'
+                          }`}
+                        >
+                          <Package className="size-3" />
+                          {v.customBuilderEnabled ? 'Builder ON' : 'Custom Builder'}
+                        </button>
+                      )}
 
                       <button
                         type="button"
