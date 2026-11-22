@@ -44,6 +44,7 @@ import {
   CustomBuilderMode,
   EventRequest,
   FOOD_CATEGORIES,
+  IMG_CAKE,
   LAUNCH_COUNTRIES,
   LaunchCountry,
   PlanTier,
@@ -293,13 +294,13 @@ export function AdminPanelModal({
   const [customBuilderMode, setCustomBuilderMode] = useState<CustomBuilderMode>('snackbox');
   const [customBuilderMinQty, setCustomBuilderMinQty] = useState(10);
   const [customBuilderPackagingLocal, setCustomBuilderPackagingLocal] = useState(0);
-  const [coverImage, setCoverImage] = useState('/src/assets/images/cat-bakers.png');
+  const [coverImage, setCoverImage] = useState(IMG_CAKE);
   const [passcode, setPasscode] = useState(() => generateTransferPasscode('CAKE'));
   const [products, setProducts] = useState<DraftProductRow[]>([
     {
       ...BIRTHDAY_CAKE_PRESETS[0],
       id: 'preset-1',
-      image: '/src/assets/images/cat-bakers.png',
+      image: IMG_CAKE,
     },
   ]);
 
@@ -325,7 +326,7 @@ export function AdminPanelModal({
 
   const categoryDefaultImg = useMemo(() => {
     const meta = CATEGORY_CARDS.find((c) => c.label === category);
-    return meta?.image || '/src/assets/images/cat-bakers.png';
+    return meta?.image || IMG_CAKE;
   }, [category]);
 
   const claimsById = useMemo(() => {

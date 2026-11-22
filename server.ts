@@ -10,7 +10,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-app.use(express.json({ limit: '6mb' }));
+app.use(express.json({ limit: '12mb' }));
 app.use('/api/db', createSupabaseApiRouter());
 
 function resolveBaseUrl(req: express.Request): string {
@@ -34,7 +34,7 @@ app.get('/robots.txt', (req, res) => {
   );
 });
 
-app.get('/sitemap.xml', (req, res) => {
+app.get('/sitemap.xml', async (req, res) => {
   const baseUrl = resolveBaseUrl(req);
   const today = new Date().toISOString().split('T')[0];
 
@@ -67,7 +67,7 @@ app.get('/sitemap.xml', (req, res) => {
 
   const countries = ['india', 'dubai-uae', 'sri-lanka', 'pakistan', 'bangladesh', 'nepal'];
 
-  const vendorSlugs = [
+  const staticVendorSlugs = [
     'saffron-crumb-mumbai',
     'royal-chaat-live-delhi',
     'botanical-bar-dubai',
@@ -86,6 +86,31 @@ app.get('/sitemap.xml', (req, res) => {
     'spin360-booths-mumbai',
   ];
 
+  let liveSlugs: string[] = [];
+  try {
+    const supaUrl = (process.env.SUPABASE_URL || '').trim().replace(/\/$/, '');
+    const supaKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+    if (supaUrl && supaKey) {
+      const r = await fetch(
+        `${supaUrl}/rest/v1/vendors?select=slug&status=eq.active&limit=500`,
+        {
+          headers: {
+            apikey: supaKey,
+            Authorization: `Bearer ${supaKey}`,
+          },
+        }
+      );
+      if (r.ok) {
+        const rows = (await r.json()) as Array<{ slug?: string }>;
+        liveSlugs = rows.map((row) => row.slug || '').filter(Boolean);
+      }
+    }
+  } catch {
+    // Non-fatal: fall back to static vendor slugs
+  }
+
+  const vendorSlugs = Array.from(new Set([...liveSlugs, ...staticVendorSlugs]));
+
   const urls = [
     { loc: `${baseUrl}/`, priority: '1.0', freq: 'daily' },
     ...countries.map((c) => ({
@@ -99,7 +124,7 @@ app.get('/sitemap.xml', (req, res) => {
       freq: 'weekly',
     })),
     ...vendorSlugs.map((slug) => ({
-      loc: `${baseUrl}/v/${slug}`,
+      loc: `${baseUrl}/v/${encodeURIComponent(slug)}`,
       priority: '0.8',
       freq: 'weekly',
     })),
@@ -322,6 +347,10 @@ async function startServer() {
   const distDir = path.resolve(__dirname, 'dist');
 
   if (process.env.NODE_ENV === 'production' && fs.existsSync(distDir)) {
+    const srcImagesDir = path.resolve(__dirname, 'src/assets/images');
+    if (fs.existsSync(srcImagesDir)) {
+      app.use('/src/assets/images', express.static(srcImagesDir, { maxAge: '7d' }));
+    }
     app.use(express.static(distDir));
     app.get('*', (_req, res) => {
       res.sendFile(path.join(distDir, 'index.html'));

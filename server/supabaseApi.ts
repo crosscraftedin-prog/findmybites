@@ -7,6 +7,24 @@ import firebaseConfig from '../firebase-applet-config.json' with { type: 'json' 
 
 const ADMIN_EMAIL = 'crosscraftedin@gmail.com';
 const MEDIA_BUCKET = 'marketplace-media';
+const DEFAULT_FALLBACK_IMAGE = '/src/assets/images/vendor_wedding_cake_1795190931172.jpg';
+
+const claimLookupAttempts = new Map<string, { count: number; resetAt: number }>();
+function checkClaimLookupRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const windowMs = 15 * 60 * 1000;
+  const maxAttempts = 25;
+  const entry = claimLookupAttempts.get(ip);
+  if (!entry || now > entry.resetAt) {
+    claimLookupAttempts.set(ip, { count: 1, resetAt: now + windowMs });
+    return true;
+  }
+  if (entry.count >= maxAttempts) {
+    return false;
+  }
+  entry.count += 1;
+  return true;
+}
 
 if (!getApps().length) {
   initializeApp({
@@ -104,6 +122,41 @@ function sanitizeSlug(raw: unknown): string {
     .replace(/^-+|-+$/g, '')
     .slice(0, 96);
   return cleaned.length >= 2 ? cleaned : `vendor-${Date.now()}`;
+}
+
+function sanitizeBioHandle(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const cleaned = raw
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 50);
+  return cleaned.length >= 2 ? cleaned : null;
+}
+
+async function ensureUniqueVendorSlug(
+  supabase: SupabaseClient,
+  desiredRaw: unknown,
+  excludeVendorId?: string
+): Promise<string> {
+  const base = sanitizeSlug(desiredRaw).slice(0, 84);
+  for (let attempt = 0; attempt < 12; attempt++) {
+    const candidate =
+      attempt === 0
+        ? base
+        : attempt < 6
+          ? `${base}-${attempt + 1}`
+          : `${base}-${crypto.randomBytes(2).toString('hex')}`;
+    const { data } = await supabase
+      .from('vendors')
+      .select('id')
+      .eq('slug', candidate)
+      .maybeSingle();
+    if (!data || (excludeVendorId && data.id === excludeVendorId)) {
+      return candidate;
+    }
+  }
+  return `${base}-${Date.now().toString().slice(-6)}`;
 }
 
 function clampStr(raw: unknown, min: number, max: number, fallback: string): string {
@@ -212,7 +265,7 @@ async function normalizeProductsForStorage(
       const p = (item && typeof item === 'object' ? item : {}) as Record<string, unknown>;
       const imageUrl = await uploadDataUrlIfNeeded(
         supabase,
-        p.image || '/src/assets/images/cat-bakers.png',
+        p.image || DEFAULT_FALLBACK_IMAGE,
         `vendors/${sanitizeId(vendorId)}/products`
       );
       const dietaryTags = Array.isArray(p.dietaryTags)
@@ -237,7 +290,10 @@ async function normalizeProductsForStorage(
         serves: clampStr(p.serves || 'Custom', 1, 60, 'Custom'),
         priceUsd: Math.max(0, Math.min(100000, Number(p.priceUsd) || 0)),
         description: clampStr(p.description || p.name, 1, 400, 'Custom package'),
-        image: imageUrl || '/src/assets/images/cat-bakers.png',
+        image:
+          imageUrl && imageUrl !== '/src/assets/images/cat-bakers.png'
+            ? imageUrl
+            : DEFAULT_FALLBACK_IMAGE,
       };
       if (typeof p.unitQuantity === 'string' && p.unitQuantity.trim()) {
         out.unitQuantity = p.unitQuantity.trim().slice(0, 16);
@@ -328,9 +384,11 @@ function rowToVendor(row: Record<string, unknown>) {
     serviceStates: Array.isArray(row.service_states) ? row.service_states : undefined,
     specialties: Array.isArray(row.specialties) ? row.specialties : [],
     image:
-      typeof row.image === 'string' && row.image.trim()
+      typeof row.image === 'string' &&
+      row.image.trim() &&
+      row.image.trim() !== '/src/assets/images/cat-bakers.png'
         ? row.image
-        : '/src/assets/images/cat-bakers.png',
+        : DEFAULT_FALLBACK_IMAGE,
     logo: typeof row.logo === 'string' && row.logo.trim() ? row.logo : undefined,
     gallery: Array.isArray(row.gallery) ? row.gallery : undefined,
     products: Array.isArray(row.products) ? row.products : [],
@@ -584,18 +642,29 @@ export function createSupabaseApiRouter(): express.Router {
       const requestedStatus =
         body.initialStatus === 'pending_review' ? 'pending_review' : 'active';
       const resolvedStatus = admin ? 'active' : requestedStatus;
-      const vendorId = sanitizeId(
+      let vendorId = sanitizeId(
         vendor.id || `${sanitizeSlug(vendor.slug || vendor.name)}-${Date.now().toString().slice(-4)}`,
         'vendor'
       );
-      const slug = sanitizeSlug(vendor.slug || vendor.name);
+      // Prevent overwriting an existing storefront (ownership protection)
+      const { data: existingIdRow } = await supabase
+        .from('vendors')
+        .select('id')
+        .eq('id', vendorId)
+        .maybeSingle();
+      if (existingIdRow) {
+        vendorId = sanitizeId(`${vendorId.slice(0, 96)}-${crypto.randomBytes(3).toString('hex')}`, 'vendor');
+      }
 
+      const slug = await ensureUniqueVendorSlug(supabase, vendor.slug || vendor.name);
+
+      const rawImage =
+        typeof vendor.image === 'string' && vendor.image.trim() !== '/src/assets/images/cat-bakers.png'
+          ? vendor.image
+          : DEFAULT_FALLBACK_IMAGE;
       const image =
-        (await uploadDataUrlIfNeeded(
-          supabase,
-          vendor.image || '/src/assets/images/cat-bakers.png',
-          `vendors/${vendorId}/cover`
-        )) || '/src/assets/images/cat-bakers.png';
+        (await uploadDataUrlIfNeeded(supabase, rawImage, `vendors/${vendorId}/cover`)) ||
+        DEFAULT_FALLBACK_IMAGE;
       const logo = vendor.logo
         ? await uploadDataUrlIfNeeded(supabase, vendor.logo, `vendors/${vendorId}/logo`)
         : null;
@@ -692,12 +761,24 @@ export function createSupabaseApiRouter(): express.Router {
           vendor.customBuilderPackagingUsd !== undefined
             ? Math.max(0, Math.min(500, Number(vendor.customBuilderPackagingUsd) || 0))
             : null,
+        bio_handle: sanitizeBioHandle(vendor.bioHandle),
+        bio_theme:
+          vendor.bioTheme === 'saffron' ||
+          vendor.bioTheme === 'midnight' ||
+          vendor.bioTheme === 'party' ||
+          vendor.bioTheme === 'cream'
+            ? vendor.bioTheme
+            : null,
+        instagram_handle:
+          typeof vendor.instagramHandle === 'string' && vendor.instagramHandle.trim()
+            ? vendor.instagramHandle.trim().slice(0, 80)
+            : null,
         claim_status: 'none',
         created_at: nowIso,
         updated_at: nowIso,
       };
 
-      const { data, error } = await supabase.from('vendors').upsert(row, { onConflict: 'id' }).select('*').single();
+      const { data, error } = await supabase.from('vendors').insert(row).select('*').single();
       if (error) throw new Error(error.message);
       res.status(201).json({ vendor: rowToVendor(data as Record<string, unknown>) });
     } catch (err) {
@@ -732,7 +813,9 @@ export function createSupabaseApiRouter(): express.Router {
       };
 
       if (updates.name !== undefined) patch.name = clampStr(updates.name, 2, 100, 'Vendor');
-      if (updates.slug !== undefined) patch.slug = sanitizeSlug(updates.slug);
+      if (updates.slug !== undefined) {
+        patch.slug = await ensureUniqueVendorSlug(supabase, updates.slug, vendorId);
+      }
       if (updates.tagline !== undefined) patch.tagline = clampStr(updates.tagline, 1, 200, 'Local vendor');
       if (updates.description !== undefined)
         patch.description = clampStr(updates.description, 1, 1500, 'Local vendor');
@@ -804,9 +887,14 @@ export function createSupabaseApiRouter(): express.Router {
         patch.lng = Math.max(-180, Math.min(180, Number(updates.lng) || 0));
 
       if (updates.image !== undefined) {
+        const rawPatchImage =
+          typeof updates.image === 'string' &&
+          updates.image.trim() !== '/src/assets/images/cat-bakers.png'
+            ? updates.image
+            : DEFAULT_FALLBACK_IMAGE;
         patch.image =
-          (await uploadDataUrlIfNeeded(supabase, updates.image, `vendors/${vendorId}/cover`)) ||
-          '/src/assets/images/cat-bakers.png';
+          (await uploadDataUrlIfNeeded(supabase, rawPatchImage, `vendors/${vendorId}/cover`)) ||
+          DEFAULT_FALLBACK_IMAGE;
       }
       if (updates.logo !== undefined) {
         patch.logo = updates.logo
@@ -1678,21 +1766,31 @@ export function createSupabaseApiRouter(): express.Router {
         return res.status(400).json({ error: 'Invalid claim token.' });
       }
 
-      const vendorId = sanitizeId(
+      let vendorId = sanitizeId(
         vendor.id || `${sanitizeSlug(vendor.slug || vendor.name)}-${Date.now().toString().slice(-4)}`,
         'vendor'
       );
-      const slug = sanitizeSlug(vendor.slug || vendor.name);
+      const { data: existingConciergeId } = await supabase
+        .from('vendors')
+        .select('id')
+        .eq('id', vendorId)
+        .maybeSingle();
+      if (existingConciergeId) {
+        vendorId = sanitizeId(`${vendorId.slice(0, 96)}-${crypto.randomBytes(3).toString('hex')}`, 'vendor');
+      }
+
+      const slug = await ensureUniqueVendorSlug(supabase, vendor.slug || vendor.name);
       const name = clampStr(vendor.name, 2, 100, 'Partner Storefront');
       const phoneLast4 = cleanPhone.slice(-4).padStart(4, '0');
       const nowIso = new Date().toISOString();
 
+      const rawConciergeImg =
+        typeof vendor.image === 'string' && vendor.image.trim() !== '/src/assets/images/cat-bakers.png'
+          ? vendor.image
+          : DEFAULT_FALLBACK_IMAGE;
       const image =
-        (await uploadDataUrlIfNeeded(
-          supabase,
-          vendor.image || '/src/assets/images/cat-bakers.png',
-          `vendors/${vendorId}/cover`
-        )) || '/src/assets/images/cat-bakers.png';
+        (await uploadDataUrlIfNeeded(supabase, rawConciergeImg, `vendors/${vendorId}/cover`)) ||
+        DEFAULT_FALLBACK_IMAGE;
       const logo = vendor.logo
         ? await uploadDataUrlIfNeeded(supabase, vendor.logo, `vendors/${vendorId}/logo`)
         : null;
@@ -1771,6 +1869,18 @@ export function createSupabaseApiRouter(): express.Router {
           vendor.customBuilderPackagingUsd !== undefined
             ? Math.max(0, Math.min(500, Number(vendor.customBuilderPackagingUsd) || 0))
             : null,
+        bio_handle: sanitizeBioHandle(vendor.bioHandle),
+        bio_theme:
+          vendor.bioTheme === 'saffron' ||
+          vendor.bioTheme === 'midnight' ||
+          vendor.bioTheme === 'party' ||
+          vendor.bioTheme === 'cream'
+            ? vendor.bioTheme
+            : null,
+        instagram_handle:
+          typeof vendor.instagramHandle === 'string' && vendor.instagramHandle.trim()
+            ? vendor.instagramHandle.trim().slice(0, 80)
+            : null,
         claim_status: 'pending',
         created_at: nowIso,
         updated_at: nowIso,
@@ -1778,7 +1888,7 @@ export function createSupabaseApiRouter(): express.Router {
 
       const { data: savedVendor, error: vErr } = await supabase
         .from('vendors')
-        .upsert(vendorRow, { onConflict: 'id' })
+        .insert(vendorRow)
         .select('*')
         .single();
       if (vErr) throw new Error(vErr.message);
@@ -1934,6 +2044,15 @@ export function createSupabaseApiRouter(): express.Router {
 
   router.post('/concierge/claim-lookup', async (req, res) => {
     try {
+      const clientIp =
+        (typeof req.headers['x-forwarded-for'] === 'string'
+          ? req.headers['x-forwarded-for'].split(',')[0].trim()
+          : req.ip) || 'unknown';
+      if (!checkClaimLookupRateLimit(clientIp)) {
+        return res
+          .status(429)
+          .json({ error: 'Too many passcode attempts. Please wait a few minutes and try again.' });
+      }
       const supabase = getSupabase();
       const claimId = String(req.body?.claimId || '').toLowerCase();
       if (!/^[a-f0-9]{64}$/.test(claimId)) {
@@ -1971,12 +2090,17 @@ export function createSupabaseApiRouter(): express.Router {
       }
 
       const nowIso = new Date().toISOString();
-      const { error: cErr } = await supabase
+      const { data: claimedRow, error: cErr } = await supabase
         .from('store_claims')
         .update({ status: 'claimed', claimed_by: user.uid, updated_at: nowIso })
         .eq('claim_id', claimId)
-        .eq('status', 'pending');
+        .eq('status', 'pending')
+        .select('claim_id')
+        .maybeSingle();
       if (cErr) throw new Error(cErr.message);
+      if (!claimedRow) {
+        return res.status(409).json({ error: 'This store claim ticket was already redeemed.' });
+      }
 
       const { error: vErr } = await supabase
         .from('vendors')

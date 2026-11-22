@@ -45,11 +45,13 @@ import { JoshPlannerDrawer } from './components/JoshPlannerDrawer';
 import { ListBusinessModal } from './components/ListBusinessModal';
 import { LocationPickerModal, SelectedLocation } from './components/LocationPickerModal';
 import { PostEventRequestModal } from './components/PostEventRequestModal';
+import { PromoCardModal } from './components/PromoCardModal';
 import { SavedBookingsDrawer } from './components/SavedBookingsDrawer';
 import { SnowfallOverlay } from './components/SnowfallOverlay';
 import { VendorBioLinkView } from './components/VendorBioLinkView';
 import { VendorCard } from './components/VendorCard';
 import { VendorDashboardModal } from './components/VendorDashboardModal';
+import { VendorShareModal } from './components/VendorShareModal';
 import { VendorMetrics, VendorWebsiteView } from './components/VendorWebsiteView';
 import {
   AdminTransferRecord,
@@ -473,6 +475,9 @@ export default function App() {
 
   const [activeVendor, setActiveVendor] = useState<Vendor | null>(null);
   const [bioVendor, setBioVendor] = useState<Vendor | null>(null);
+  const [shareVendor, setShareVendor] = useState<Vendor | null>(null);
+  const [promoStoryVendor, setPromoStoryVendor] = useState<Vendor | null>(null);
+  const [recentlySharedVendorId, setRecentlySharedVendorId] = useState<string | null>(null);
   const [drawerTab, setDrawerTab] = useState<'saved' | 'bookings' | null>(null);
   const [aiPlannerOpen, setAiPlannerOpen] = useState(false);
   const [eventRequestModalOpen, setEventRequestModalOpen] = useState(false);
@@ -681,6 +686,14 @@ export default function App() {
 
   const trackShare = (vendorId: string) => {
     void incrementVendorMetricInCloud(vendorId, 'shares');
+  };
+
+  const handleSharedFeedback = (vendor: Vendor, message: string) => {
+    setNotice(message);
+    setRecentlySharedVendorId(vendor.id);
+    window.setTimeout(() => {
+      setRecentlySharedVendorId((prev) => (prev === vendor.id ? null : prev));
+    }, 2600);
   };
 
   useEffect(() => {
@@ -1818,8 +1831,10 @@ export default function App() {
           isHyderabadEligible={isHyderabadEligible}
           openDinnerSignal={openDinnerSignal}
           canEditVendor={canEditVendor}
+          recentlySharedVendorId={recentlySharedVendorId}
           onSelectVendor={setActiveVendor}
           onEditVendor={handleEditStorefront}
+          onShareVendor={setShareVendor}
           onOpenChristmasListModal={() => handleOpenListModal('free', true)}
           onTrackWhatsAppClick={trackWhatsAppClick}
           onNotify={setNotice}
@@ -2004,6 +2019,7 @@ export default function App() {
                     vendor={vendor}
                     currency={currency}
                     isSaved={savedIds.includes(vendor.id)}
+                    isRecentlyShared={recentlySharedVendorId === vendor.id}
                     distanceKm={
                       userCoords
                         ? haversineKm(userCoords.lat, userCoords.lng, vendor.lat, vendor.lng)
@@ -2014,6 +2030,7 @@ export default function App() {
                     onToggleSave={toggleSave}
                     onSelect={setActiveVendor}
                     onEdit={handleEditStorefront}
+                    onShare={setShareVendor}
                   />
                 ))}
               </div>
@@ -2474,6 +2491,7 @@ export default function App() {
                         vendor={vendor}
                         currency={currency}
                         isSaved={savedIds.includes(vendor.id)}
+                        isRecentlyShared={recentlySharedVendorId === vendor.id}
                         distanceKm={
                           userCoords
                             ? haversineKm(userCoords.lat, userCoords.lng, vendor.lat, vendor.lng)
@@ -2484,6 +2502,7 @@ export default function App() {
                         onToggleSave={toggleSave}
                         onSelect={setActiveVendor}
                         onEdit={handleEditStorefront}
+                        onShare={setShareVendor}
                       />
                     ))}
                   </div>
@@ -3287,6 +3306,24 @@ export default function App() {
           setClaimModalOpen(true);
         }}
         onToast={setNotice}
+      />
+
+      {/* Vendor Profile Share Sheet (Web Share API, Clipboard Copy, Instagram Stories, Facebook & more) */}
+      <VendorShareModal
+        vendor={shareVendor}
+        currency={currency}
+        onClose={() => setShareVendor(null)}
+        onOpenInstagramStory={(vendor) => setPromoStoryVendor(vendor)}
+        onTrackShare={trackShare}
+        onSharedFeedback={handleSharedFeedback}
+      />
+
+      {/* Instagram Story 9:16 Promo Card Generator */}
+      <PromoCardModal
+        vendor={promoStoryVendor}
+        currency={currency}
+        onClose={() => setPromoStoryVendor(null)}
+        onTrackShare={trackShare}
       />
 
       {/* Festive Winter Snowfall Overlay + On/Off Toggle */}

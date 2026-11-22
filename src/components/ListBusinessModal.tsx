@@ -146,6 +146,7 @@ export function ListBusinessModal({
 }: ListBusinessModalProps) {
   const [submitting, setSubmitting] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [marketplace, setMarketplace] = useState<'food' | 'party'>('food');
   const [name, setName] = useState('');
   const [category, setCategory] = useState<string>(FOOD_CATEGORIES[0]);
@@ -159,7 +160,7 @@ export function ListBusinessModal({
   const [mapsPaste, setMapsPaste] = useState('');
   const [detectingGps, setDetectingGps] = useState(false);
   const [gpsStatus, setGpsStatus] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
-  const [whatsappNumber, setWhatsappNumber] = useState('919820001122');
+  const [whatsappNumber, setWhatsappNumber] = useState('');
   const [tagline, setTagline] = useState('');
   const [christmasSpecial, setChristmasSpecial] = useState(initialChristmasSpecial);
   const [christmasOffer, setChristmasOffer] = useState('');
@@ -226,13 +227,11 @@ export function ListBusinessModal({
 
   const handleCountryChange = (nextCountry: Exclude<LaunchCountry, 'All'>) => {
     setCountry(nextCountry);
-    const meta = COUNTRY_DEFAULT_COORDS[nextCountry];
     const firstState = STATES_BY_COUNTRY[nextCountry][0];
     setStateName(firstState.name);
     setCity(firstState.cities[0]);
     setLatInput(String(firstState.lat));
     setLngInput(String(firstState.lng));
-    setWhatsappNumber(`${meta.phonePrefix}9800001122`);
 
     // Auto-switch currency to match the selected country and keep prices sensible
     const nextCurrency = COUNTRY_DEFAULT_CURRENCY[nextCountry];
@@ -465,7 +464,16 @@ export function ListBusinessModal({
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !city.trim() || !tagline.trim()) return;
+    setSubmitError(null);
+    if (!name.trim() || !city.trim() || !tagline.trim()) {
+      setSubmitError('Please fill in Business Name, City, and Short Headline.');
+      return;
+    }
+    const rawWaDigits = whatsappNumber.replace(/[^\d]/g, '');
+    if (rawWaDigits.length < 8) {
+      setSubmitError('Please enter a valid WhatsApp number with country code (e.g. 919876543210).');
+      return;
+    }
     if (isPaidPlan && !autoPayAccepted) return;
     if (!user) {
       await onSignIn();
@@ -501,7 +509,10 @@ export function ListBusinessModal({
       .replace(/[^a-z0-9]+/g, '-')}`;
 
     const coverImg = coverDataUrl || defaultCover;
-    const digits = whatsappNumber.replace(/[^\d]/g, '') || `${fallback.phonePrefix}9820001122`;
+    const digits =
+      rawWaDigits.startsWith(fallback.phonePrefix) || rawWaDigits.length >= 11
+        ? rawWaDigits
+        : `${fallback.phonePrefix}${rawWaDigits}`;
 
     const finalProducts: VendorProduct[] = products.map((p, idx) => {
       const priceUsd = Math.max(1, localToUsd(p.priceLocal, formCurrency));
@@ -583,6 +594,7 @@ export function ListBusinessModal({
       await onAddVendor(newVendor);
       setName('');
       setArea('');
+      setWhatsappNumber('');
       setTagline('');
       setChristmasOffer('');
       setCustomBuilderEnabled(false);
@@ -590,6 +602,7 @@ export function ListBusinessModal({
       setLogoDataUrl('');
       setCoverDataUrl('');
       setMapsPaste('');
+      setSubmitError(null);
       setProducts([
         {
           id: `draft-${Date.now()}`,
@@ -607,6 +620,12 @@ export function ListBusinessModal({
         },
       ]);
       onClose();
+    } catch (err) {
+      setSubmitError(
+        err instanceof Error
+          ? err.message
+          : 'Could not publish storefront right now. Please try again.'
+      );
     } finally {
       setSubmitting(false);
     }
@@ -787,11 +806,11 @@ export function ListBusinessModal({
                 </label>
                 <input
                   id="biz-wa"
-                  type="text"
+                  type="tel"
                   required
                   value={whatsappNumber}
                   onChange={(e) => setWhatsappNumber(e.target.value)}
-                  placeholder="919820001122"
+                  placeholder={`${COUNTRY_DEFAULT_COORDS[country].phonePrefix}9876543210`}
                   className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2.5 font-mono text-sm text-foreground focus:border-brand focus:outline-none"
                 />
               </div>
@@ -1528,8 +1547,14 @@ export function ListBusinessModal({
           ) : (
             <p className="inline-flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
               <Cloud className="size-3.5" aria-hidden="true" />
-              Publishing live to Cloud Firestore as <strong>{user.displayName || user.email}</strong>
+              Publishing live to Cloud as <strong>{user.displayName || user.email}</strong>
             </p>
+          )}
+
+          {submitError && (
+            <div className="rounded-xl border border-rose-500/35 bg-rose-500/10 px-3.5 py-2.5 text-xs font-semibold text-rose-700 dark:text-rose-300">
+              {submitError}
+            </div>
           )}
 
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">

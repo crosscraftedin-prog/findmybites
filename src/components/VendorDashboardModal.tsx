@@ -449,7 +449,7 @@ export function VendorDashboardModal({
         gallery: editGallery,
       });
       setEditingVendorId(null);
-      onNotify(`Saved storefront & Bio-Link updates for ${editName} to Cloud Firestore!`);
+      onNotify(`Saved storefront & Bio-Link updates for ${editName} to Cloud!`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : '';
       onNotify(

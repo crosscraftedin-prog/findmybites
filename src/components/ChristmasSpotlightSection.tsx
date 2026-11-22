@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   BadgeCheck,
   Cake,
+  Check,
   Crown,
   Edit3,
   ExternalLink,
@@ -39,7 +40,9 @@ interface ChristmasSpotlightSectionProps {
   isHyderabadEligible?: boolean;
   openDinnerSignal?: number;
   canEditVendor: (vendor: Vendor) => boolean;
+  recentlySharedVendorId?: string | null;
   onSelectVendor: (vendor: Vendor) => void;
+  onShareVendor?: (vendor: Vendor) => void;
   onEditVendor: (vendor: Vendor) => void;
   onOpenChristmasListModal: () => void;
   onTrackWhatsAppClick: (vendorId: string) => void;
@@ -95,7 +98,9 @@ export function ChristmasSpotlightSection({
   isHyderabadEligible = true,
   openDinnerSignal = 0,
   canEditVendor,
+  recentlySharedVendorId = null,
   onSelectVendor,
+  onShareVendor,
   onEditVendor,
   onOpenChristmasListModal,
   onTrackWhatsAppClick,
@@ -300,12 +305,42 @@ export function ChristmasSpotlightSection({
                       )}
                     </div>
 
-                    {(vendor.planTier === 'business' || vendor.planTier === 'pro') && (
-                      <div className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-amber-400 px-2 py-0.5 text-[10px] font-extrabold text-neutral-950 shadow">
-                        <Crown className="size-3" aria-hidden="true" />
-                        Top Listed
-                      </div>
-                    )}
+                    <div className="absolute right-3 top-3 flex items-center gap-1.5">
+                      {(vendor.planTier === 'business' || vendor.planTier === 'pro') && (
+                        <div className="inline-flex items-center gap-1 rounded-full bg-amber-400 px-2 py-0.5 text-[10px] font-extrabold text-neutral-950 shadow">
+                          <Crown className="size-3" aria-hidden="true" />
+                          Top Listed
+                        </div>
+                      )}
+                      {onShareVendor && (
+                        <button
+                          type="button"
+                          aria-label={`Share ${vendor.name}`}
+                          title={`Share ${vendor.name}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onShareVendor(vendor);
+                          }}
+                          className={`inline-flex h-8 cursor-pointer items-center justify-center gap-1 rounded-full px-2.5 text-[11px] font-bold shadow-md backdrop-blur-md transition-all ${
+                            recentlySharedVendorId === vendor.id
+                              ? 'bg-emerald-500 text-white'
+                              : 'bg-black/65 text-white hover:bg-amber-400 hover:text-neutral-950'
+                          }`}
+                        >
+                          {recentlySharedVendorId === vendor.id ? (
+                            <>
+                              <Check className="size-3.5" aria-hidden="true" />
+                              <span>Shared!</span>
+                            </>
+                          ) : (
+                            <>
+                              <Share2 className="size-3.5" aria-hidden="true" />
+                              <span>Share</span>
+                            </>
+                          )}
+                        </button>
+                      )}
+                    </div>
 
                     <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between gap-2">
                       <span className="inline-flex items-center gap-1 rounded-full bg-black/65 px-2.5 py-1 text-[11px] font-semibold text-white backdrop-blur-sm">

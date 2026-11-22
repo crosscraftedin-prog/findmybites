@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import {
   BadgeCheck,
+  Check,
   Crown,
   Edit3,
   ExternalLink,
@@ -10,6 +11,7 @@ import {
   MessageCircle,
   Package,
   PartyPopper,
+  Share2,
   Star,
   UtensilsCrossed,
 } from 'lucide-react';
@@ -27,11 +29,13 @@ interface VendorCardProps {
   vendor: Vendor;
   currency: CurrencyCode;
   isSaved: boolean;
+  isRecentlyShared?: boolean;
   distanceKm?: number | null;
   browsingState?: string;
   canEdit?: boolean;
   onToggleSave: (vendorId: string) => void;
   onSelect: (vendor: Vendor) => void;
+  onShare?: (vendor: Vendor) => void;
   onEdit?: (vendor: Vendor) => void;
 }
 
@@ -39,11 +43,13 @@ export function VendorCard({
   vendor,
   currency,
   isSaved,
+  isRecentlyShared = false,
   distanceKm,
   browsingState,
   canEdit = false,
   onToggleSave,
   onSelect,
+  onShare,
   onEdit,
 }: VendorCardProps) {
   const [imgFailed, setImgFailed] = useState(false);
@@ -111,20 +117,51 @@ export function VendorCard({
           </div>
         )}
 
-        <button
-          type="button"
-          aria-label={isSaved ? `Remove ${vendor.name} from saved` : `Save ${vendor.name}`}
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleSave(vendor.id);
-          }}
-          className="absolute right-3 top-3 flex size-9 cursor-pointer items-center justify-center rounded-full bg-white/90 text-neutral-700 shadow-sm backdrop-blur-md transition-colors hover:bg-white hover:text-brand dark:bg-neutral-900/85 dark:text-neutral-200"
-        >
-          <Heart
-            className={`size-4 ${isSaved ? 'fill-brand text-brand' : ''}`}
-            aria-hidden="true"
-          />
-        </button>
+        {/* Top-Right Quick Actions: Share + Save */}
+        <div className="absolute right-3 top-3 flex items-center gap-1.5">
+          {onShare && (
+            <button
+              type="button"
+              aria-label={`Share ${vendor.name}`}
+              title={`Share ${vendor.name}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                onShare(vendor);
+              }}
+              className={`flex h-9 cursor-pointer items-center justify-center gap-1 rounded-full px-2.5 text-xs font-bold shadow-sm backdrop-blur-md transition-all ${
+                isRecentlyShared
+                  ? 'bg-emerald-600 text-white'
+                  : 'bg-white/90 text-neutral-800 hover:bg-white hover:text-brand dark:bg-neutral-900/85 dark:text-neutral-100'
+              }`}
+            >
+              {isRecentlyShared ? (
+                <>
+                  <Check className="size-3.5" aria-hidden="true" />
+                  <span>Shared!</span>
+                </>
+              ) : (
+                <>
+                  <Share2 className="size-3.5" aria-hidden="true" />
+                  <span className="hidden sm:inline">Share</span>
+                </>
+              )}
+            </button>
+          )}
+          <button
+            type="button"
+            aria-label={isSaved ? `Remove ${vendor.name} from saved` : `Save ${vendor.name}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleSave(vendor.id);
+            }}
+            className="flex size-9 cursor-pointer items-center justify-center rounded-full bg-white/90 text-neutral-700 shadow-sm backdrop-blur-md transition-colors hover:bg-white hover:text-brand dark:bg-neutral-900/85 dark:text-neutral-200"
+          >
+            <Heart
+              className={`size-4 ${isSaved ? 'fill-brand text-brand' : ''}`}
+              aria-hidden="true"
+            />
+          </button>
+        </div>
 
         {distanceKm != null ? (
           <div className="absolute bottom-3 left-3 inline-flex items-center gap-1 rounded-full bg-black/70 px-2.5 py-1 text-xs font-bold text-white backdrop-blur-md">
