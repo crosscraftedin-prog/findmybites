@@ -15,7 +15,7 @@ function loadFirebaseConfig(): { projectId: string; firestoreDatabaseId: string 
     firestoreDatabaseId: 'ai-studio-findmybitespimpm-e62e8cda-3b00-4f15-9a37-e7c06c6009f7',
   };
   try {
-    const raw = fs.readFileSync(new URL('../firebase-applet-config.json', import.meta.url), 'utf8');
+    const raw = fs.readFileSync(new URL('../../firebase-applet-config.json', import.meta.url), 'utf8');
     const parsed = JSON.parse(raw) as { projectId?: string; firestoreDatabaseId?: string };
     return {
       projectId: parsed.projectId || fallback.projectId,
@@ -45,13 +45,18 @@ function checkClaimLookupRateLimit(ip: string): boolean {
   return true;
 }
 
-if (!getApps().length) {
-  initializeApp({
-    projectId: firebaseConfig.projectId,
-  });
+let cachedAdminAuth: ReturnType<typeof getAuth> | null = null;
+function getAdminAuth(): ReturnType<typeof getAuth> {
+  if (!cachedAdminAuth) {
+    if (!getApps().length) {
+      initializeApp({
+        projectId: firebaseConfig.projectId,
+      });
+    }
+    cachedAdminAuth = getAuth();
+  }
+  return cachedAdminAuth;
 }
-
-const adminAuth = getAuth();
 
 let cachedSupabase: SupabaseClient | null = null;
 let cachedSupabaseKeySignature = '';
@@ -107,13 +112,14 @@ async function requireAuth(req: AuthedRequest, res: Response, next: NextFunction
     return res.status(401).json({ error: 'Missing authentication token.' });
   }
   try {
-    const decoded = await adminAuth.verifyIdToken(token);
+    const decoded = await getAdminAuth().verifyIdToken(token);
     if (!isAuthenticatedAccount(decoded)) {
       return res.status(403).json({ error: 'Verified account required.' });
     }
     req.user = decoded;
     return next();
-  } catch {
+  } catch (err) {
+    console.error('[Auth verifyIdToken failed]:', err instanceof Error ? err.message : err);
     return res.status(401).json({ error: 'Invalid or expired session. Please sign in again.' });
   }
 }
