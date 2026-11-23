@@ -37,6 +37,7 @@ import {
   BioTheme,
   BookingEnquiry,
   BuilderPresetId,
+  CAKE_WEIGHT_PRESETS,
   CURRENCIES,
   CUSTOM_BUILDER_MODES,
   CloudVendorMetric,
@@ -52,6 +53,7 @@ import {
   Vendor,
   VendorBioLink,
   VendorProduct,
+  VendorProductVariant,
   formatMoney,
   formatPlanPrice,
   formatProductServesLabel,
@@ -213,6 +215,9 @@ export function VendorDashboardModal({
   const [prodImage, setProdImage] = useState('');
   const [prodBuilderSection, setProdBuilderSection] = useState('');
   const [prodBuilderPresets, setProdBuilderPresets] = useState<BuilderPresetId[]>([]);
+  const [prodVariants, setProdVariants] = useState<
+    Array<{ id: string; label: string; priceLocal: string; serves: string }>
+  >([]);
 
   // Storefront full editor state
   const [editName, setEditName] = useState('');
@@ -566,6 +571,7 @@ export function VendorDashboardModal({
     setProdImage('');
     setProdBuilderSection('');
     setProdBuilderPresets([]);
+    setProdVariants([]);
     setEditingProductId(null);
   };
 
@@ -600,6 +606,84 @@ export function VendorDashboardModal({
     setProdImage(product.image || '');
     setProdBuilderSection(product.builderSection || '');
     setProdBuilderPresets(product.builderPresets ? [...product.builderPresets] : []);
+    setProdVariants(
+      product.variants && product.variants.length > 0
+        ? product.variants.map((v) => ({
+            id: v.id,
+            label: v.label,
+            priceLocal: String(Math.max(1, usdToLocal(v.priceUsd, currency))),
+            serves: v.serves || '',
+          }))
+        : []
+    );
+  };
+
+  const getBaseOneKgLocalPrice = () => {
+    const qtyNum = Number(prodUnitQty);
+    if (prodUnitType === 'kg' && Number.isFinite(qtyNum) && qtyNum > 0) {
+      return prodPriceLocal / qtyNum;
+    }
+    if (prodUnitType === 'g' && Number.isFinite(qtyNum) && qtyNum > 0) {
+      return (prodPriceLocal * 1000) / qtyNum;
+    }
+    return prodPriceLocal;
+  };
+
+  const roundNicePrice = (raw: number) => {
+    if (raw >= 200) return Math.max(10, Math.round(raw / 10) * 10);
+    return Math.max(1, Math.round(raw));
+  };
+
+  const toggleWeightPreset = (preset: (typeof CAKE_WEIGHT_PRESETS)[number]) => {
+    setProdVariants((prev) => {
+      const exists = prev.some(
+        (v) => v.id === preset.id || v.label.toLowerCase() === preset.label.toLowerCase()
+      );
+      if (exists) {
+        return prev.filter(
+          (v) => v.id !== preset.id && v.label.toLowerCase() !== preset.label.toLowerCase()
+        );
+      }
+      const base1Kg = getBaseOneKgLocalPrice();
+      const suggested = roundNicePrice(base1Kg * preset.kgRatio);
+      const next = [
+        ...prev,
+        {
+          id: preset.id,
+          label: preset.label,
+          priceLocal: String(suggested),
+          serves: preset.serves,
+        },
+      ];
+      // Keep standard cake presets ordered naturally (500g -> 5 kg)
+      const orderMap = new Map(CAKE_WEIGHT_PRESETS.map((p, i) => [p.id, i]));
+      return next.sort((a, b) => (orderMap.get(a.id) ?? 99) - (orderMap.get(b.id) ?? 99));
+    });
+  };
+
+  const autoFillCakeWeights = () => {
+    const base1Kg = getBaseOneKgLocalPrice();
+    const standardIds = new Set(['w-500g', 'w-1kg', 'w-2kg', 'w-3kg', 'w-5kg']);
+    const generated = CAKE_WEIGHT_PRESETS.filter((p) => standardIds.has(p.id)).map((preset) => ({
+      id: preset.id,
+      label: preset.label,
+      priceLocal: String(roundNicePrice(base1Kg * preset.kgRatio)),
+      serves: preset.serves,
+    }));
+    setProdVariants(generated);
+  };
+
+  const addCustomVariantRow = () => {
+    if (prodVariants.length >= 12) return;
+    setProdVariants((prev) => [
+      ...prev,
+      {
+        id: `var-${Date.now()}-${prev.length + 1}`,
+        label: '',
+        priceLocal: String(Math.max(1, prodPriceLocal)),
+        serves: '',
+      },
+    ]);
   };
 
   const toggleProdDietaryTag = (tag: string) => {
@@ -619,7 +703,33 @@ export function VendorDashboardModal({
     if (!prodName.trim()) return;
     setBusyId(vendor.id);
     try {
-      const formattedServes = formatProductServesLabel(prodUnitQty, prodUnitType, prodServes);
+      const cleanedVariants: VendorProductVariant[] = prodVariants
+        .map((v, idx) => {
+          const label = v.label.trim().slice(0, 32);
+          const localVal = Number(v.priceLocal);
+          if (!label || !Number.isFinite(localVal) || localVal <= 0) return null;
+          return {
+            id: v.id || `var-${idx + 1}`,
+            label,
+            priceUsd: Math.max(0.5, localToUsd(localVal, currency)),
+            ...(v.serves.trim() ? { serves: v.serves.trim().slice(0, 40) } : {}),
+          };
+        })
+        .filter((v): v is VendorProductVariant => Boolean(v))
+        .slice(0, 12);
+
+      const formattedServes =
+        cleanedVariants.length >= 2
+          ? `${cleanedVariants[0].label} – ${cleanedVariants[cleanedVariants.length - 1].label}`
+          : cleanedVariants.length === 1
+            ? cleanedVariants[0].label
+            : formatProductServesLabel(prodUnitQty, prodUnitType, prodServes);
+
+      const resolvedPriceUsd =
+        cleanedVariants.length > 0
+          ? Math.min(...cleanedVariants.map((v) => v.priceUsd))
+          : Math.max(1, localToUsd(prodPriceLocal, currency));
+
       let resolvedImage = prodImage || vendor.image;
       if (resolvedImage.startsWith('data:image/') && resolvedImage.length > 24000) {
         try {
@@ -644,7 +754,8 @@ export function VendorDashboardModal({
         ...(prodDietaryTags.length > 0 ? { dietaryTags: prodDietaryTags } : {}),
         ...(prodBuilderSection.trim() ? { builderSection: prodBuilderSection.trim().slice(0, 60) } : {}),
         ...(prodBuilderPresets.length > 0 ? { builderPresets: prodBuilderPresets } : {}),
-        priceUsd: Math.max(1, localToUsd(prodPriceLocal, currency)),
+        ...(cleanedVariants.length > 0 ? { variants: cleanedVariants } : {}),
+        priceUsd: resolvedPriceUsd,
         description: prodDesc.trim().slice(0, 400) || prodName.trim(),
         image: resolvedImage,
       };
@@ -1677,8 +1788,22 @@ export function VendorDashboardModal({
                                             <FoodTypeBadge foodType={p.foodType} size="xs" />
                                           </div>
                                           <p className="font-mono text-[11px] tabular-nums text-muted-foreground">
+                                            {p.variants && p.variants.length > 1 ? 'From ' : ''}
                                             {formatMoney(p.priceUsd, currency)} · {p.serves}
                                           </p>
+                                          {p.variants && p.variants.length > 0 && (
+                                            <div className="mt-1 flex flex-wrap gap-1">
+                                              {p.variants.map((variant) => (
+                                                <span
+                                                  key={variant.id}
+                                                  className="rounded border border-brand-border bg-brand-soft/60 px-1.5 py-0.5 font-mono text-[10px] font-semibold tabular-nums text-foreground"
+                                                >
+                                                  {variant.label} ·{' '}
+                                                  {formatMoney(variant.priceUsd, currency)}
+                                                </span>
+                                              ))}
+                                            </div>
+                                          )}
                                           {(p.builderSection ||
                                             (p.builderPresets && p.builderPresets.length > 0)) && (
                                             <div className="mt-1 flex flex-wrap gap-1">
@@ -1881,6 +2006,126 @@ export function VendorDashboardModal({
                                       </button>
                                     );
                                   })}
+                                </div>
+
+                                {/* Multiple Weight / Size Options on the Same Product (500g – 5 kg & custom) */}
+                                <div className="space-y-2 rounded-lg border border-brand-border/80 bg-background/80 p-2.5">
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <div>
+                                      <p className="text-[11px] font-extrabold text-foreground">
+                                        Multiple Weight / Size Options (Same Product)
+                                      </p>
+                                      <p className="text-[10px] text-muted-foreground">
+                                        Offer 500g, 1 kg, 2 kg up to 5 kg on one cake card — customers pick their weight before ordering.
+                                      </p>
+                                    </div>
+                                    <div className="flex items-center gap-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={autoFillCakeWeights}
+                                        className="cursor-pointer rounded-md bg-brand/15 px-2 py-1 text-[10px] font-extrabold text-brand transition-colors hover:bg-brand hover:text-brand-foreground"
+                                      >
+                                        Auto-fill 500g – 5 kg
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={addCustomVariantRow}
+                                        className="cursor-pointer rounded-md border border-border bg-background px-2 py-1 text-[10px] font-bold text-foreground transition-colors hover:border-brand hover:text-brand"
+                                      >
+                                        + Custom Size
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  {/* 1-Tap Weight Toggle Chips (500g to 5 kg) */}
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    {CAKE_WEIGHT_PRESETS.map((preset) => {
+                                      const selected = prodVariants.some(
+                                        (v) =>
+                                          v.id === preset.id ||
+                                          v.label.toLowerCase() === preset.label.toLowerCase()
+                                      );
+                                      return (
+                                        <button
+                                          key={preset.id}
+                                          type="button"
+                                          onClick={() => toggleWeightPreset(preset)}
+                                          className={`cursor-pointer rounded-md border px-2 py-0.5 font-mono text-[11px] font-bold transition-colors ${
+                                            selected
+                                              ? 'border-brand bg-brand text-brand-foreground'
+                                              : 'border-border bg-muted/40 text-muted-foreground hover:border-brand/60 hover:text-foreground'
+                                          }`}
+                                        >
+                                          {selected ? '✓ ' : '+ '}
+                                          {preset.label}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+
+                                  {/* Editable Price Rows for Enabled Weights */}
+                                  {prodVariants.length > 0 && (
+                                    <div className="grid grid-cols-1 gap-1.5 pt-1 sm:grid-cols-2">
+                                      {prodVariants.map((variant) => (
+                                        <div
+                                          key={variant.id}
+                                          className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-2 py-1.5"
+                                        >
+                                          <input
+                                            type="text"
+                                            value={variant.label}
+                                            onChange={(e) =>
+                                              setProdVariants((prev) =>
+                                                prev.map((row) =>
+                                                  row.id === variant.id
+                                                    ? { ...row, label: e.target.value }
+                                                    : row
+                                                )
+                                              )
+                                            }
+                                            placeholder="e.g. 500g"
+                                            aria-label="Variant weight or size"
+                                            className="w-20 min-w-0 rounded border border-border bg-background px-2 py-1 font-mono text-[11px] font-bold text-foreground focus:border-brand focus:outline-none"
+                                          />
+                                          <div className="relative flex-1">
+                                            <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 font-mono text-[11px] font-bold text-muted-foreground">
+                                              {currencyMeta.symbol.trim()}
+                                            </span>
+                                            <input
+                                              type="number"
+                                              min={1}
+                                              max={50000000}
+                                              value={variant.priceLocal}
+                                              onChange={(e) =>
+                                                setProdVariants((prev) =>
+                                                  prev.map((row) =>
+                                                    row.id === variant.id
+                                                      ? { ...row, priceLocal: e.target.value }
+                                                      : row
+                                                  )
+                                                )
+                                              }
+                                              placeholder="Price"
+                                              aria-label={`Price for ${variant.label || 'size'}`}
+                                              className="w-full rounded border border-border bg-background py-1 pl-7 pr-2 font-mono text-[11px] tabular-nums text-foreground focus:border-brand focus:outline-none"
+                                            />
+                                          </div>
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              setProdVariants((prev) =>
+                                                prev.filter((row) => row.id !== variant.id)
+                                              )
+                                            }
+                                            aria-label={`Remove ${variant.label || 'size'}`}
+                                            className="grid size-6 shrink-0 cursor-pointer place-items-center rounded text-muted-foreground hover:bg-rose-500/10 hover:text-rose-600"
+                                          >
+                                            <X className="size-3" aria-hidden="true" />
+                                          </button>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
                                 </div>
 
                                 {/* Veg / Non-Veg Food Type Selector */}

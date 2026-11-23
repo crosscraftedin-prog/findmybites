@@ -12,6 +12,7 @@ import {
   Sun,
   UtensilsCrossed,
 } from 'lucide-react';
+import { PWAHeaderInstallButton } from './PWAInstallBanner';
 
 export type Ecosystem = 'FINDMYBITES' | 'PIMPMYPARTY';
 
@@ -34,6 +35,7 @@ interface HeaderProps {
   onOpenClaimStore?: () => void;
   onOpenBoxAndBite?: () => void;
   onSignIn: () => void;
+  onNotice?: (message: string) => void;
 }
 
 export function Header({
@@ -55,6 +57,7 @@ export function Header({
   onOpenClaimStore,
   onOpenBoxAndBite,
   onSignIn,
+  onNotice,
 }: HeaderProps) {
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border bg-background/85 backdrop-blur-xl supports-[backdrop-filter]:bg-background/75">
@@ -174,6 +177,8 @@ export function Header({
               <span className="sm:hidden">Events</span>
             </button>
           </div>
+
+          <PWAHeaderInstallButton onInstalledToast={onNotice} />
 
           <button
             type="button"

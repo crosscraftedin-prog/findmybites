@@ -35,6 +35,7 @@ import {
   BUILDER_PRESET_OPTIONS,
   BookingEnquiry,
   BuilderPresetId,
+  CAKE_WEIGHT_PRESETS,
   CATEGORY_CARDS,
   COUNTRY_DEFAULT_CURRENCY,
   COUNTRY_REGION_LABEL,
@@ -55,6 +56,7 @@ import {
   StoreClaim,
   Vendor,
   VendorProduct,
+  VendorProductVariant,
   generateTransferPasscode,
   getCustomBuilderModeConfig,
   getVendorBioHandle,
@@ -132,6 +134,7 @@ interface DraftProductRow {
   foodType: ProductFoodType | '';
   builderSection?: string;
   builderPresets?: BuilderPresetId[];
+  variants?: Array<{ id: string; label: string; priceLocal: string; serves: string }>;
   tag: string;
   description: string;
   image: string;
@@ -543,10 +546,37 @@ export function AdminPanelModal({
       .filter((p) => p.name.trim().length >= 2)
       .map((p, idx) => {
         const localNum = Number(p.priceLocal) || 0;
+        const cleanedVariants: VendorProductVariant[] = (p.variants || [])
+          .map((v, vIdx) => {
+            const label = v.label.trim().slice(0, 32);
+            const vLocal = Number(v.priceLocal);
+            if (!label || !Number.isFinite(vLocal) || vLocal <= 0) return null;
+            return {
+              id: v.id || `var-${vIdx + 1}`,
+              label,
+              priceUsd: Math.max(0.5, localToUsd(vLocal, formCurrency)),
+              ...(v.serves.trim() ? { serves: v.serves.trim().slice(0, 40) } : {}),
+            };
+          })
+          .filter((v): v is VendorProductVariant => Boolean(v))
+          .slice(0, 12);
+
+        const resolvedServes =
+          cleanedVariants.length >= 2
+            ? `${cleanedVariants[0].label} – ${cleanedVariants[cleanedVariants.length - 1].label}`
+            : cleanedVariants.length === 1
+              ? cleanedVariants[0].label
+              : p.serves.trim().slice(0, 60) || 'Custom';
+
+        const resolvedPriceUsd =
+          cleanedVariants.length > 0
+            ? Math.min(...cleanedVariants.map((v) => v.priceUsd))
+            : Math.max(1, localToUsd(localNum > 0 ? localNum : 500, formCurrency));
+
         return {
           id: p.id || `prod-${idx + 1}`,
           name: p.name.trim().slice(0, 100),
-          serves: p.serves.trim().slice(0, 60) || 'Custom',
+          serves: resolvedServes,
           ...(p.foodType ? { foodType: p.foodType } : {}),
           ...(customBuilderEnabled && p.builderSection?.trim()
             ? { builderSection: p.builderSection.trim().slice(0, 60) }
@@ -554,7 +584,8 @@ export function AdminPanelModal({
           ...(customBuilderEnabled && p.builderPresets && p.builderPresets.length > 0
             ? { builderPresets: p.builderPresets }
             : {}),
-          priceUsd: Math.max(1, localToUsd(localNum > 0 ? localNum : 500, formCurrency)),
+          ...(cleanedVariants.length > 0 ? { variants: cleanedVariants } : {}),
+          priceUsd: resolvedPriceUsd,
           description:
             p.description.trim().slice(0, 400) ||
             `${p.name.trim()} freshly handcrafted to order.`,
@@ -1593,6 +1624,142 @@ export function AdminPanelModal({
                                 placeholder="Badge (e.g. Eggless)"
                                 className="w-full rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs text-foreground focus:border-brand focus:outline-none"
                               />
+                            </div>
+
+                            {/* Multi-Weight / Size Options (500g to 5 kg on same product) */}
+                            <div className="space-y-1.5 rounded-lg border border-border/80 bg-muted/30 p-2 sm:col-span-4">
+                              <div className="flex flex-wrap items-center justify-between gap-1.5">
+                                <span className="text-[11px] font-bold text-foreground">
+                                  Weight / Size Options (Same Product):
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const base = Number(prod.priceLocal) || 1000;
+                                    const isHalfKg = /500\s*g|0\.5\s*kg/i.test(prod.serves);
+                                    const base1Kg = isHalfKg ? base * 1.85 : base;
+                                    const std = new Set(['w-500g', 'w-1kg', 'w-2kg', 'w-3kg', 'w-5kg']);
+                                    const autoRows = CAKE_WEIGHT_PRESETS.filter((w) => std.has(w.id)).map((w) => ({
+                                      id: w.id,
+                                      label: w.label,
+                                      priceLocal: String(Math.max(10, Math.round((base1Kg * w.kgRatio) / 10) * 10)),
+                                      serves: w.serves,
+                                    }));
+                                    setProducts((prev) =>
+                                      prev.map((p) => (p.id === prod.id ? { ...p, variants: autoRows } : p))
+                                    );
+                                  }}
+                                  className="cursor-pointer rounded bg-brand/15 px-2 py-0.5 text-[10px] font-extrabold text-brand hover:bg-brand hover:text-brand-foreground"
+                                >
+                                  Auto-fill 500g – 5 kg
+                                </button>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-1">
+                                {CAKE_WEIGHT_PRESETS.map((preset) => {
+                                  const active = (prod.variants || []).some(
+                                    (v) => v.id === preset.id || v.label.toLowerCase() === preset.label.toLowerCase()
+                                  );
+                                  return (
+                                    <button
+                                      key={preset.id}
+                                      type="button"
+                                      onClick={() => {
+                                        const base = Number(prod.priceLocal) || 1000;
+                                        const isHalfKg = /500\s*g|0\.5\s*kg/i.test(prod.serves);
+                                        const base1Kg = isHalfKg ? base * 1.85 : base;
+                                        setProducts((prev) =>
+                                          prev.map((p) => {
+                                            if (p.id !== prod.id) return p;
+                                            const existing = p.variants || [];
+                                            if (active) {
+                                              return {
+                                                ...p,
+                                                variants: existing.filter(
+                                                  (v) => v.id !== preset.id && v.label.toLowerCase() !== preset.label.toLowerCase()
+                                                ),
+                                              };
+                                            }
+                                            const orderMap = new Map(CAKE_WEIGHT_PRESETS.map((w, i) => [w.id, i]));
+                                            const next = [
+                                              ...existing,
+                                              {
+                                                id: preset.id,
+                                                label: preset.label,
+                                                priceLocal: String(Math.max(10, Math.round((base1Kg * preset.kgRatio) / 10) * 10)),
+                                                serves: preset.serves,
+                                              },
+                                            ].sort((a, b) => (orderMap.get(a.id) ?? 99) - (orderMap.get(b.id) ?? 99));
+                                            return { ...p, variants: next };
+                                          })
+                                        );
+                                      }}
+                                      className={`cursor-pointer rounded border px-1.5 py-0.5 font-mono text-[10px] font-bold transition-colors ${
+                                        active
+                                          ? 'border-brand bg-brand text-brand-foreground'
+                                          : 'border-border bg-card text-muted-foreground hover:text-foreground'
+                                      }`}
+                                    >
+                                      {active ? '✓ ' : '+ '}
+                                      {preset.label}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                              {prod.variants && prod.variants.length > 0 && (
+                                <div className="grid grid-cols-2 gap-1.5 pt-1 sm:grid-cols-3">
+                                  {prod.variants.map((v) => (
+                                    <div
+                                      key={v.id}
+                                      className="flex items-center gap-1 rounded border border-border bg-card px-1.5 py-1"
+                                    >
+                                      <span className="font-mono text-[10px] font-bold text-foreground">
+                                        {v.label}
+                                      </span>
+                                      <input
+                                        type="number"
+                                        min="1"
+                                        value={v.priceLocal}
+                                        onChange={(e) =>
+                                          setProducts((prev) =>
+                                            prev.map((p) =>
+                                              p.id === prod.id
+                                                ? {
+                                                    ...p,
+                                                    variants: (p.variants || []).map((row) =>
+                                                      row.id === v.id
+                                                        ? { ...row, priceLocal: e.target.value }
+                                                        : row
+                                                    ),
+                                                  }
+                                                : p
+                                            )
+                                          )
+                                        }
+                                        className="min-w-0 flex-1 rounded border border-border bg-background px-1.5 py-0.5 font-mono text-[10px] font-bold text-foreground focus:border-brand focus:outline-none"
+                                      />
+                                      <button
+                                        type="button"
+                                        aria-label={`Remove ${v.label}`}
+                                        onClick={() =>
+                                          setProducts((prev) =>
+                                            prev.map((p) =>
+                                              p.id === prod.id
+                                                ? {
+                                                    ...p,
+                                                    variants: (p.variants || []).filter((row) => row.id !== v.id),
+                                                  }
+                                                : p
+                                            )
+                                          )
+                                        }
+                                        className="cursor-pointer text-muted-foreground hover:text-rose-600"
+                                      >
+                                        <X className="size-3" />
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
                             </div>
 
                             <div className="flex flex-wrap items-center gap-1.5 sm:col-span-4">

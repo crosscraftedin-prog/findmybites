@@ -97,6 +97,7 @@ export function VendorWebsiteView({
   onTrackShare,
 }: VendorWebsiteViewProps) {
   const [selectedProductId, setSelectedProductId] = useState<string>('');
+  const [selectedVariants, setSelectedVariants] = useState<Record<string, string>>({});
   const [catalogView, setCatalogView] = useState<'builder' | 'catalog'>('catalog');
   const [foodFilter, setFoodFilter] = useState<'all' | 'veg' | 'non-veg'>('all');
   const [basket, setBasket] = useState<Record<string, number>>({});
@@ -128,6 +129,7 @@ export function VendorWebsiteView({
         vendor.customBuilderEnabled && vendor.products.length > 0 ? 'builder' : 'catalog'
       );
       setFoodFilter('all');
+      setSelectedVariants({});
       setBasket({});
       setBasketExpanded(false);
       setQrOpen(false);
@@ -166,9 +168,32 @@ export function VendorWebsiteView({
 
   const basketItems = useMemo(() => {
     if (!vendor) return [];
-    return vendor.products
-      .map((product) => ({ product, qty: basket[product.id] ?? 0 }))
-      .filter((entry) => entry.qty > 0);
+    const items: Array<{
+      key: string;
+      product: VendorProduct;
+      variantLabel?: string;
+      unitPriceUsd: number;
+      displayName: string;
+      qty: number;
+    }> = [];
+    for (const [key, qty] of Object.entries(basket)) {
+      if (!qty || qty <= 0) continue;
+      const [prodId, varId] = key.split('::');
+      const product = vendor.products.find((p) => p.id === prodId);
+      if (!product) continue;
+      const variant = varId ? product.variants?.find((v) => v.id === varId) : undefined;
+      const unitPriceUsd = variant ? variant.priceUsd : product.priceUsd;
+      const displayName = variant ? `${product.name} (${variant.label})` : product.name;
+      items.push({
+        key,
+        product,
+        variantLabel: variant?.label,
+        unitPriceUsd,
+        displayName,
+        qty,
+      });
+    }
+    return items;
   }, [vendor, basket]);
 
   const basketTotalCount = useMemo(
@@ -177,7 +202,7 @@ export function VendorWebsiteView({
   );
 
   const basketTotalUsd = useMemo(
-    () => basketItems.reduce((sum, item) => sum + item.product.priceUsd * item.qty, 0),
+    () => basketItems.reduce((sum, item) => sum + item.unitPriceUsd * item.qty, 0),
     [basketItems]
   );
 
@@ -185,31 +210,45 @@ export function VendorWebsiteView({
 
   const activeProduct: VendorProduct | undefined =
     vendor.products.find((p) => p.id === selectedProductId) ?? vendor.products[0];
+  const activeProductVariant = activeProduct?.variants?.length
+    ? activeProduct.variants.find((v) => v.id === selectedVariants[activeProduct.id]) ??
+      activeProduct.variants[0]
+    : undefined;
+  const activeProductLabel = activeProduct
+    ? activeProductVariant
+      ? `${activeProduct.name} (${activeProductVariant.label})`
+      : activeProduct.name
+    : '';
+  const activeProductPriceUsd = activeProduct
+    ? activeProductVariant
+      ? activeProductVariant.priceUsd
+      : activeProduct.priceUsd
+    : 0;
 
   const quickTags = getVendorQuickTags(vendor);
   const shareUrl = `findmybites.com/v/${vendor.slug}`;
 
-  const updateBasketQty = (productId: string, delta: number) => {
+  const updateBasketQty = (basketKey: string, delta: number) => {
     setBasket((prev) => {
-      const nextQty = Math.max(0, (prev[productId] ?? 0) + delta);
+      const nextQty = Math.max(0, (prev[basketKey] ?? 0) + delta);
       if (nextQty === 0) {
         const next = { ...prev };
-        delete next[productId];
+        delete next[basketKey];
         return next;
       }
-      return { ...prev, [productId]: nextQty };
+      return { ...prev, [basketKey]: nextQty };
     });
   };
 
   const buildBasketWhatsAppMessage = () => {
-    const lines = basketItems.map(({ product, qty }) => {
+    const lines = basketItems.map(({ product, displayName, unitPriceUsd, qty }) => {
       const foodLabel =
         product.foodType === 'veg'
           ? ' [Veg]'
           : product.foodType === 'non-veg'
             ? ' [Non-Veg]'
             : '';
-      return `• ${qty}× ${product.name}${foodLabel} (${formatMoney(product.priceUsd * qty, currency)})`;
+      return `• ${qty}× ${displayName}${foodLabel} (${formatMoney(unitPriceUsd * qty, currency)})`;
     });
     return [
       `Hi ${vendor.name}, I'd like to order from your FindMyBites storefront (${shareUrl}):`,
@@ -238,10 +277,10 @@ export function VendorWebsiteView({
 
     const packageSummary =
       basketItems.length > 0
-        ? basketItems.map((i) => `${i.qty}× ${i.product.name}`).join(', ')
-        : activeProduct.name;
+        ? basketItems.map((i) => `${i.qty}× ${i.displayName}`).join(', ')
+        : activeProductLabel;
 
-    const estimatedUsd = basketItems.length > 0 ? basketTotalUsd : activeProduct.priceUsd;
+    const estimatedUsd = basketItems.length > 0 ? basketTotalUsd : activeProductPriceUsd;
 
     const refCode = `FMB-${Math.floor(1000 + Math.random() * 9000)}`;
     const newBooking: BookingEnquiry = {
@@ -817,7 +856,23 @@ export function VendorWebsiteView({
                 <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
                   {displayedProducts.map((product) => {
                     const isSelected = activeProduct?.id === product.id;
-                    const qty = basket[product.id] ?? 0;
+                    const hasVariants = Boolean(product.variants && product.variants.length > 0);
+                    const selectedVariant = hasVariants
+                      ? product.variants!.find((v) => v.id === selectedVariants[product.id]) ??
+                        product.variants![0]
+                      : undefined;
+                    const basketKey = selectedVariant
+                      ? `${product.id}::${selectedVariant.id}`
+                      : product.id;
+                    const activePriceUsd = selectedVariant
+                      ? selectedVariant.priceUsd
+                      : product.priceUsd;
+                    const activeServesText = selectedVariant
+                      ? selectedVariant.serves
+                        ? `${selectedVariant.label} · ${selectedVariant.serves}`
+                        : selectedVariant.label
+                      : product.serves;
+                    const qty = basket[basketKey] ?? 0;
                     const foodTypeText =
                       product.foodType === 'veg'
                         ? ' · Veg'
@@ -831,7 +886,10 @@ export function VendorWebsiteView({
                     const deliveryRegionSuffix = browsingLocation
                       ? ` · Delivery Region: ${browsingLocation}`
                       : '';
-                    const productWaText = `Hi ${vendor.name}, I saw "${product.name}" (${formatMoney(product.priceUsd, currency)} · ${product.serves}${foodTypeText}${dietarySuffix}${deliveryRegionSuffix}) on your FindMyBites page (${shareUrl}). Is it available for my upcoming event?`;
+                    const waItemName = selectedVariant
+                      ? `${product.name} (${selectedVariant.label})`
+                      : product.name;
+                    const productWaText = `Hi ${vendor.name}, I saw "${waItemName}" (${formatMoney(activePriceUsd, currency)} · ${activeServesText}${foodTypeText}${dietarySuffix}${deliveryRegionSuffix}) on your FindMyBites page (${shareUrl}). Is it available for my upcoming event?`;
 
                     return (
                       <div
@@ -857,20 +915,67 @@ export function VendorWebsiteView({
                             </span>
                           )}
                           <span className="absolute bottom-3 right-3 rounded-full bg-black/75 px-3 py-1 font-mono text-xs font-bold tabular-nums text-white backdrop-blur-md">
-                            {formatMoney(product.priceUsd, currency)}
+                            {formatMoney(activePriceUsd, currency)}
                           </span>
                         </div>
 
                         <div className="flex flex-1 flex-col p-5">
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <p className="text-xs font-medium text-muted-foreground">
-                              {product.serves}
+                              {activeServesText}
                             </p>
                             <FoodTypeBadge foodType={product.foodType} size="sm" />
                           </div>
                           <h3 className="mt-1.5 text-base font-bold text-foreground">
                             {product.name}
                           </h3>
+
+                          {/* Interactive Weight / Size Variant Selector (e.g. 500g, 1 kg, 2 kg ... 5 kg) */}
+                          {hasVariants && (
+                            <div className="mt-2.5">
+                              <p className="text-[11px] font-semibold text-muted-foreground">
+                                Select Weight / Size:
+                              </p>
+                              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                                {product.variants!.map((variant) => {
+                                  const isVarActive = selectedVariant?.id === variant.id;
+                                  const varBasketQty = basket[`${product.id}::${variant.id}`] ?? 0;
+                                  return (
+                                    <button
+                                      key={variant.id}
+                                      type="button"
+                                      onClick={() => {
+                                        setSelectedVariants((prev) => ({
+                                          ...prev,
+                                          [product.id]: variant.id,
+                                        }));
+                                        setSelectedProductId(product.id);
+                                      }}
+                                      className={`inline-flex cursor-pointer items-center gap-1 rounded-lg border px-2.5 py-1 font-mono text-[11px] font-bold tabular-nums transition-colors ${
+                                        isVarActive
+                                          ? 'border-brand bg-brand text-brand-foreground shadow-xs'
+                                          : 'border-border bg-background text-foreground hover:border-brand/60 hover:text-brand'
+                                      }`}
+                                    >
+                                      <span>{variant.label}</span>
+                                      {varBasketQty > 0 && (
+                                        <span
+                                          className={`rounded-full px-1 text-[10px] font-black ${
+                                            isVarActive
+                                              ? 'bg-white/25 text-white'
+                                              : 'bg-[#25D366]/15 text-[#15803d]'
+                                          }`}
+                                        >
+                                          ×{varBasketQty}
+                                        </span>
+                                      )}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+
                           {product.dietaryTags && product.dietaryTags.length > 0 && (
                             <div className="mt-2 flex flex-wrap gap-1.5">
                               {product.dietaryTags.map((tag) => (
@@ -892,19 +997,20 @@ export function VendorWebsiteView({
                         <div className="inline-flex flex-1 items-center justify-between rounded-lg border border-[#25D366] bg-[#25D366]/10 px-2 py-1.5">
                           <button
                             type="button"
-                            aria-label={`Remove one ${product.name}`}
-                            onClick={() => updateBasketQty(product.id, -1)}
+                            aria-label={`Remove one ${waItemName}`}
+                            onClick={() => updateBasketQty(basketKey, -1)}
                             className="grid size-6 cursor-pointer place-items-center rounded-md bg-background text-foreground hover:bg-accent"
                           >
                             <Minus className="size-3.5" aria-hidden="true" />
                           </button>
                           <span className="font-mono text-xs font-bold text-foreground">
-                            {qty} in order
+                            {qty}
+                            {selectedVariant ? ` × ${selectedVariant.label}` : ' in order'}
                           </span>
                           <button
                             type="button"
-                            aria-label={`Add one more ${product.name}`}
-                            onClick={() => updateBasketQty(product.id, 1)}
+                            aria-label={`Add one more ${waItemName}`}
+                            onClick={() => updateBasketQty(basketKey, 1)}
                             className="grid size-6 cursor-pointer place-items-center rounded-md bg-[#25D366] text-white hover:bg-[#1ebe5d]"
                           >
                             <Plus className="size-3.5" aria-hidden="true" />
@@ -914,13 +1020,13 @@ export function VendorWebsiteView({
                         <button
                           type="button"
                           onClick={() => {
-                            updateBasketQty(product.id, 1);
+                            updateBasketQty(basketKey, 1);
                             setSelectedProductId(product.id);
                           }}
                           className="inline-flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-border bg-background px-3 py-2 text-xs font-semibold text-foreground transition-colors hover:border-brand hover:text-brand whitespace-nowrap"
                         >
                           <Plus className="size-3.5" aria-hidden="true" />
-                          Add to Order
+                          Add{selectedVariant ? ` ${selectedVariant.label}` : ' to Order'}
                         </button>
                       )}
 
@@ -969,8 +1075,8 @@ export function VendorWebsiteView({
                 <>
                   Selected product:{' '}
                   <strong className="text-foreground">
-                    {activeProduct?.name} (
-                    {activeProduct ? formatMoney(activeProduct.priceUsd, currency) : ''})
+                    {activeProductLabel} (
+                    {activeProduct ? formatMoney(activeProductPriceUsd, currency) : ''})
                   </strong>
                 </>
               )}
@@ -994,7 +1100,7 @@ export function VendorWebsiteView({
                       vendor,
                       basketItems.length > 0
                         ? buildBasketWhatsAppMessage()
-                        : `Hi ${vendor.name}, I just sent booking enquiry ${submittedRef} for "${activeProduct?.name}" on ${eventDate} (${guests} guests). Notes: ${notes || 'None'}`
+                        : `Hi ${vendor.name}, I just sent booking enquiry ${submittedRef} for "${activeProductLabel}" on ${eventDate} (${guests} guests). Notes: ${notes || 'None'}`
                     )}
                     target="_blank"
                     rel="noopener noreferrer"
@@ -1280,31 +1386,31 @@ export function VendorWebsiteView({
                 </button>
               </div>
               <div className="mt-2 space-y-1.5">
-                {basketItems.map(({ product, qty }) => (
+                {basketItems.map(({ key, displayName, unitPriceUsd, qty }) => (
                   <div
-                    key={product.id}
+                    key={key}
                     className="flex items-center justify-between gap-3 text-xs"
                   >
                     <span className="truncate font-medium text-foreground">
-                      {qty}× {product.name}
+                      {qty}× {displayName}
                     </span>
                     <div className="flex items-center gap-2 shrink-0">
                       <span className="font-mono font-semibold text-foreground">
-                        {formatMoney(product.priceUsd * qty, currency)}
+                        {formatMoney(unitPriceUsd * qty, currency)}
                       </span>
                       <button
                         type="button"
-                        onClick={() => updateBasketQty(product.id, -1)}
+                        onClick={() => updateBasketQty(key, -1)}
                         className="grid size-5 cursor-pointer place-items-center rounded border border-border hover:bg-accent"
-                        aria-label={`Decrease ${product.name}`}
+                        aria-label={`Decrease ${displayName}`}
                       >
                         <Minus className="size-3" />
                       </button>
                       <button
                         type="button"
-                        onClick={() => updateBasketQty(product.id, 1)}
+                        onClick={() => updateBasketQty(key, 1)}
                         className="grid size-5 cursor-pointer place-items-center rounded border border-border hover:bg-accent"
-                        aria-label={`Increase ${product.name}`}
+                        aria-label={`Increase ${displayName}`}
                       >
                         <Plus className="size-3" />
                       </button>
@@ -1336,9 +1442,9 @@ export function VendorWebsiteView({
             <div className="min-w-0">
               <p className="truncate text-sm font-bold text-foreground">{vendor.name}</p>
               <p className="truncate text-xs text-muted-foreground">
-                {activeProduct?.name} ·{' '}
+                {activeProductLabel} ·{' '}
                 <span className="font-mono font-semibold text-foreground">
-                  {activeProduct ? formatMoney(activeProduct.priceUsd, currency) : ''}
+                  {activeProduct ? formatMoney(activeProductPriceUsd, currency) : ''}
                 </span>
               </p>
             </div>
@@ -1349,7 +1455,7 @@ export function VendorWebsiteView({
               vendor,
               basketItems.length > 0
                 ? buildBasketWhatsAppMessage()
-                : `Hi ${vendor.name}, I'm viewing your page on FindMyBites × PimpMyParty and want to ask about "${activeProduct?.name}".`
+                : `Hi ${vendor.name}, I'm viewing your page on FindMyBites × PimpMyParty and want to ask about "${activeProductLabel}".`
             )}
             target="_blank"
             rel="noopener noreferrer"

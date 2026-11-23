@@ -441,7 +441,9 @@ export function VendorBioLinkView({
                         <FoodTypeBadge foodType={prod.foodType} size="xs" />
                       </div>
                       <p className="truncate text-[11px] opacity-70">
-                        {prod.serves}
+                        {prod.variants && prod.variants.length > 1
+                          ? prod.variants.map((v) => v.label).join(' · ')
+                          : prod.serves}
                         {prod.dietaryTags && prod.dietaryTags.length > 0
                           ? ` · ${prod.dietaryTags.slice(0, 2).join(', ')}`
                           : ''}
@@ -449,6 +451,7 @@ export function VendorBioLinkView({
                     </div>
                     <div className="shrink-0 text-right">
                       <p className="font-mono text-xs font-extrabold">
+                        {prod.variants && prod.variants.length > 1 ? 'From ' : ''}
                         {formatMoney(prod.priceUsd, currency)}
                       </p>
                       <span className="text-[10px] font-bold text-[#16a34a]">WhatsApp →</span>

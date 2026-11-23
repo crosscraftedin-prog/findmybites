@@ -380,6 +380,28 @@ export function isBuilderSuggestedCategory(category: string): boolean {
   );
 }
 
+export interface VendorProductVariant {
+  id: string;
+  label: string;
+  priceUsd: number;
+  serves?: string;
+}
+
+export const CAKE_WEIGHT_PRESETS: ReadonlyArray<{
+  id: string;
+  label: string;
+  kgRatio: number;
+  serves: string;
+}> = [
+  { id: 'w-500g', label: '500g', kgRatio: 0.55, serves: 'Serves 4-6' },
+  { id: 'w-1kg', label: '1 kg', kgRatio: 1, serves: 'Serves 8-10' },
+  { id: 'w-1-5kg', label: '1.5 kg', kgRatio: 1.5, serves: 'Serves 12-15' },
+  { id: 'w-2kg', label: '2 kg', kgRatio: 2, serves: 'Serves 18-20' },
+  { id: 'w-3kg', label: '3 kg', kgRatio: 3, serves: 'Serves 25-30' },
+  { id: 'w-4kg', label: '4 kg', kgRatio: 4, serves: 'Serves 35-40' },
+  { id: 'w-5kg', label: '5 kg', kgRatio: 5, serves: 'Serves 45-50' },
+];
+
 export interface VendorProduct {
   id: string;
   name: string;
@@ -390,6 +412,7 @@ export interface VendorProduct {
   dietaryTags?: string[];
   builderSection?: string;
   builderPresets?: BuilderPresetId[];
+  variants?: VendorProductVariant[];
   priceUsd: number;
   description: string;
   image: string;

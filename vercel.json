@@ -11,9 +11,22 @@
       ]
     },
     {
-      "source": "/(robots\\.txt|sitemap\\.xml|favicon\\.svg|og-cover\\.png)",
+      "source": "/(robots\\.txt|sitemap\\.xml|favicon\\.svg|og-cover\\.png|apple-touch-icon\\.png|pwa-.*\\.png)",
       "headers": [
         { "key": "Cache-Control", "value": "public, max-age=3600, s-maxage=86400" }
+      ]
+    },
+    {
+      "source": "/(sw\\.js|registerSW\\.js)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
+      ]
+    },
+    {
+      "source": "/manifest\\.webmanifest",
+      "headers": [
+        { "key": "Content-Type", "value": "application/manifest+json; charset=utf-8" },
+        { "key": "Cache-Control", "value": "public, max-age=3600" }
       ]
     }
   ],
@@ -49,7 +62,7 @@
       "destination": "/api/seo?path=:city/:category"
     },
     {
-      "source": "/((?!api/|assets/|robots\\.txt|sitemap\\.xml|favicon\\.svg|og-cover\\.png).*)",
+      "source": "/((?!api/|assets/|robots\\.txt|sitemap\\.xml|favicon\\.svg|og-cover\\.png|apple-touch-icon\\.png|pwa-.*\\.png|manifest\\.webmanifest|sw\\.js|registerSW\\.js|workbox-.*\\.js).*)",
       "destination": "/index.html"
     }
   ]

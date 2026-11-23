@@ -46,6 +46,7 @@ import { JoshPlannerDrawer } from './components/JoshPlannerDrawer';
 import { ListBusinessModal } from './components/ListBusinessModal';
 import { LocationPickerModal, SelectedLocation } from './components/LocationPickerModal';
 import { PostEventRequestModal } from './components/PostEventRequestModal';
+import { OfflineIndicator, PWAInstallBanner } from './components/PWAInstallBanner';
 import { PromoCardModal } from './components/PromoCardModal';
 import { SavedBookingsDrawer } from './components/SavedBookingsDrawer';
 import { SnowfallOverlay } from './components/SnowfallOverlay';
@@ -1564,6 +1565,7 @@ export default function App() {
 
   return (
     <div id="top" className="flex min-h-screen flex-col bg-background text-foreground pb-16 lg:pb-0">
+      <PWAInstallBanner onInstalledToast={setNotice} />
       <Header
         ecosystem={ecosystem}
         onChangeEcosystem={handleChangeEcosystem}
@@ -1591,7 +1593,9 @@ export default function App() {
           setClaimModalTab('login');
           setClaimModalOpen(true);
         }}
+        onNotice={setNotice}
       />
+      <OfflineIndicator />
 
       {/* Location Access Banner — matches live website Allow Location + Search by City bar */}
       {!userCoords && !locationBannerDismissed && (

@@ -605,6 +605,27 @@ async function normalizeProductsForStorage(
           ).slice(0, 3)
         : [];
 
+      const rawVariants = Array.isArray(p.variants) ? p.variants : [];
+      const variants = rawVariants
+        .slice(0, 12)
+        .map((v, vIdx) => {
+          const vo = (v && typeof v === 'object' ? v : {}) as Record<string, unknown>;
+          const label = typeof vo.label === 'string' ? vo.label.trim().slice(0, 32) : '';
+          const priceUsd = Math.max(0, Math.min(100000, Number(vo.priceUsd) || 0));
+          if (!label || priceUsd <= 0) return null;
+          const serves =
+            typeof vo.serves === 'string' && vo.serves.trim()
+              ? vo.serves.trim().slice(0, 40)
+              : undefined;
+          return {
+            id: sanitizeId(vo.id || `var-${vIdx + 1}`, 'var'),
+            label,
+            priceUsd,
+            ...(serves ? { serves } : {}),
+          };
+        })
+        .filter((v): v is { id: string; label: string; priceUsd: number; serves?: string } => Boolean(v));
+
       const out: Record<string, unknown> = {
         id: sanitizeId(p.id || `prod-${idx + 1}`, 'prod'),
         name: clampStr(p.name, 1, 100, 'Signature Package'),
@@ -633,6 +654,9 @@ async function normalizeProductsForStorage(
       }
       if (builderPresets.length > 0) {
         out.builderPresets = builderPresets;
+      }
+      if (variants.length > 0) {
+        out.variants = variants;
       }
       if (typeof p.tag === 'string' && p.tag.trim()) {
         out.tag = p.tag.trim().slice(0, 40);
