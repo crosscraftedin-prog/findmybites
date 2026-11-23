@@ -1,17 +1,21 @@
 import crypto from 'crypto';
 import fs from 'fs';
-import express, { type NextFunction, type Request, type Response } from 'express';
+import type { IncomingMessage, ServerResponse } from 'http';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { getApps, initializeApp } from 'firebase-admin/app';
-import { getAuth, type DecodedIdToken } from 'firebase-admin/auth';
 
 const ADMIN_EMAIL = 'crosscraftedin@gmail.com';
 const MEDIA_BUCKET = 'marketplace-media';
 const DEFAULT_FALLBACK_IMAGE = '/src/assets/images/vendor_wedding_cake_1795190931172.jpg';
+const FIREBASE_CERTS_URL =
+  'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com';
 
 function loadFirebaseConfig(): { projectId: string; firestoreDatabaseId: string } {
   const fallback = {
-    projectId: (process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID || 'gen-lang-client-0613198330').trim(),
+    projectId: (
+      process.env.FIREBASE_PROJECT_ID ||
+      process.env.VITE_FIREBASE_PROJECT_ID ||
+      'gen-lang-client-0613198330'
+    ).trim(),
     firestoreDatabaseId: 'ai-studio-findmybitespimpm-e62e8cda-3b00-4f15-9a37-e7c06c6009f7',
   };
   try {
@@ -45,17 +49,119 @@ function checkClaimLookupRateLimit(ip: string): boolean {
   return true;
 }
 
-let cachedAdminAuth: ReturnType<typeof getAuth> | null = null;
-function getAdminAuth(): ReturnType<typeof getAuth> {
-  if (!cachedAdminAuth) {
-    if (!getApps().length) {
-      initializeApp({
-        projectId: firebaseConfig.projectId,
-      });
-    }
-    cachedAdminAuth = getAuth();
+export interface DecodedIdToken {
+  uid: string;
+  email?: string;
+  email_verified?: boolean;
+  name?: string;
+  picture?: string;
+  firebase?: {
+    sign_in_provider?: string;
+  };
+}
+
+let cachedGoogleCerts: { certs: Record<string, string>; expiresAt: number } | null = null;
+
+async function fetchGooglePublicCerts(forceRefresh = false): Promise<Record<string, string>> {
+  const now = Date.now();
+  if (!forceRefresh && cachedGoogleCerts && now < cachedGoogleCerts.expiresAt) {
+    return cachedGoogleCerts.certs;
   }
-  return cachedAdminAuth;
+  const resp = await fetch(FIREBASE_CERTS_URL);
+  if (!resp.ok) {
+    throw new Error(`Failed to fetch Firebase public keys (${resp.status}).`);
+  }
+  const certs = (await resp.json()) as Record<string, string>;
+  const cc = resp.headers.get('cache-control') || '';
+  const maxAgeMatch = cc.match(/max-age=(\d+)/i);
+  const ttlSec = maxAgeMatch ? Math.max(60, Math.min(86400, Number(maxAgeMatch[1]))) : 3600;
+  cachedGoogleCerts = {
+    certs,
+    expiresAt: now + ttlSec * 1000,
+  };
+  return certs;
+}
+
+function decodeBase64UrlJson<T>(segment: string): T {
+  const jsonStr = Buffer.from(segment, 'base64url').toString('utf8');
+  return JSON.parse(jsonStr) as T;
+}
+
+async function verifyFirebaseIdToken(token: string): Promise<DecodedIdToken> {
+  const parts = token.split('.');
+  if (parts.length !== 3) {
+    throw new Error('Malformed Firebase ID token.');
+  }
+  const [headerB64, payloadB64, sigB64] = parts;
+  const header = decodeBase64UrlJson<{ alg?: string; kid?: string }>(headerB64);
+  if (header.alg !== 'RS256' || typeof header.kid !== 'string' || !header.kid) {
+    throw new Error('Unsupported Firebase ID token header.');
+  }
+
+  let certs = await fetchGooglePublicCerts(false);
+  let certPem = certs[header.kid];
+  if (!certPem) {
+    certs = await fetchGooglePublicCerts(true);
+    certPem = certs[header.kid];
+  }
+  if (!certPem) {
+    throw new Error('Unknown Firebase signing key.');
+  }
+
+  const verifier = crypto.createVerify('RSA-SHA256');
+  verifier.update(`${headerB64}.${payloadB64}`);
+  verifier.end();
+  const sigValid = verifier.verify(certPem, Buffer.from(sigB64, 'base64url'));
+  if (!sigValid) {
+    throw new Error('Invalid Firebase ID token signature.');
+  }
+
+  const payload = decodeBase64UrlJson<{
+    aud?: string;
+    iss?: string;
+    sub?: string;
+    exp?: number;
+    iat?: number;
+    auth_time?: number;
+    email?: string;
+    email_verified?: boolean;
+    name?: string;
+    picture?: string;
+    firebase?: { sign_in_provider?: string };
+  }>(payloadB64);
+
+  const nowSec = Math.floor(Date.now() / 1000);
+  const expectedIssuer = `https://securetoken.google.com/${firebaseConfig.projectId}`;
+  if (payload.aud !== firebaseConfig.projectId) {
+    throw new Error('Firebase ID token audience mismatch.');
+  }
+  if (payload.iss !== expectedIssuer) {
+    throw new Error('Firebase ID token issuer mismatch.');
+  }
+  if (typeof payload.sub !== 'string' || payload.sub.length === 0 || payload.sub.length > 128) {
+    throw new Error('Firebase ID token missing subject.');
+  }
+  if (typeof payload.exp !== 'number' || payload.exp <= nowSec) {
+    throw new Error('Firebase ID token expired.');
+  }
+  if (typeof payload.iat !== 'number' || payload.iat > nowSec + 300) {
+    throw new Error('Firebase ID token issued-at time is invalid.');
+  }
+  if (
+    payload.auth_time !== undefined &&
+    (typeof payload.auth_time !== 'number' || payload.auth_time > nowSec + 300)
+  ) {
+    throw new Error('Firebase ID token auth_time is invalid.');
+  }
+
+  return {
+    uid: payload.sub,
+    email: typeof payload.email === 'string' ? payload.email : undefined,
+    email_verified: payload.email_verified === true,
+    name: typeof payload.name === 'string' ? payload.name : undefined,
+    picture: typeof payload.picture === 'string' ? payload.picture : undefined,
+    firebase: payload.firebase,
+  };
 }
 
 let cachedSupabase: SupabaseClient | null = null;
@@ -82,8 +188,197 @@ function getSupabase(): SupabaseClient {
   return cachedSupabase;
 }
 
-interface AuthedRequest extends Request {
+export interface ApiRequest {
+  method?: string;
+  url?: string;
+  headers: Record<string, string | string[] | undefined>;
+  params: Record<string, string>;
+  query: Record<string, unknown>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  body: any;
+  ip?: string;
   user?: DecodedIdToken;
+}
+
+export interface ApiResponse {
+  status: (code: number) => ApiResponse;
+  json: (payload: unknown) => unknown;
+  headersSent?: boolean;
+}
+
+export type NextFunction = () => void | Promise<unknown>;
+export type RouteHandler = (
+  req: AuthedRequest,
+  res: ApiResponse,
+  next: NextFunction
+) => unknown | Promise<unknown>;
+
+interface AuthedRequest extends ApiRequest {
+  user?: DecodedIdToken;
+}
+
+type Request = ApiRequest;
+type Response = ApiResponse;
+
+interface RegisteredRoute {
+  method: string;
+  segments: string[];
+  handlers: RouteHandler[];
+}
+
+export interface MicroRouter {
+  (req: IncomingMessage & Partial<ApiRequest>, res: ServerResponse & Partial<ApiResponse>, next?: NextFunction): void;
+  get: (path: string, ...handlers: RouteHandler[]) => void;
+  post: (path: string, ...handlers: RouteHandler[]) => void;
+  put: (path: string, ...handlers: RouteHandler[]) => void;
+  patch: (path: string, ...handlers: RouteHandler[]) => void;
+  delete: (path: string, ...handlers: RouteHandler[]) => void;
+  handle: (req: ApiRequest, res: ApiResponse) => Promise<void>;
+}
+
+function splitPath(pathname: string): string[] {
+  const clean = pathname.replace(/\/+$/, '') || '/';
+  if (clean === '/') return [];
+  return clean.replace(/^\/+/, '').split('/');
+}
+
+function matchRoute(
+  patternSegments: string[],
+  requestSegments: string[]
+): Record<string, string> | null {
+  if (patternSegments.length !== requestSegments.length) return null;
+  const params: Record<string, string> = {};
+  for (let i = 0; i < patternSegments.length; i++) {
+    const pat = patternSegments[i];
+    const seg = requestSegments[i];
+    if (pat.startsWith(':')) {
+      try {
+        params[pat.slice(1)] = decodeURIComponent(seg);
+      } catch {
+        params[pat.slice(1)] = seg;
+      }
+    } else if (pat !== seg) {
+      return null;
+    }
+  }
+  return params;
+}
+
+function wrapNodeResponse(res: ServerResponse & Partial<ApiResponse>): ApiResponse {
+  if (typeof res.status === 'function' && typeof res.json === 'function') {
+    return res as unknown as ApiResponse;
+  }
+  let statusCode = res.statusCode || 200;
+  const wrapped: ApiResponse = {
+    get headersSent() {
+      return res.headersSent;
+    },
+    status(code: number) {
+      statusCode = code;
+      res.statusCode = code;
+      return wrapped;
+    },
+    json(payload: unknown) {
+      if (!res.headersSent) {
+        res.statusCode = statusCode;
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.end(JSON.stringify(payload));
+      }
+      return wrapped;
+    },
+  };
+  return wrapped;
+}
+
+function createMicroRouter(): MicroRouter {
+  const routes: RegisteredRoute[] = [];
+
+  const register = (method: string, path: string, handlers: RouteHandler[]) => {
+    routes.push({
+      method: method.toUpperCase(),
+      segments: splitPath(path),
+      handlers,
+    });
+  };
+
+  const handle = async (req: ApiRequest, res: ApiResponse): Promise<void> => {
+    const method = (req.method || 'GET').toUpperCase();
+    const parsedUrl = new URL(req.url || '/', 'http://localhost');
+    const reqSegments = splitPath(parsedUrl.pathname);
+
+    if (!req.query || typeof req.query !== 'object') {
+      const q: Record<string, string> = {};
+      parsedUrl.searchParams.forEach((v, k) => {
+        q[k] = v;
+      });
+      req.query = q;
+    }
+    if (!req.params || typeof req.params !== 'object') {
+      req.params = {};
+    }
+
+    for (const route of routes) {
+      if (route.method !== method) continue;
+      const params = matchRoute(route.segments, reqSegments);
+      if (!params) continue;
+      req.params = params;
+
+      let idx = 0;
+      const runNext = async (): Promise<void> => {
+        if (res.headersSent || idx >= route.handlers.length) return;
+        const fn = route.handlers[idx++];
+        await fn(req, res, runNext);
+      };
+      await runNext();
+      return;
+    }
+
+    if (!res.headersSent) {
+      res.status(404).json({ error: `API route not found: ${method} ${parsedUrl.pathname}` });
+    }
+  };
+
+  const callable = ((
+    rawReq: IncomingMessage & Partial<ApiRequest>,
+    rawRes: ServerResponse & Partial<ApiResponse>,
+    _next?: NextFunction
+  ) => {
+    const parsedUrl = new URL(rawReq.url || '/', 'http://localhost');
+    const query: Record<string, unknown> =
+      rawReq.query && typeof rawReq.query === 'object' ? { ...rawReq.query } : {};
+    parsedUrl.searchParams.forEach((v, k) => {
+      if (!(k in query)) query[k] = v;
+    });
+
+    const apiReq: ApiRequest = {
+      method: rawReq.method || 'GET',
+      url: rawReq.url || '/',
+      headers: (rawReq.headers || {}) as Record<string, string | string[] | undefined>,
+      params: (rawReq.params || {}) as Record<string, string>,
+      query,
+      body: rawReq.body ?? {},
+      ip: rawReq.ip || rawReq.socket?.remoteAddress || 'unknown',
+    };
+    const apiRes = wrapNodeResponse(rawRes);
+
+    handle(apiReq, apiRes).catch((err) => {
+      console.error('[Supabase API Unhandled Error]:', err);
+      if (!apiRes.headersSent) {
+        apiRes.status(500).json({
+          error: err instanceof Error ? err.message : 'Internal server error.',
+        });
+      }
+    });
+  }) as MicroRouter;
+
+  callable.get = (path, ...handlers) => register('GET', path, handlers);
+  callable.post = (path, ...handlers) => register('POST', path, handlers);
+  callable.put = (path, ...handlers) => register('PUT', path, handlers);
+  callable.patch = (path, ...handlers) => register('PATCH', path, handlers);
+  callable.delete = (path, ...handlers) => register('DELETE', path, handlers);
+  callable.handle = handle;
+
+  return callable;
 }
 
 function isRootAdmin(user: DecodedIdToken | undefined): boolean {
@@ -103,7 +398,8 @@ function isAuthenticatedAccount(user: DecodedIdToken): boolean {
 }
 
 async function requireAuth(req: AuthedRequest, res: Response, next: NextFunction) {
-  const header = req.headers.authorization;
+  const rawHeader = req.headers.authorization;
+  const header = Array.isArray(rawHeader) ? rawHeader[0] : rawHeader;
   if (!header || !header.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'Authentication required. Please sign in.' });
   }
@@ -112,24 +408,24 @@ async function requireAuth(req: AuthedRequest, res: Response, next: NextFunction
     return res.status(401).json({ error: 'Missing authentication token.' });
   }
   try {
-    const decoded = await getAdminAuth().verifyIdToken(token);
+    const decoded = await verifyFirebaseIdToken(token);
     if (!isAuthenticatedAccount(decoded)) {
       return res.status(403).json({ error: 'Verified account required.' });
     }
     req.user = decoded;
-    return next();
+    return await next();
   } catch (err) {
-    console.error('[Auth verifyIdToken failed]:', err instanceof Error ? err.message : err);
+    console.error('[Auth verifyFirebaseIdToken failed]:', err instanceof Error ? err.message : err);
     return res.status(401).json({ error: 'Invalid or expired session. Please sign in again.' });
   }
 }
 
 async function requireAdmin(req: AuthedRequest, res: Response, next: NextFunction) {
-  return requireAuth(req, res, () => {
+  return requireAuth(req, res, async () => {
     if (!isRootAdmin(req.user)) {
       return res.status(403).json({ error: 'Admin privileges required.' });
     }
-    return next();
+    return await next();
   });
 }
 
@@ -597,8 +893,8 @@ function handleApiError(res: Response, err: unknown, fallback: string) {
   return res.status(status).json({ error: message || fallback });
 }
 
-export function createSupabaseApiRouter(): express.Router {
-  const router = express.Router();
+export function createSupabaseApiRouter(): MicroRouter {
+  const router = createMicroRouter();
 
   // --- Health / config check ---
   router.get('/health', (_req, res) => {
