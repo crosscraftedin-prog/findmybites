@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import fs from 'fs';
+import http from 'http';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI, Type } from '@google/genai';
@@ -345,6 +346,7 @@ Respond as Josh AI in the required JSON schema.`;
 async function startServer() {
   const port = Number(process.env.PORT) || 3000;
   const distDir = path.resolve(__dirname, 'dist');
+  const httpServer = http.createServer(app);
 
   if (process.env.NODE_ENV === 'production' && fs.existsSync(distDir)) {
     const srcImagesDir = path.resolve(__dirname, 'src/assets/images');
@@ -357,14 +359,35 @@ async function startServer() {
     });
   } else {
     const { createServer: createViteServer } = await import('vite');
+    const hmrDisabled = process.env.DISABLE_HMR === 'true';
+    const wsConfig = { server: httpServer };
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        allowedHosts: true,
+        hmr: hmrDisabled ? false : true,
+        ws: wsConfig,
+      },
+      plugins: [
+        {
+          name: 'attach-express-ws-server',
+          config() {
+            return {
+              server: {
+                allowedHosts: true,
+                hmr: hmrDisabled ? false : true,
+                ws: wsConfig,
+              },
+            };
+          },
+        },
+      ],
       appType: 'spa',
     });
     app.use(vite.middlewares);
   }
 
-  app.listen(port, '0.0.0.0', () => {
+  httpServer.listen(port, '0.0.0.0', () => {
     console.log(`FindMyBites × PimpMyParty server listening on http://0.0.0.0:${port}`);
   });
 }
