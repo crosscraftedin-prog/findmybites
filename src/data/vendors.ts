@@ -466,6 +466,7 @@ export interface Vendor {
   seoTitle?: string;
   seoDescription?: string;
   seoKeywords?: string;
+  isCloud?: boolean;
 }
 
 export function getVendorCoveredStatesList(vendor: Vendor): string[] {

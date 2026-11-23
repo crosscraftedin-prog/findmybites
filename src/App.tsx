@@ -748,35 +748,35 @@ export default function App() {
   );
 
   useEffect(() => {
-    if (!authReady || !isAdminUser || !adminPanelOpen) {
-      if (!isAdminUser) {
-        setAdminTransfers([]);
-        setAdminStoreClaims([]);
-        setAdminAllVendors([]);
-        setAdminAllBookings([]);
-        setAdminAllReviews([]);
-        setAdminAllEventRequests([]);
-        setAdminAllMetrics([]);
-      }
+    if (!authReady || !isAdminUser) {
+      setAdminTransfers([]);
+      setAdminStoreClaims([]);
+      setAdminAllVendors([]);
+      setAdminAllBookings([]);
+      setAdminAllReviews([]);
+      setAdminAllEventRequests([]);
+      setAdminAllMetrics([]);
       return;
     }
-    const unsubTransfers = subscribeAdminTransfers(setAdminTransfers);
-    const unsubClaims = subscribeAdminStoreClaims(setAdminStoreClaims);
-    const unsubAllVendors = subscribeAllVendorsForAdmin(setAdminAllVendors);
-    const unsubAllBookings = subscribeAllBookingsForAdmin(setAdminAllBookings);
-    const unsubAllReviews = subscribeAllReviewsForAdmin(setAdminAllReviews);
-    const unsubAllRequests = subscribeAllEventRequestsForAdmin(setAdminAllEventRequests);
-    const unsubAllMetrics = subscribeAllVendorMetricsForAdmin(setAdminAllMetrics);
+
+    const unsubs: Array<() => void> = [];
+    if (adminPanelOpen || dashboardOpen) {
+      unsubs.push(subscribeAllVendorsForAdmin(setAdminAllVendors));
+    }
+    if (adminPanelOpen) {
+      unsubs.push(
+        subscribeAdminTransfers(setAdminTransfers),
+        subscribeAdminStoreClaims(setAdminStoreClaims),
+        subscribeAllBookingsForAdmin(setAdminAllBookings),
+        subscribeAllReviewsForAdmin(setAdminAllReviews),
+        subscribeAllEventRequestsForAdmin(setAdminAllEventRequests),
+        subscribeAllVendorMetricsForAdmin(setAdminAllMetrics)
+      );
+    }
     return () => {
-      unsubTransfers();
-      unsubClaims();
-      unsubAllVendors();
-      unsubAllBookings();
-      unsubAllReviews();
-      unsubAllRequests();
-      unsubAllMetrics();
+      unsubs.forEach((fn) => fn());
     };
-  }, [authReady, isAdminUser, adminPanelOpen]);
+  }, [authReady, isAdminUser, adminPanelOpen, dashboardOpen]);
 
   const effectiveAdminVendors = useMemo(
     () => (adminAllVendors.length > 0 ? adminAllVendors : cloudVendors),
@@ -903,10 +903,21 @@ export default function App() {
 
   // Hydrate /v/<slug>, /fmb/<handle>, /@<handle>, /claim/<slug>, and Programmatic City × Category SEO URLs
   useEffect(() => {
-    const findByBioHandleOrSlug = (raw: string) => {
-      const target = raw.toLowerCase();
-      return allVendors.find(
-        (v) => getVendorBioHandle(v).toLowerCase() === target || v.slug.toLowerCase() === target
+    const findVendorBySlugOrAlias = (raw: string) => {
+      const target = raw.trim().toLowerCase();
+      if (!target) return undefined;
+      return (
+        allVendors.find(
+          (v) =>
+            v.slug.toLowerCase() === target ||
+            getVendorBioHandle(v).toLowerCase() === target ||
+            v.id.toLowerCase() === target
+        ) ??
+        allVendors.find(
+          (v) =>
+            slugifySeo(v.name) === target ||
+            v.slug.toLowerCase().startsWith(`${target}-`)
+        )
       );
     };
 
@@ -946,21 +957,21 @@ export default function App() {
         setClaimModalOpen(true);
       } else if (pathname.startsWith('/fmb/')) {
         const handle = decodeURIComponent(pathname.slice(5)).replace(/\/$/, '').toLowerCase();
-        const matched = findByBioHandleOrSlug(handle);
+        const matched = findVendorBySlugOrAlias(handle);
         if (matched) {
           setActiveVendor(null);
           setBioVendor((prev) => (prev?.id === matched.id ? prev : matched));
         }
       } else if (pathname.startsWith('/@')) {
         const handle = decodeURIComponent(pathname.slice(2)).replace(/\/$/, '').toLowerCase();
-        const matched = findByBioHandleOrSlug(handle);
+        const matched = findVendorBySlugOrAlias(handle);
         if (matched) {
           setActiveVendor(null);
           setBioVendor((prev) => (prev?.id === matched.id ? prev : matched));
         }
       } else if (pathname.startsWith('/v/')) {
         const slug = decodeURIComponent(pathname.slice(3)).replace(/\/$/, '').toLowerCase();
-        const matched = allVendors.find((v) => v.slug.toLowerCase() === slug);
+        const matched = findVendorBySlugOrAlias(slug);
         if (matched) {
           setBioVendor(null);
           setActiveVendor((prev) => (prev?.id === matched.id ? prev : matched));
@@ -1018,7 +1029,12 @@ export default function App() {
           : pathname.slice(3);
       const key = decodeURIComponent(raw).replace(/\/$/, '').toLowerCase();
       const existsInCatalog = allVendors.some(
-        (v) => v.slug.toLowerCase() === key || getVendorBioHandle(v).toLowerCase() === key
+        (v) =>
+          v.slug.toLowerCase() === key ||
+          getVendorBioHandle(v).toLowerCase() === key ||
+          v.id.toLowerCase() === key ||
+          slugifySeo(v.name) === key ||
+          v.slug.toLowerCase().startsWith(`${key}-`)
       );
       if (existsInCatalog) {
         try {
@@ -1173,7 +1189,11 @@ export default function App() {
     document.getElementById('explore')?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const handleRequestLiveLocation = async (options?: { silentError?: boolean; scroll?: boolean }) => {
+  const handleRequestLiveLocation = async (options?: {
+    silentError?: boolean;
+    scroll?: boolean;
+    autoStartup?: boolean;
+  }) => {
     setGpsDetecting(true);
     try {
       const coords = await requestBrowserGpsLocation();
@@ -1183,15 +1203,17 @@ export default function App() {
         lng: coords.lng,
         label: resolved.label,
       });
-      if (resolved.exactCountryMatched) {
-        setSelectedCountry(resolved.country);
-        setSelectedState(resolved.state);
+      if (!options?.autoStartup) {
+        if (resolved.exactCountryMatched) {
+          setSelectedCountry(resolved.country);
+          setSelectedState(resolved.state);
+        }
+        setNearMeRadiusKm(0);
+        setNearMeAllEcosystems(true);
+        setSortBy('nearest');
+        setNotice(`Location detected: ${resolved.label} — showing vendors near you.`);
       }
-      setNearMeRadiusKm(0);
-      setNearMeAllEcosystems(true);
-      setSortBy('nearest');
       setLocationBannerDismissed(true);
-      setNotice(`Location detected: ${resolved.label} — showing vendors near you.`);
       if (options?.scroll) {
         document.getElementById('explore')?.scrollIntoView({ behavior: 'smooth' });
       }
@@ -1218,7 +1240,7 @@ export default function App() {
       // ignore storage errors
     }
     const timer = window.setTimeout(() => {
-      void handleRequestLiveLocation({ silentError: true, scroll: false });
+      void handleRequestLiveLocation({ silentError: true, scroll: false, autoStartup: true });
     }, 650);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1283,9 +1305,13 @@ export default function App() {
       return true;
     });
 
-    // Paid SaaS listings (Business Spotlight > Pro Partner > Free) ALWAYS rank at the top!
+    const isLiveCloudStore = (v: Vendor) => Boolean(v.isCloud || v.ownerId);
+
+    // Real cloud storefronts rank ahead of static demo showcase listings,
+    // and paid SaaS listings (Business Spotlight > Pro Partner > Free) ALWAYS rank at the top!
     return [...list].sort((a, b) => {
       const rankDiff = planRankWeight(b.planTier) - planRankWeight(a.planTier);
+      const cloudDiff = Number(isLiveCloudStore(b)) - Number(isLiveCloudStore(a));
 
       if (sortBy === 'nearest' && userCoords) {
         const distA = haversineKm(userCoords.lat, userCoords.lng, a.lat, a.lng);
@@ -1293,10 +1319,12 @@ export default function App() {
         const localA = distA <= 60 ? 1 : 0;
         const localB = distB <= 60 ? 1 : 0;
         if (localA !== localB) return localB - localA;
+        if (cloudDiff !== 0) return cloudDiff;
         if (rankDiff !== 0) return rankDiff;
         return distA - distB;
       }
 
+      if (cloudDiff !== 0) return cloudDiff;
       if (rankDiff !== 0) return rankDiff;
       if (sortBy === 'rating') return b.rating - a.rating;
       if (sortBy === 'price-asc') return a.startingPriceUsd - b.startingPriceUsd;
@@ -1333,7 +1361,12 @@ export default function App() {
     () =>
       [...ecoVendors]
         .filter((v) => v.planTier === 'business' || v.planTier === 'pro')
-        .sort((a, b) => planRankWeight(b.planTier) - planRankWeight(a.planTier) || b.rating - a.rating)
+        .sort(
+          (a, b) =>
+            Number(Boolean(b.isCloud || b.ownerId)) - Number(Boolean(a.isCloud || a.ownerId)) ||
+            planRankWeight(b.planTier) - planRankWeight(a.planTier) ||
+            b.rating - a.rating
+        )
         .slice(0, 3),
     [ecoVendors]
   );
