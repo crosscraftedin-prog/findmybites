@@ -73,55 +73,42 @@ function sanitizeSlugSegment(raw: string): string {
     .slice(0, 96);
 }
 
-interface FirestoreFieldVal {
-  stringValue?: string;
-}
-
-interface FirestoreQueryRow {
-  document?: {
-    fields?: Record<string, FirestoreFieldVal>;
-    updateTime?: string;
-  };
+interface SupabaseVendorSlugRow {
+  slug?: string;
+  bio_handle?: string | null;
+  updated_at?: string | null;
 }
 
 async function fetchActiveCloudVendors(): Promise<
   Array<{ slug: string; bioHandle?: string; lastmod?: string }>
 > {
-  const endpoint = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/${FIRESTORE_DATABASE_ID}/documents:runQuery`;
+  const supaUrl = (process.env.SUPABASE_URL || '').trim().replace(/\/$/, '');
+  const supaKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+  if (!supaUrl || !supaKey) return [];
 
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
-    const resp = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      signal: controller.signal,
-      body: JSON.stringify({
-        structuredQuery: {
-          from: [{ collectionId: 'vendors' }],
-          where: {
-            fieldFilter: {
-              field: { fieldPath: 'status' },
-              op: 'EQUAL',
-              value: { stringValue: 'active' },
-            },
-          },
-          limit: 300,
+    const resp = await fetch(
+      `${supaUrl}/rest/v1/vendors?select=slug,bio_handle,updated_at&status=eq.active&order=updated_at.desc&limit=500`,
+      {
+        headers: {
+          apikey: supaKey,
+          Authorization: `Bearer ${supaKey}`,
         },
-      }),
-    });
+        signal: controller.signal,
+      }
+    );
     clearTimeout(timeout);
 
     if (!resp.ok) return [];
-    const rows = (await resp.json()) as FirestoreQueryRow[];
+    const rows = (await resp.json()) as SupabaseVendorSlugRow[];
     const out: Array<{ slug: string; bioHandle?: string; lastmod?: string }> = [];
     for (const row of rows) {
-      const fields = row.document?.fields;
-      if (!fields) continue;
-      const slug = sanitizeSlugSegment(fields.slug?.stringValue || '');
+      const slug = sanitizeSlugSegment(row.slug || '');
       if (!slug) continue;
-      const bio = sanitizeSlugSegment(fields.bioHandle?.stringValue || '');
-      const lastmod = row.document?.updateTime?.slice(0, 10);
+      const bio = sanitizeSlugSegment(row.bio_handle || '');
+      const lastmod = typeof row.updated_at === 'string' ? row.updated_at.slice(0, 10) : undefined;
       out.push({ slug, bioHandle: bio || undefined, lastmod });
     }
     return out;

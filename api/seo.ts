@@ -67,59 +67,53 @@ interface VendorRecord {
   products: Array<{ name: string; description: string; priceUsd: number }>;
 }
 
-function strVal(fields: Record<string, FirestoreField>, key: string, fallback = ''): string {
-  return fields[key]?.stringValue?.trim() || fallback;
-}
-
-function numVal(fields: Record<string, FirestoreField>, key: string, fallback = 0): number {
-  const f = fields[key];
-  if (!f) return fallback;
-  if (typeof f.doubleValue === 'number') return f.doubleValue;
-  if (typeof f.integerValue === 'string') return Number(f.integerValue) || fallback;
-  return fallback;
-}
-
-function parseVendorDoc(doc: FirestoreDoc): VendorRecord | null {
-  const f = doc.fields;
-  if (!f) return null;
-  const slug = strVal(f, 'slug');
-  const name = strVal(f, 'name');
+function parseSupabaseVendor(row: Record<string, unknown>): VendorRecord | null {
+  const slug = typeof row.slug === 'string' ? row.slug.trim() : '';
+  const name = typeof row.name === 'string' ? row.name.trim() : '';
   if (!slug || !name) return null;
-  const productsRaw = f.products?.arrayValue?.values || [];
-  const products = productsRaw
+  const rawProducts = Array.isArray(row.products) ? row.products : [];
+  const products = rawProducts
     .map((item) => {
-      const pf = item.mapValue?.fields;
-      if (!pf) return null;
+      if (!item || typeof item !== 'object') return null;
+      const p = item as Record<string, unknown>;
       return {
-        name: strVal(pf, 'name', 'Package'),
-        description: strVal(pf, 'description', ''),
-        priceUsd: numVal(pf, 'priceUsd', 0),
+        name: typeof p.name === 'string' && p.name.trim() ? p.name.trim() : 'Package',
+        description: typeof p.description === 'string' ? p.description.trim() : '',
+        priceUsd: typeof p.priceUsd === 'number' ? p.priceUsd : 0,
       };
     })
     .filter((p): p is { name: string; description: string; priceUsd: number } => Boolean(p));
 
+  const city = typeof row.city === 'string' && row.city.trim() ? row.city.trim() : 'Hyderabad';
   return {
     slug,
-    bioHandle: strVal(f, 'bioHandle', slug),
+    bioHandle:
+      typeof row.bio_handle === 'string' && row.bio_handle.trim() ? row.bio_handle.trim() : slug,
     name,
-    category: strVal(f, 'category', 'Bakers & Cakes'),
-    marketplace: strVal(f, 'marketplace', 'food'),
-    city: strVal(f, 'city', 'Mumbai'),
-    state: strVal(f, 'state', 'Maharashtra'),
-    country: strVal(f, 'country', 'India'),
-    area: strVal(f, 'area', strVal(f, 'city', 'City Center')),
-    lat: numVal(f, 'lat', 19.076),
-    lng: numVal(f, 'lng', 72.8777),
-    whatsappNumber: strVal(f, 'whatsappNumber', ''),
-    priceTier: strVal(f, 'priceTier', '$$'),
-    rating: numVal(f, 'rating', 5),
-    reviewCount: numVal(f, 'reviewCount', 1),
-    tagline: strVal(f, 'tagline', ''),
-    description: strVal(f, 'description', ''),
-    image: strVal(f, 'image', ''),
-    seoTitle: strVal(f, 'seoTitle') || undefined,
-    seoDescription: strVal(f, 'seoDescription') || undefined,
-    seoKeywords: strVal(f, 'seoKeywords') || undefined,
+    category: typeof row.category === 'string' && row.category.trim() ? row.category.trim() : 'Bakers & Cakes',
+    marketplace: row.marketplace === 'party' ? 'party' : 'food',
+    city,
+    state: typeof row.state === 'string' && row.state.trim() ? row.state.trim() : 'Telangana',
+    country: typeof row.country === 'string' && row.country.trim() ? row.country.trim() : 'India',
+    area: typeof row.area === 'string' && row.area.trim() ? row.area.trim() : city,
+    lat: typeof row.lat === 'number' ? row.lat : 17.385,
+    lng: typeof row.lng === 'number' ? row.lng : 78.4867,
+    whatsappNumber: typeof row.whatsapp_number === 'string' ? row.whatsapp_number : '',
+    priceTier: typeof row.price_tier === 'string' ? row.price_tier : '$$',
+    rating: typeof row.rating === 'number' ? row.rating : 5,
+    reviewCount: typeof row.review_count === 'number' ? row.review_count : 1,
+    tagline: typeof row.tagline === 'string' ? row.tagline : '',
+    description: typeof row.description === 'string' ? row.description : '',
+    image: typeof row.image === 'string' ? row.image : '',
+    seoTitle: typeof row.seo_title === 'string' && row.seo_title.trim() ? row.seo_title.trim() : undefined,
+    seoDescription:
+      typeof row.seo_description === 'string' && row.seo_description.trim()
+        ? row.seo_description.trim()
+        : undefined,
+    seoKeywords:
+      typeof row.seo_keywords === 'string' && row.seo_keywords.trim()
+        ? row.seo_keywords.trim()
+        : undefined,
     products,
   };
 }
@@ -128,53 +122,37 @@ async function queryActiveVendors(
   extraFilter?: { fieldPath: string; value: string },
   limit = 40
 ): Promise<VendorRecord[]> {
-  const endpoint = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/${FIRESTORE_DATABASE_ID}/documents:runQuery`;
-  const statusFilter = {
-    fieldFilter: {
-      field: { fieldPath: 'status' },
-      op: 'EQUAL',
-      value: { stringValue: 'active' },
-    },
-  };
+  const supaUrl = (process.env.SUPABASE_URL || '').trim().replace(/\/$/, '');
+  const supaKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+  if (!supaUrl || !supaKey) return [];
 
-  const whereClause = extraFilter
-    ? {
-        compositeFilter: {
-          op: 'AND',
-          filters: [
-            statusFilter,
-            {
-              fieldFilter: {
-                field: { fieldPath: extraFilter.fieldPath },
-                op: 'EQUAL',
-                value: { stringValue: extraFilter.value },
-              },
-            },
-          ],
-        },
-      }
-    : statusFilter;
+  const params = new URLSearchParams({
+    select: '*',
+    status: 'eq.active',
+    order: 'updated_at.desc',
+    limit: String(limit),
+  });
+
+  if (extraFilter) {
+    const column = extraFilter.fieldPath === 'bioHandle' ? 'bio_handle' : extraFilter.fieldPath;
+    params.set(column, `eq.${extraFilter.value}`);
+  }
 
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 4500);
-    const resp = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    const resp = await fetch(`${supaUrl}/rest/v1/vendors?${params.toString()}`, {
+      headers: {
+        apikey: supaKey,
+        Authorization: `Bearer ${supaKey}`,
+      },
       signal: controller.signal,
-      body: JSON.stringify({
-        structuredQuery: {
-          from: [{ collectionId: 'vendors' }],
-          where: whereClause,
-          limit,
-        },
-      }),
     });
     clearTimeout(timeout);
     if (!resp.ok) return [];
-    const rows = (await resp.json()) as Array<{ document?: FirestoreDoc }>;
+    const rows = (await resp.json()) as Array<Record<string, unknown>>;
     return rows
-      .map((r) => (r.document ? parseVendorDoc(r.document) : null))
+      .map((r) => parseSupabaseVendor(r))
       .filter((v): v is VendorRecord => Boolean(v));
   } catch {
     return [];
@@ -273,6 +251,15 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
     let matches = await queryActiveVendors({ fieldPath, value: key }, 2);
     if (matches.length === 0 && segments[0] === 'fmb') {
       matches = await queryActiveVendors({ fieldPath: 'slug', value: key }, 2);
+    }
+    if (matches.length === 0 && key) {
+      const allActive = await queryActiveVendors(undefined, 100);
+      const aliasMatch = allActive.find(
+        (v) =>
+          v.slug.toLowerCase().startsWith(`${key}-`) ||
+          v.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') === key
+      );
+      if (aliasMatch) matches = [aliasMatch];
     }
 
     const vendor = matches[0];

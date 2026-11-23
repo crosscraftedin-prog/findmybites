@@ -1,13 +1,32 @@
 import crypto from 'crypto';
+import fs from 'fs';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { getApps, initializeApp } from 'firebase-admin/app';
 import { getAuth, type DecodedIdToken } from 'firebase-admin/auth';
-import firebaseConfig from '../firebase-applet-config.json' with { type: 'json' };
 
 const ADMIN_EMAIL = 'crosscraftedin@gmail.com';
 const MEDIA_BUCKET = 'marketplace-media';
 const DEFAULT_FALLBACK_IMAGE = '/src/assets/images/vendor_wedding_cake_1795190931172.jpg';
+
+function loadFirebaseConfig(): { projectId: string; firestoreDatabaseId: string } {
+  const fallback = {
+    projectId: (process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID || 'gen-lang-client-0613198330').trim(),
+    firestoreDatabaseId: 'ai-studio-findmybitespimpm-e62e8cda-3b00-4f15-9a37-e7c06c6009f7',
+  };
+  try {
+    const raw = fs.readFileSync(new URL('../firebase-applet-config.json', import.meta.url), 'utf8');
+    const parsed = JSON.parse(raw) as { projectId?: string; firestoreDatabaseId?: string };
+    return {
+      projectId: parsed.projectId || fallback.projectId,
+      firestoreDatabaseId: parsed.firestoreDatabaseId || fallback.firestoreDatabaseId,
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+const firebaseConfig = loadFirebaseConfig();
 
 const claimLookupAttempts = new Map<string, { count: number; resetAt: number }>();
 function checkClaimLookupRateLimit(ip: string): boolean {
@@ -603,11 +622,11 @@ export function createSupabaseApiRouter(): express.Router {
   router.get('/vendors/mine', requireAuth, async (req: AuthedRequest, res) => {
     try {
       const supabase = getSupabase();
-      const { data, error } = await supabase
-        .from('vendors')
-        .select('*')
-        .eq('owner_id', req.user!.uid)
-        .order('updated_at', { ascending: false });
+      const query = supabase.from('vendors').select('*');
+      const scoped = isRootAdmin(req.user)
+        ? query.order('updated_at', { ascending: false }).limit(500)
+        : query.eq('owner_id', req.user!.uid).order('updated_at', { ascending: false });
+      const { data, error } = await scoped;
       if (error) throw new Error(error.message);
       res.json({ vendors: (data || []).map((r) => rowToVendor(r as Record<string, unknown>)) });
     } catch (err) {
