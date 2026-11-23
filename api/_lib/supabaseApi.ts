@@ -2447,7 +2447,7 @@ export function createSupabaseApiRouter(): MicroRouter {
         return res.status(409).json({ error: 'This store claim ticket was already redeemed.' });
       }
 
-      const { error: vErr } = await supabase
+      const { data: updatedVendor, error: vErr } = await supabase
         .from('vendors')
         .update({
           owner_id: user.uid,
@@ -2455,7 +2455,9 @@ export function createSupabaseApiRouter(): MicroRouter {
           claimed_by_token: claimId,
           updated_at: nowIso,
         })
-        .eq('id', vendorId);
+        .eq('id', vendorId)
+        .select('*')
+        .maybeSingle();
       if (vErr) throw new Error(vErr.message);
 
       await supabase
@@ -2463,7 +2465,10 @@ export function createSupabaseApiRouter(): MicroRouter {
         .update({ status: 'claimed', updated_at: nowIso })
         .eq('vendor_id', vendorId);
 
-      res.json({ ok: true });
+      res.json({
+        ok: true,
+        vendor: updatedVendor ? rowToVendor(updatedVendor as Record<string, unknown>) : undefined,
+      });
     } catch (err) {
       handleApiError(res, err, 'Failed to claim storefront.');
     }

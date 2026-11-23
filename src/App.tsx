@@ -3449,12 +3449,26 @@ export default function App() {
         initialTab={claimModalTab}
         hintVendorName={
           claimHintSlug
-            ? allVendors.find((v) => v.slug.toLowerCase() === claimHintSlug)?.name
+            ? allVendors.find(
+                (v) =>
+                  v.slug.toLowerCase() === claimHintSlug ||
+                  getVendorBioHandle(v).toLowerCase() === claimHintSlug
+              )?.name
             : undefined
         }
         currentUser={authUser}
         isAdminUser={isAdminUser}
-        onClaimSuccess={(claimedVendorId, claimedVendorName) => {
+        onClaimSuccess={(claimedVendorId, claimedVendorName, claimedVendor) => {
+          if (claimedVendor) {
+            setMyCloudVendors((prev) => [
+              claimedVendor,
+              ...prev.filter((v) => v.id !== claimedVendor.id),
+            ]);
+            setCloudVendors((prev) => [
+              claimedVendor,
+              ...prev.filter((v) => v.id !== claimedVendor.id),
+            ]);
+          }
           setNotice(
             `Welcome! You now own "${claimedVendorName}". Opening your Storefront Editor so you can customize anything.`
           );

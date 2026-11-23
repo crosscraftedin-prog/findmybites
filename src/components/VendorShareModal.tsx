@@ -26,10 +26,18 @@ interface VendorShareModalProps {
 }
 
 export function getVendorProfileShareUrl(vendor: Vendor): string {
-  const origin =
-    typeof window !== 'undefined' && window.location?.origin
-      ? window.location.origin.replace(/\/$/, '')
-      : 'https://www.findmybites.com';
+  let origin = 'https://www.findmybites.com';
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    const host = window.location.hostname.toLowerCase();
+    if (
+      !host.includes('findmybites.com') &&
+      !host.endsWith('.run.app') &&
+      host !== 'localhost' &&
+      host !== '127.0.0.1'
+    ) {
+      origin = window.location.origin.replace(/\/$/, '');
+    }
+  }
   return `${origin}/v/${encodeURIComponent(vendor.slug)}`;
 }
 

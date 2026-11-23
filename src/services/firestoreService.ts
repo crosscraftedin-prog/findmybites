@@ -60,11 +60,14 @@ function emitTopics(...topics: TopicName[]) {
   }
 }
 
-async function getAuthHeader(): Promise<Record<string, string>> {
-  const user = auth.currentUser;
+async function getAuthHeader(
+  userOverride?: User | null,
+  forceRefresh = false
+): Promise<Record<string, string>> {
+  const user = userOverride ?? auth.currentUser;
   if (!user) return {};
   try {
-    const token = await user.getIdToken();
+    const token = await user.getIdToken(forceRefresh);
     return { Authorization: `Bearer ${token}` };
   } catch {
     return {};
@@ -77,6 +80,8 @@ async function apiFetch<T>(
     method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
     body?: unknown;
     requireAuth?: boolean;
+    authUser?: User | null;
+    forceRefreshToken?: boolean;
   } = {}
 ): Promise<T> {
   const headers: Record<string, string> = {};
@@ -84,7 +89,7 @@ async function apiFetch<T>(
     headers['Content-Type'] = 'application/json';
   }
   if (options.requireAuth) {
-    const authHdr = await getAuthHeader();
+    const authHdr = await getAuthHeader(options.authUser, Boolean(options.forceRefreshToken));
     Object.assign(headers, authHdr);
   }
 
@@ -695,14 +700,18 @@ export async function lookupStoreClaim(
 export async function redeemStoreClaim(
   claimId: string,
   vendorId: string,
-  _bakerUid: string
-): Promise<void> {
-  await apiFetch('/concierge/redeem', {
+  _bakerUid: string,
+  authUser?: User | null
+): Promise<Vendor | undefined> {
+  const res = await apiFetch<{ ok: boolean; vendor?: Vendor }>('/concierge/redeem', {
     method: 'POST',
     requireAuth: true,
+    authUser,
+    forceRefreshToken: true,
     body: { claimId, vendorId },
   });
   emitTopics('vendors', 'concierge');
+  return res.vendor;
 }
 
 // ============================================================================

@@ -143,6 +143,16 @@ export function mapAuthErrorMessage(err: unknown): string {
   if (code === 'auth/too-many-requests') {
     return 'Too many attempts. Please wait a minute and try again.';
   }
+  if (
+    code === 'auth/popup-blocked' ||
+    code === 'auth/operation-not-supported-in-this-environment' ||
+    msg.includes('disallowed_useragent')
+  ) {
+    return 'Google Sign-In popup is blocked in WhatsApp/Instagram browsers. Use "Create Password & Claim My Store" above instead (works right here), or tap the menu to Open in Chrome/Safari.';
+  }
+  if (code === 'auth/unauthorized-domain') {
+    return 'Google Sign-In is not enabled on this domain yet. Use "Create Password & Claim My Store" above — it works immediately.';
+  }
   if (code === 'auth/popup-closed-by-user') {
     return 'Sign-in popup was closed before completing.';
   }

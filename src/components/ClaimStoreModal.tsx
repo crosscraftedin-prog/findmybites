@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import {
   StoreClaim,
+  Vendor,
   normalizePasscode,
   normalizePhoneDigits,
 } from '../data/vendors';
@@ -26,7 +27,7 @@ import {
   signInVendorWithPhonePassword,
   signInWithGoogle,
 } from '../firebase';
-import { lookupStoreClaim, redeemStoreClaim } from '../services/firestoreService';
+import { ensureUserProfile, lookupStoreClaim, redeemStoreClaim } from '../services/firestoreService';
 
 export type ClaimModalInitialTab = 'claim' | 'login';
 
@@ -37,7 +38,7 @@ interface ClaimStoreModalProps {
   hintVendorName?: string;
   currentUser: User | null;
   isAdminUser: boolean;
-  onClaimSuccess: (vendorId: string, vendorName: string) => void;
+  onClaimSuccess: (vendorId: string, vendorName: string, claimedVendor?: Vendor) => void;
   onLoginSuccess: (user: User) => void;
 }
 
@@ -97,10 +98,15 @@ export function ClaimStoreModal({
 
   if (!open) return null;
 
+  const isInAppBrowser =
+    typeof navigator !== 'undefined' &&
+    /FBAN|FBAV|Instagram|WhatsApp|Line\/|Snapchat|Twitter|wv\)/i.test(navigator.userAgent);
+
   const combinePhone = (code: string, rawLocal: string): string => {
-    const cleanLocal = normalizePhoneDigits(rawLocal);
-    const cleanCode = normalizePhoneDigits(code);
-    if (cleanLocal.startsWith(cleanCode) && cleanLocal.length >= 11) {
+    const cleanLocal = normalizePhoneDigits(rawLocal).replace(/^0+/, '');
+    const cleanCode = normalizePhoneDigits(code).replace(/^0+/, '');
+    if (!cleanLocal) return '';
+    if (cleanCode && cleanLocal.startsWith(cleanCode) && cleanLocal.length >= cleanCode.length + 7) {
       return cleanLocal;
     }
     return normalizePhoneDigits(`${cleanCode}${cleanLocal}`);
@@ -111,6 +117,7 @@ export function ClaimStoreModal({
     setError(null);
 
     const fullPhone = combinePhone(dialCode, phoneInput);
+    const rawStripped = normalizePhoneDigits(phoneInput).replace(/^0+/, '');
     const cleanPass = normalizePasscode(passcodeInput);
 
     if (fullPhone.length < 8) {
@@ -124,16 +131,25 @@ export function ClaimStoreModal({
 
     setVerifying(true);
     try {
-      const result = await lookupStoreClaim(fullPhone, cleanPass);
+      let matchedPhone = fullPhone;
+      let result = await lookupStoreClaim(fullPhone, cleanPass);
+      // Fallback: if admin saved local digits without country code (or user pasted full international digits)
+      if (!result && rawStripped && rawStripped !== fullPhone && rawStripped.length >= 7) {
+        const alt = await lookupStoreClaim(rawStripped, cleanPass);
+        if (alt) {
+          result = alt;
+          matchedPhone = rawStripped;
+        }
+      }
       if (!result) {
         setError(
-          'No matching store transfer found for this phone number and passcode. Double-check your country code and passcode.'
+          'No matching store transfer found for this phone number and passcode. Double-check your country code (e.g. +91), mobile digits without spaces, and passcode.'
         );
         return;
       }
       if (result.claim.status === 'claimed') {
         setError(
-          `This storefront (${result.claim.vendorName}) has already been claimed! Switch to the "Vendor Login" tab to sign in with your phone & password.`
+          `This storefront (${result.claim.vendorName}) has already been claimed! Switch to the "Sign In / Vendor Login" tab to sign in with your phone & password.`
         );
         return;
       }
@@ -144,7 +160,7 @@ export function ClaimStoreModal({
       setVerifiedTicket({
         claim: result.claim,
         claimId: result.claimId,
-        fullPhone,
+        fullPhone: matchedPhone,
       });
       setOwnerName(result.claim.vendorName);
     } catch (err) {
@@ -190,8 +206,14 @@ export function ClaimStoreModal({
         }
       }
 
-      await redeemStoreClaim(verifiedTicket.claimId, verifiedTicket.claim.vendorId, user.uid);
-      onClaimSuccess(verifiedTicket.claim.vendorId, verifiedTicket.claim.vendorName);
+      const claimedVendor = await redeemStoreClaim(
+        verifiedTicket.claimId,
+        verifiedTicket.claim.vendorId,
+        user.uid,
+        user
+      );
+      void ensureUserProfile(user, []).catch(() => {});
+      onClaimSuccess(verifiedTicket.claim.vendorId, verifiedTicket.claim.vendorName, claimedVendor);
       setVerifiedTicket(null);
       setNewPassword('');
       setConfirmPassword('');
@@ -209,8 +231,14 @@ export function ClaimStoreModal({
     setClaiming(true);
     try {
       const user = await signInWithGoogle();
-      await redeemStoreClaim(verifiedTicket.claimId, verifiedTicket.claim.vendorId, user.uid);
-      onClaimSuccess(verifiedTicket.claim.vendorId, verifiedTicket.claim.vendorName);
+      const claimedVendor = await redeemStoreClaim(
+        verifiedTicket.claimId,
+        verifiedTicket.claim.vendorId,
+        user.uid,
+        user
+      );
+      void ensureUserProfile(user, []).catch(() => {});
+      onClaimSuccess(verifiedTicket.claim.vendorId, verifiedTicket.claim.vendorName, claimedVendor);
       setVerifiedTicket(null);
       onClose();
     } catch (err) {
@@ -225,8 +253,13 @@ export function ClaimStoreModal({
     setError(null);
     setClaiming(true);
     try {
-      await redeemStoreClaim(verifiedTicket.claimId, verifiedTicket.claim.vendorId, currentUser.uid);
-      onClaimSuccess(verifiedTicket.claim.vendorId, verifiedTicket.claim.vendorName);
+      const claimedVendor = await redeemStoreClaim(
+        verifiedTicket.claimId,
+        verifiedTicket.claim.vendorId,
+        currentUser.uid,
+        currentUser
+      );
+      onClaimSuccess(verifiedTicket.claim.vendorId, verifiedTicket.claim.vendorName, claimedVendor);
       setVerifiedTicket(null);
       onClose();
     } catch (err) {
@@ -550,6 +583,14 @@ export function ClaimStoreModal({
                     <span className="bg-background px-2 text-muted-foreground">or instant option</span>
                   </div>
                 </div>
+
+                {isInAppBrowser && (
+                  <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] leading-relaxed text-amber-900 dark:text-amber-200">
+                    <strong>Opened inside WhatsApp / Instagram?</strong> Use the green{' '}
+                    <strong>Create Password &amp; Claim My Store</strong> button above — it works
+                    right inside this browser without needing Google popups.
+                  </p>
+                )}
 
                 {currentUser && !isAdminUser ? (
                   <button

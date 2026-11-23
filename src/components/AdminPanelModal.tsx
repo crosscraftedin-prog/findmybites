@@ -204,10 +204,19 @@ const CHRISTMAS_CAKE_PRESETS: Array<Omit<DraftProductRow, 'id' | 'image'>> = [
 ];
 
 function getSiteOrigin(): string {
-  if (typeof window !== 'undefined' && window.location.hostname.includes('findmybites.com')) {
-    return 'https://www.findmybites.com';
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname.toLowerCase();
+    if (
+      host.includes('findmybites.com') ||
+      host.endsWith('.run.app') ||
+      host === 'localhost' ||
+      host === '127.0.0.1'
+    ) {
+      return 'https://www.findmybites.com';
+    }
+    return window.location.origin;
   }
-  return typeof window !== 'undefined' ? window.location.origin : 'https://www.findmybites.com';
+  return 'https://www.findmybites.com';
 }
 
 function buildHandoverWhatsAppMessage(
