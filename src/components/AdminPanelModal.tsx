@@ -13,6 +13,7 @@ import {
   Globe2,
   KeyRound,
   Loader2,
+  Lock,
   MessageCircle,
   MessageSquareWarning,
   Navigation,
@@ -49,6 +50,7 @@ import {
   IMG_CAKE,
   LAUNCH_COUNTRIES,
   LaunchCountry,
+  PASSCODE_LOCK_DAYS,
   PlanTier,
   ProductFoodType,
   STATES_BY_COUNTRY,
@@ -246,6 +248,41 @@ function buildHandoverWhatsAppMessage(
     ``,
     `Once you claim it, you can edit prices, add photos, update your Christmas menu, and receive direct customer orders with 0% commission!`,
   ].join('\n');
+}
+
+function getPasscodeLockInfo(t: AdminTransferRecord): {
+  locked: boolean;
+  daysLeft: number;
+  unlockDateLabel: string;
+} {
+  const lockMs = PASSCODE_LOCK_DAYS * 24 * 60 * 60 * 1000;
+  let unlockMs = NaN;
+  if (t.lockedUntilIso) {
+    unlockMs = Date.parse(t.lockedUntilIso);
+  } else {
+    const baseStr = t.issuedAtIso || t.updatedAt || t.createdAt;
+    const baseMs = baseStr ? Date.parse(baseStr) : NaN;
+    if (Number.isFinite(baseMs)) {
+      unlockMs = baseMs + lockMs;
+    }
+  }
+  if (!Number.isFinite(unlockMs)) {
+    return { locked: false, daysLeft: 0, unlockDateLabel: '' };
+  }
+  const remainingMs = unlockMs - Date.now();
+  const unlockDateLabel = new Date(unlockMs).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+  if (remainingMs <= 0) {
+    return { locked: false, daysLeft: 0, unlockDateLabel };
+  }
+  return {
+    locked: true,
+    daysLeft: Math.max(1, Math.ceil(remainingMs / (24 * 60 * 60 * 1000))),
+    unlockDateLabel,
+  };
 }
 
 function makeEmptyProduct(defaultImg: string): DraftProductRow {
@@ -692,6 +729,17 @@ export function AdminPanelModal({
     setError(null);
     try {
       const prevTransfer = transfers.find((t) => t.vendorId === vendor.id);
+      if (prevTransfer && prevTransfer.status === 'pending') {
+        const lockInfo = getPasscodeLockInfo(prevTransfer);
+        if (lockInfo.locked) {
+          setCreatedHandover({ vendor, transfer: prevTransfer });
+          setActiveTab('create');
+          onToast(
+            `Same passcode ${prevTransfer.passcode} stays locked until ${lockInfo.unlockDateLabel} (${lockInfo.daysLeft}d left).`
+          );
+          return;
+        }
+      }
       const record = await adminIssueTransferForExistingStore(
         vendor,
         adminUser.uid,
@@ -710,6 +758,13 @@ export function AdminPanelModal({
   const handleRegeneratePasscode = async (t: AdminTransferRecord) => {
     const vendor = vendorsById.get(t.vendorId);
     if (!vendor) return;
+    const lockInfo = getPasscodeLockInfo(t);
+    if (lockInfo.locked) {
+      onToast(
+        `Passcode ${t.passcode} is locked until ${lockInfo.unlockDateLabel} (${lockInfo.daysLeft}d left) so the baker's link stays valid.`
+      );
+      return;
+    }
     const nextCode = generateTransferPasscode('CAKE');
     setBusyVendorId(t.vendorId);
     try {
@@ -1974,6 +2029,7 @@ export function AdminPanelModal({
                   const waUrl = `https://wa.me/${normalizePhoneDigits(t.targetPhone)}?text=${encodeURIComponent(waMessage)}`;
                   const claimUrl = `${origin}/claim/${t.vendorSlug}`;
                   const isBusy = busyVendorId === t.vendorId;
+                  const lockInfo = getPasscodeLockInfo(t);
 
                   return (
                     <div
@@ -1999,6 +2055,12 @@ export function AdminPanelModal({
                               <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2.5 py-0.5 text-[11px] font-bold text-amber-800 dark:text-amber-300">
                                 <KeyRound className="size-3" />
                                 Awaiting Baker Claim
+                              </span>
+                            )}
+                            {t.liveStatus === 'pending' && lockInfo.locked && (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:text-emerald-300">
+                                <Lock className="size-2.5" />
+                                Same code locked until {lockInfo.unlockDateLabel} ({lockInfo.daysLeft}d)
                               </span>
                             )}
                           </div>
@@ -2046,12 +2108,26 @@ export function AdminPanelModal({
                               </button>
                               <button
                                 type="button"
-                                disabled={isBusy}
+                                disabled={isBusy || lockInfo.locked}
                                 onClick={() => void handleRegeneratePasscode(t)}
-                                className="inline-flex cursor-pointer items-center gap-1 rounded-xl border border-border bg-background px-2.5 py-1.5 text-xs font-semibold hover:border-brand disabled:opacity-50"
+                                title={
+                                  lockInfo.locked
+                                    ? `Passcode stays unchanged for 30 days (unlocks ${lockInfo.unlockDateLabel})`
+                                    : 'Generate a new passcode'
+                                }
+                                className="inline-flex cursor-pointer items-center gap-1 rounded-xl border border-border bg-background px-2.5 py-1.5 text-xs font-semibold hover:border-brand disabled:cursor-not-allowed disabled:opacity-55"
                               >
-                                <RefreshCw className={`size-3 ${isBusy ? 'animate-spin' : ''}`} />
-                                New Code
+                                {lockInfo.locked ? (
+                                  <>
+                                    <Lock className="size-3 text-muted-foreground" />
+                                    Locked ({lockInfo.daysLeft}d)
+                                  </>
+                                ) : (
+                                  <>
+                                    <RefreshCw className={`size-3 ${isBusy ? 'animate-spin' : ''}`} />
+                                    New Code
+                                  </>
+                                )}
                               </button>
                               <button
                                 type="button"

@@ -615,6 +615,8 @@ export interface StoreClaim {
   updatedAt: string;
 }
 
+export const PASSCODE_LOCK_DAYS = 30;
+
 export interface AdminTransferRecord {
   vendorId: string;
   vendorName: string;
@@ -626,6 +628,8 @@ export interface AdminTransferRecord {
   createdBy: string;
   createdAt: string;
   updatedAt: string;
+  issuedAtIso?: string;
+  lockedUntilIso?: string;
 }
 
 export function normalizePhoneDigits(raw: string): string {

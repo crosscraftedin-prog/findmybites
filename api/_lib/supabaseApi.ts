@@ -894,7 +894,22 @@ function rowToStoreClaim(row: Record<string, unknown>) {
   };
 }
 
+const PASSCODE_LOCK_DAYS = 30;
+const PASSCODE_LOCK_MS = PASSCODE_LOCK_DAYS * 24 * 60 * 60 * 1000;
+
 function rowToAdminTransfer(row: Record<string, unknown>) {
+  const rawIssued =
+    typeof row.updated_at === 'string' && row.updated_at
+      ? row.updated_at
+      : typeof row.created_at === 'string' && row.created_at
+        ? row.created_at
+        : '';
+  const issuedMs = rawIssued ? Date.parse(rawIssued) : NaN;
+  const issuedAtIso = Number.isFinite(issuedMs) ? new Date(issuedMs).toISOString() : undefined;
+  const lockedUntilIso = Number.isFinite(issuedMs)
+    ? new Date(issuedMs + PASSCODE_LOCK_MS).toISOString()
+    : undefined;
+
   return {
     vendorId: String(row.vendor_id || ''),
     vendorName: String(row.vendor_name || 'Storefront'),
@@ -907,6 +922,8 @@ function rowToAdminTransfer(row: Record<string, unknown>) {
     createdBy: String(row.created_by || ''),
     createdAt: formatDateLabel(row.created_at),
     updatedAt: formatDateLabel(row.updated_at),
+    issuedAtIso,
+    lockedUntilIso,
   };
 }
 
@@ -2298,6 +2315,38 @@ export function createSupabaseApiRouter(): MicroRouter {
       if (!/^[a-f0-9]{64}$/.test(safeClaimId)) {
         return res.status(400).json({ error: 'Invalid claim token.' });
       }
+
+      // Enforce 30-day passcode lock: keep the exact same passcode unchanged for 1 month
+      const { data: existingTransfer } = await supabase
+        .from('admin_transfers')
+        .select('*')
+        .eq('vendor_id', safeVendorId)
+        .maybeSingle();
+
+      if (existingTransfer && existingTransfer.status === 'pending') {
+        const rawIssued =
+          typeof existingTransfer.updated_at === 'string' && existingTransfer.updated_at
+            ? existingTransfer.updated_at
+            : typeof existingTransfer.created_at === 'string'
+              ? existingTransfer.created_at
+              : '';
+        const issuedMs = rawIssued ? Date.parse(rawIssued) : NaN;
+        if (Number.isFinite(issuedMs)) {
+          const unlockMs = issuedMs + PASSCODE_LOCK_MS;
+          if (Date.now() < unlockMs) {
+            if (String(existingTransfer.claim_id || '').toLowerCase() === safeClaimId) {
+              return res.json({
+                transfer: rowToAdminTransfer(existingTransfer as Record<string, unknown>),
+              });
+            }
+            const unlockLabel = formatDateLabel(new Date(unlockMs).toISOString());
+            return res.status(409).json({
+              error: `Passcode ${String(existingTransfer.passcode || '')} is locked for 30 days (until ${unlockLabel}) so the same code stays valid for the baker.`,
+            });
+          }
+        }
+      }
+
       const nowIso = new Date().toISOString();
 
       if (previousClaimId && previousClaimId !== safeClaimId && /^[a-f0-9]{64}$/.test(previousClaimId)) {
