@@ -2256,5 +2256,378 @@ export function createSupabaseApiRouter(): express.Router {
     }
   });
 
+  // =========================================================================
+  // BOX & BITE SELF-OWNED CORPORATE CATALOG (Admin Upload + Supabase Storage)
+  // =========================================================================
+  const BOXBITE_CATALOG_OBJECT = 'box-and-bite/catalog.json';
+  const BOXBITE_FALLBACK_IMAGE = '/src/assets/images/boxbite_hero_editorial_1795424832776.jpg';
+
+  interface StoredBoxBiteCatalog {
+    products: Array<Record<string, unknown>>;
+    builderItems: Array<Record<string, unknown>>;
+    updatedAt?: string;
+  }
+
+  async function readBoxBiteCatalog(supabase: SupabaseClient): Promise<StoredBoxBiteCatalog> {
+    try {
+      const { data, error } = await supabase.storage
+        .from(MEDIA_BUCKET)
+        .download(BOXBITE_CATALOG_OBJECT);
+      if (error || !data) {
+        return { products: [], builderItems: [] };
+      }
+      const text = await data.text();
+      if (!text.trim()) {
+        return { products: [], builderItems: [] };
+      }
+      const parsed = JSON.parse(text) as Partial<StoredBoxBiteCatalog>;
+      return {
+        products: Array.isArray(parsed.products) ? parsed.products : [],
+        builderItems: Array.isArray(parsed.builderItems) ? parsed.builderItems : [],
+        updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : undefined,
+      };
+    } catch {
+      return { products: [], builderItems: [] };
+    }
+  }
+
+  async function writeBoxBiteCatalog(
+    supabase: SupabaseClient,
+    catalog: StoredBoxBiteCatalog
+  ): Promise<void> {
+    const payload: StoredBoxBiteCatalog = {
+      products: catalog.products,
+      builderItems: catalog.builderItems,
+      updatedAt: new Date().toISOString(),
+    };
+    const buffer = Buffer.from(JSON.stringify(payload), 'utf8');
+    const { error } = await supabase.storage
+      .from(MEDIA_BUCKET)
+      .upload(BOXBITE_CATALOG_OBJECT, buffer, {
+        contentType: 'application/json',
+        cacheControl: '0',
+        upsert: true,
+      });
+    if (error) {
+      throw new Error(error.message);
+    }
+  }
+
+  router.get('/box-bite-catalog', async (_req, res) => {
+    try {
+      const supabase = getSupabase();
+      const catalog = await readBoxBiteCatalog(supabase);
+      res.json({
+        products: catalog.products,
+        builderItems: catalog.builderItems,
+      });
+    } catch (err) {
+      handleApiError(res, err, 'Failed to load BOX & BITE catalog.');
+    }
+  });
+
+  router.put('/box-bite-products/:productId', requireAdmin, async (req: AuthedRequest, res) => {
+    try {
+      const supabase = getSupabase();
+      const productId = sanitizeId(req.params.productId, 'bb-prod');
+      const p = (req.body || {}) as Record<string, unknown>;
+
+      const validCategoryIds = new Set([
+        'welcome-onboarding',
+        'employee-appreciation',
+        'executive-client',
+        'conference-townhall',
+        'boardroom-meals',
+        'festive-hampers',
+        'bulk-chocolates-cookies',
+      ]);
+      const categoryId =
+        typeof p.categoryId === 'string' && validCategoryIds.has(p.categoryId)
+          ? p.categoryId
+          : 'welcome-onboarding';
+
+      const dietary =
+        p.dietary === 'non-veg' || p.dietary === 'mixed' ? p.dietary : 'veg';
+
+      const samplePriceInr = Math.max(
+        50,
+        Math.min(250000, Math.round(Number(p.samplePriceInr) || 990))
+      );
+      const bulkStartingPriceInr = Math.max(
+        50,
+        Math.min(250000, Math.round(Number(p.bulkStartingPriceInr) || samplePriceInr))
+      );
+      const moqBulk = Math.max(2, Math.min(5000, Math.round(Number(p.moqBulk) || 10)));
+
+      const mainImage = p.image
+        ? await uploadDataUrlIfNeeded(supabase, p.image, `box-and-bite/products/${productId}`)
+        : BOXBITE_FALLBACK_IMAGE;
+
+      const rawGallery = Array.isArray(p.gallery) ? p.gallery.slice(0, 4) : [];
+      const resolvedGallery: string[] = [];
+      for (let i = 0; i < rawGallery.length; i++) {
+        const g = rawGallery[i];
+        if (typeof g !== 'string' || !g.trim()) continue;
+        const uploaded = await uploadDataUrlIfNeeded(
+          supabase,
+          g,
+          `box-and-bite/products/${productId}-g${i + 1}`
+        );
+        if (uploaded) resolvedGallery.push(uploaded);
+      }
+      const finalImage = mainImage || resolvedGallery[0] || BOXBITE_FALLBACK_IMAGE;
+      const gallery = resolvedGallery.length > 0 ? resolvedGallery : [finalImage];
+
+      const contents = Array.isArray(p.contents)
+        ? p.contents
+            .map((c) => (typeof c === 'string' ? c.trim().slice(0, 180) : ''))
+            .filter(Boolean)
+            .slice(0, 15)
+        : [];
+
+      const rawTiers = Array.isArray(p.tiers) ? p.tiers.slice(0, 5) : [];
+      const tiers = rawTiers
+        .map((t, idx) => {
+          const obj = (t || {}) as Record<string, unknown>;
+          const minQty = Math.max(1, Math.min(5000, Math.round(Number(obj.minQty) || 1)));
+          const unitPriceInr = Math.max(
+            50,
+            Math.min(250000, Math.round(Number(obj.unitPriceInr) || samplePriceInr))
+          );
+          const maxQtyRaw = Number(obj.maxQty);
+          return {
+            id: sanitizeId(obj.id || `tier-${idx + 1}`, 'tier'),
+            label: clampStr(obj.label, 2, 80, `Tier ${idx + 1}`),
+            minQty,
+            ...(Number.isFinite(maxQtyRaw) && maxQtyRaw >= minQty
+              ? { maxQty: Math.round(maxQtyRaw) }
+              : {}),
+            unitPriceInr,
+            note: clampStr(obj.note, 0, 120, ''),
+          };
+        })
+        .filter((t) => Boolean(t.label));
+
+      const rawVariants = Array.isArray(p.variants) ? p.variants.slice(0, 6) : [];
+      const variants = rawVariants.map((v, idx) => {
+        const obj = (v || {}) as Record<string, unknown>;
+        return {
+          id: sanitizeId(obj.id || `var-${idx + 1}`, 'var'),
+          label: clampStr(obj.label, 2, 100, `Variant ${idx + 1}`),
+          dietary: obj.dietary === 'non-veg' ? 'non-veg' : 'veg',
+          priceDeltaInr: Math.max(-5000, Math.min(50000, Math.round(Number(obj.priceDeltaInr) || 0))),
+          contentsNote: clampStr(obj.contentsNote, 0, 200, ''),
+        };
+      });
+
+      const cust = (p.customisationSupported || {}) as Record<string, unknown>;
+      const disc = (p.disclosures || {}) as Record<string, unknown>;
+      const name = clampStr(p.name, 2, 120, 'BOX & BITE Corporate Box');
+
+      const sanitizedProduct: Record<string, unknown> = {
+        id: productId,
+        slug: sanitizeSlug(p.slug || name),
+        sku: clampStr(p.sku, 2, 32, 'BB-CUS-01').toUpperCase(),
+        name,
+        categoryId,
+        categoryName: clampStr(p.categoryName, 2, 90, 'Employee Welcome / Onboarding Boxes'),
+        subtitle: clampStr(p.subtitle, 2, 220, 'Curated corporate gifting box'),
+        description: clampStr(p.description, 2, 1000, 'Custom curated Indian corporate gift box.'),
+        dietary,
+        dietaryBadgeText: clampStr(
+          p.dietaryBadgeText,
+          2,
+          50,
+          dietary === 'veg'
+            ? '100% Vegetarian'
+            : dietary === 'non-veg'
+              ? 'Non-Vegetarian'
+              : 'Veg & Non-Veg Options'
+        ),
+        servingsInfo: clampStr(p.servingsInfo, 2, 100, 'Curated for 1 recipient'),
+        netWeightOrCount: clampStr(p.netWeightOrCount, 2, 100, '400g net'),
+        moqSingleSample: p.moqSingleSample !== false,
+        moqBulk,
+        samplePriceInr,
+        bulkStartingPriceInr,
+        isDemoPrice: Boolean(p.isDemoPrice),
+        featured: Boolean(p.featured),
+        image: finalImage,
+        gallery,
+        contents:
+          contents.length > 0
+            ? contents
+            : ['Assorted BOX & BITE artisanal assortment'],
+        tiers:
+          tiers.length > 0
+            ? tiers
+            : [
+                {
+                  id: 'sample',
+                  label: 'Single Sample Box',
+                  minQty: 1,
+                  maxQty: 1,
+                  unitPriceInr: samplePriceInr,
+                  note: 'Sample dispatch rate',
+                },
+                {
+                  id: 'bulk-moq',
+                  label: `Corporate Pack (${moqBulk}+ boxes)`,
+                  minQty: moqBulk,
+                  unitPriceInr: bulkStartingPriceInr,
+                  note: 'Includes custom logo sleeve option',
+                },
+              ],
+        variants:
+          variants.length > 0
+            ? variants
+            : [
+                {
+                  id: 'standard-veg',
+                  label:
+                    dietary === 'non-veg'
+                      ? 'Non-Vegetarian Standard Edition'
+                      : '100% Vegetarian Standard Edition',
+                  dietary: dietary === 'non-veg' ? 'non-veg' : 'veg',
+                  priceDeltaInr: 0,
+                  contentsNote: 'Prepared fresh in BOX & BITE partner kitchen.',
+                },
+              ],
+        customisationSupported: {
+          logoBellySleeve: cust.logoBellySleeve !== false,
+          ribbonChoice: cust.ribbonChoice !== false,
+          printedWelcomeCard: cust.printedWelcomeCard !== false,
+          foilStampingMinQty: Math.max(
+            10,
+            Math.min(1000, Math.round(Number(cust.foilStampingMinQty) || 25))
+          ),
+        },
+        disclosures: {
+          ingredientsPlaceholder: clampStr(
+            disc.ingredientsPlaceholder,
+            2,
+            600,
+            'Placeholder ingredient list — final kitchen ingredient sheet provided with confirmed corporate batch.'
+          ),
+          allergensPlaceholder: clampStr(
+            disc.allergensPlaceholder,
+            2,
+            600,
+            'Prepared in a kitchen handling dairy, wheat/gluten, soy, peanuts, and tree nuts. Request batch-specific allergen sheet before dispatch.'
+          ),
+          shelfLifeAndStorage: clampStr(
+            disc.shelfLifeAndStorage,
+            2,
+            300,
+            'Store in a cool, dry place below 24°C away from direct sunlight.'
+          ),
+          deliveryTimeline: clampStr(
+            disc.deliveryTimeline,
+            2,
+            300,
+            'Samples dispatch in 2–4 business days; bulk branded batches ship in 5–8 business days.'
+          ),
+        },
+        active: p.active !== false,
+        isCloudSaved: true,
+        updatedAt: new Date().toISOString(),
+        updatedBy: req.user!.uid,
+      };
+
+      const catalog = await readBoxBiteCatalog(supabase);
+      const nextProducts = catalog.products.filter((item) => item.id !== productId);
+      nextProducts.unshift(sanitizedProduct);
+      await writeBoxBiteCatalog(supabase, {
+        ...catalog,
+        products: nextProducts,
+      });
+
+      res.json({ product: sanitizedProduct });
+    } catch (err) {
+      handleApiError(res, err, 'Failed to save BOX & BITE product.');
+    }
+  });
+
+  router.delete('/box-bite-products/:productId', requireAdmin, async (req: AuthedRequest, res) => {
+    try {
+      const supabase = getSupabase();
+      const productId = sanitizeId(req.params.productId);
+      const catalog = await readBoxBiteCatalog(supabase);
+      const nextProducts = catalog.products.filter((item) => item.id !== productId);
+      await writeBoxBiteCatalog(supabase, {
+        ...catalog,
+        products: nextProducts,
+      });
+      res.json({ ok: true });
+    } catch (err) {
+      handleApiError(res, err, 'Failed to delete BOX & BITE product.');
+    }
+  });
+
+  router.put('/box-bite-builder-items/:itemId', requireAdmin, async (req: AuthedRequest, res) => {
+    try {
+      const supabase = getSupabase();
+      const itemId = sanitizeId(req.params.itemId, 'bb-item');
+      const b = (req.body || {}) as Record<string, unknown>;
+      const validGroups = new Set([
+        'Snacks & Savouries',
+        'Roasted Nuts',
+        'Artisanal Chocolates',
+        'Cookies & Brownies',
+        'Beverages',
+      ]);
+      const group =
+        typeof b.group === 'string' && validGroups.has(b.group)
+          ? b.group
+          : 'Snacks & Savouries';
+
+      const sanitizedItem: Record<string, unknown> = {
+        id: itemId,
+        name: clampStr(b.name, 2, 110, 'Custom Builder Item'),
+        group,
+        portion: clampStr(b.portion, 1, 60, '80g pack'),
+        dietary: b.dietary === 'non-veg' ? 'non-veg' : 'veg',
+        priceInr: Math.max(20, Math.min(25000, Math.round(Number(b.priceInr) || 150))),
+        available: b.available !== false,
+        ...(typeof b.unavailableReason === 'string' && b.unavailableReason.trim()
+          ? { unavailableReason: b.unavailableReason.trim().slice(0, 80) }
+          : {}),
+        note: clampStr(b.note, 0, 160, ''),
+        active: b.active !== false,
+        isCloudSaved: true,
+        updatedAt: new Date().toISOString(),
+        updatedBy: req.user!.uid,
+      };
+
+      const catalog = await readBoxBiteCatalog(supabase);
+      const nextItems = catalog.builderItems.filter((i) => i.id !== itemId);
+      nextItems.unshift(sanitizedItem);
+      await writeBoxBiteCatalog(supabase, {
+        ...catalog,
+        builderItems: nextItems,
+      });
+
+      res.json({ item: sanitizedItem });
+    } catch (err) {
+      handleApiError(res, err, 'Failed to save builder item.');
+    }
+  });
+
+  router.delete('/box-bite-builder-items/:itemId', requireAdmin, async (req: AuthedRequest, res) => {
+    try {
+      const supabase = getSupabase();
+      const itemId = sanitizeId(req.params.itemId);
+      const catalog = await readBoxBiteCatalog(supabase);
+      const nextItems = catalog.builderItems.filter((i) => i.id !== itemId);
+      await writeBoxBiteCatalog(supabase, {
+        ...catalog,
+        builderItems: nextItems,
+      });
+      res.json({ ok: true });
+    } catch (err) {
+      handleApiError(res, err, 'Failed to delete builder item.');
+    }
+  });
+
   return router;
 }

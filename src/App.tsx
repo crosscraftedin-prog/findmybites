@@ -4,6 +4,7 @@ import {
   ArrowUpRight,
   BadgeCheck,
   BarChart3,
+  Briefcase,
   Calendar,
   Check,
   CheckCircle2,
@@ -53,6 +54,9 @@ import { VendorCard } from './components/VendorCard';
 import { VendorDashboardModal } from './components/VendorDashboardModal';
 import { VendorShareModal } from './components/VendorShareModal';
 import { VendorMetrics, VendorWebsiteView } from './components/VendorWebsiteView';
+import { BoxBitePortal } from './components/boxbite/BoxBitePortal';
+import { BOXBITE_IMAGES } from './data/boxAndBiteCatalog';
+import { BOX_AND_BITE_CONFIG } from './data/boxAndBiteConfig';
 import {
   AdminTransferRecord,
   BookingEnquiry,
@@ -104,6 +108,7 @@ import {
   subscribeAllReviewsForAdmin,
   subscribeAllVendorMetricsForAdmin,
   subscribeAllVendorsForAdmin,
+  subscribeBoxBiteCatalog,
   subscribeChristmasDishes,
   subscribeMyBookings,
   subscribeMyEventRequests,
@@ -113,6 +118,7 @@ import {
   subscribeVendorLeads,
   syncSavedVendorsToCloud,
   updateBookingStatusInCloud,
+  type BoxBiteCloudCatalog,
 } from './services/firestoreService';
 import { CustomMenuDish, mergeChristmasDishes } from './data/christmasMenu';
 import { requestBrowserGpsLocation, resolveRegionFromCoords } from './utils/geolocation';
@@ -493,6 +499,8 @@ export default function App() {
   const [claimHintSlug, setClaimHintSlug] = useState<string | null>(null);
   const [editVendorId, setEditVendorId] = useState<string | null>(null);
   const [pricingKitOpen, setPricingKitOpen] = useState(false);
+  const [boxAndBiteOpen, setBoxAndBiteOpen] = useState(false);
+  const [boxAndBiteSection, setBoxAndBiteSection] = useState<'top' | 'builder' | 'quote'>('top');
   const [notice, setNotice] = useState<string | null>(null);
 
   // Firebase Auth & Live Cloud Firestore State
@@ -513,6 +521,10 @@ export default function App() {
   const [adminAllMetrics, setAdminAllMetrics] = useState<CloudVendorMetric[]>([]);
   const [siteSettings, setSiteSettings] = useState<SiteSettings>(DEFAULT_SITE_SETTINGS);
   const [cloudChristmasDishes, setCloudChristmasDishes] = useState<CustomMenuDish[]>([]);
+  const [cloudBoxBiteCatalog, setCloudBoxBiteCatalog] = useState<BoxBiteCloudCatalog>({
+    products: [],
+    builderItems: [],
+  });
   const [seoDirectoryRoute, setSeoDirectoryRoute] = useState<ResolvedSeoDirectoryRoute | null>(
     null
   );
@@ -529,6 +541,7 @@ export default function App() {
     let unsubVendors: (() => void) | undefined;
     let unsubSettings: (() => void) | undefined;
     let unsubChristmasDishes: (() => void) | undefined;
+    let unsubBoxBite: (() => void) | undefined;
     try {
       unsubVendors = subscribeActiveVendors((list) => {
         setCloudVendors(list);
@@ -539,6 +552,9 @@ export default function App() {
       unsubChristmasDishes = subscribeChristmasDishes((list) => {
         setCloudChristmasDishes(list);
       });
+      unsubBoxBite = subscribeBoxBiteCatalog((catalog) => {
+        setCloudBoxBiteCatalog(catalog);
+      });
     } catch {
       // ignore if offline
     }
@@ -546,6 +562,7 @@ export default function App() {
       unsubVendors?.();
       unsubSettings?.();
       unsubChristmasDishes?.();
+      unsubBoxBite?.();
     };
   }, []);
 
@@ -896,6 +913,18 @@ export default function App() {
     const syncRouteFromUrl = (fromPopState: boolean) => {
       const pathname = window.location.pathname;
       if (
+        pathname === '/box-and-bite' ||
+        pathname.startsWith('/box-and-bite/') ||
+        pathname === '/corporate-gifting' ||
+        pathname.startsWith('/corporate-gifting/')
+      ) {
+        setActiveVendor(null);
+        setBioVendor(null);
+        setSeoDirectoryRoute(null);
+        setPricingKitOpen(false);
+        setBoxAndBiteSection(pathname.includes('builder') ? 'builder' : pathname.includes('quote') ? 'quote' : 'top');
+        setBoxAndBiteOpen(true);
+      } else if (
         pathname === '/pricing-kit' ||
         pathname === '/cake-pricing-kit' ||
         pathname.startsWith('/pricing-kit/')
@@ -903,6 +932,7 @@ export default function App() {
         setActiveVendor(null);
         setBioVendor(null);
         setSeoDirectoryRoute(null);
+        setBoxAndBiteOpen(false);
         setPricingKitOpen(true);
       } else if (pathname === '/claim' || pathname.startsWith('/claim/')) {
         const slugPart = pathname.startsWith('/claim/')
@@ -943,6 +973,8 @@ export default function App() {
           setActiveVendor(null);
           setBioVendor(null);
           setClaimModalOpen(false);
+          setPricingKitOpen(false);
+          setBoxAndBiteOpen(false);
           setSeoDirectoryRoute(null);
         }
       }
@@ -997,6 +1029,28 @@ export default function App() {
       }
     }
   }, [resolvedActiveVendor, resolvedBioVendor, allVendors]);
+
+  const openBoxAndBite = (section: 'top' | 'builder' | 'quote' = 'top') => {
+    setBoxAndBiteSection(section);
+    setBoxAndBiteOpen(true);
+    try {
+      window.history.pushState({ boxAndBite: section }, '', '/box-and-bite');
+    } catch {
+      // ignore sandbox history restrictions
+    }
+  };
+
+  const closeBoxAndBite = () => {
+    setBoxAndBiteOpen(false);
+    const pathname = window.location.pathname;
+    if (pathname.startsWith('/box-and-bite') || pathname.startsWith('/corporate-gifting')) {
+      try {
+        window.history.pushState({}, '', '/');
+      } catch {
+        // ignore sandbox history restrictions
+      }
+    }
+  };
 
   // Hydrate query deep links from Google Search / sitemap.xml (?q=, ?country=, ?category=)
   useEffect(() => {
@@ -1498,6 +1552,7 @@ export default function App() {
           setClaimModalTab('claim');
           setClaimModalOpen(true);
         }}
+        onOpenBoxAndBite={() => openBoxAndBite('top')}
         onSignIn={() => {
           setClaimHintSlug(null);
           setClaimModalTab('login');
@@ -1776,6 +1831,15 @@ export default function App() {
                     <Crown className="size-4" aria-hidden="true" />
                     List Your Business
                   </button>
+
+                  <button
+                    type="button"
+                    onClick={() => openBoxAndBite('top')}
+                    className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-[#C58B55]/70 bg-[#38231E]/90 px-4 py-2.5 text-xs font-semibold text-[#FFF8EF] shadow-lg backdrop-blur-md transition-colors hover:bg-[#38231E] sm:text-sm"
+                  >
+                    <Briefcase className="size-4 text-[#C58B55]" aria-hidden="true" />
+                    BOX &amp; BITE Corporate Gifting
+                  </button>
                 </div>
               </form>
 
@@ -1861,6 +1925,92 @@ export default function App() {
                   </div>
                 );
               })}
+            </div>
+          </div>
+        </section>
+
+        {/* 2B. BOX & BITE CORPORATE GIFTING SUB-BRAND SHOWCASE */}
+        <section
+          aria-label="BOX & BITE Corporate Food Gifting"
+          className="border-b py-10 sm:py-12"
+          style={{
+            backgroundColor: BOX_AND_BITE_CONFIG.colors.cream,
+            borderColor: BOX_AND_BITE_CONFIG.colors.hairline,
+            color: BOX_AND_BITE_CONFIG.colors.chocolate,
+          }}
+        >
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+            <div
+              className="grid grid-cols-1 items-center gap-8 overflow-hidden rounded-2xl border p-6 sm:p-8 lg:grid-cols-12"
+              style={{
+                backgroundColor: BOX_AND_BITE_CONFIG.colors.beige,
+                borderColor: BOX_AND_BITE_CONFIG.colors.hairline,
+              }}
+            >
+              <div className="lg:col-span-7">
+                <p
+                  className="text-xs font-semibold uppercase tracking-[0.18em]"
+                  style={{ color: BOX_AND_BITE_CONFIG.colors.olive }}
+                >
+                  {BOX_AND_BITE_CONFIG.subBrandDescriptor} · {BOX_AND_BITE_CONFIG.tagline}
+                </p>
+                <h2
+                  className="mt-2 text-3xl font-semibold leading-tight sm:text-4xl"
+                  style={{ fontFamily: 'var(--font-editorial)' }}
+                >
+                  {BOX_AND_BITE_CONFIG.brandName} — Upscale Indian Corporate Gifting
+                </h2>
+                <p className="mt-2.5 max-w-2xl text-sm leading-relaxed opacity-85">
+                  {BOX_AND_BITE_CONFIG.heroSupportingCopy} Custom logo belly sleeves, satin ribbons,
+                  boardroom meals, interactive Build-Your-Own-Box, and pan-India dispatch.
+                </p>
+                <div className="mt-5 flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    onClick={() => openBoxAndBite('top')}
+                    className="inline-flex cursor-pointer items-center gap-2 rounded-lg px-5 py-2.5 text-xs font-semibold tracking-wider transition-colors whitespace-nowrap"
+                    style={{
+                      backgroundColor: BOX_AND_BITE_CONFIG.colors.chocolate,
+                      color: BOX_AND_BITE_CONFIG.colors.cream,
+                    }}
+                  >
+                    Explore {BOX_AND_BITE_CONFIG.brandName}
+                    <ArrowRight className="size-3.5" aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openBoxAndBite('builder')}
+                    className="cursor-pointer rounded-lg border px-4 py-2.5 text-xs font-semibold transition-colors whitespace-nowrap"
+                    style={{
+                      borderColor: BOX_AND_BITE_CONFIG.colors.chocolate,
+                      color: BOX_AND_BITE_CONFIG.colors.chocolate,
+                    }}
+                  >
+                    Build a Custom Corporate Box
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openBoxAndBite('quote')}
+                    className="cursor-pointer px-2 py-2.5 text-xs font-semibold underline opacity-85 hover:opacity-100 whitespace-nowrap"
+                  >
+                    Request a Corporate Quote
+                  </button>
+                </div>
+              </div>
+              <div className="lg:col-span-5">
+                <div
+                  onClick={() => openBoxAndBite('top')}
+                  className="aspect-[16/9] w-full cursor-pointer overflow-hidden rounded-xl border shadow-sm"
+                  style={{ borderColor: BOX_AND_BITE_CONFIG.colors.hairline }}
+                >
+                  <img
+                    src={BOXBITE_IMAGES.heroEditorial}
+                    alt="BOX & BITE corporate food gift box packaging"
+                    referrerPolicy="no-referrer"
+                    className="h-full w-full object-cover transition-transform duration-300 hover:scale-[1.03]"
+                  />
+                </div>
+              </div>
             </div>
           </div>
         </section>
@@ -2998,6 +3148,15 @@ export default function App() {
                     My Bookings
                   </button>
                 </li>
+                <li>
+                  <button
+                    type="button"
+                    onClick={() => openBoxAndBite('top')}
+                    className="cursor-pointer font-semibold transition-colors hover:text-brand"
+                  >
+                    BOX &amp; BITE Corporate Gifting
+                  </button>
+                </li>
               </ul>
             </div>
           </div>
@@ -3216,6 +3375,8 @@ export default function App() {
           cloudVendors={effectiveAdminVendors}
           allCatalogVendors={allVendors}
           cloudChristmasDishes={cloudChristmasDishes}
+          cloudBoxBiteProducts={cloudBoxBiteCatalog.products}
+          cloudBoxBiteBuilderItems={cloudBoxBiteCatalog.builderItems}
           transfers={adminTransfers}
           claims={adminStoreClaims}
           bookings={adminAllBookings}
@@ -3226,6 +3387,10 @@ export default function App() {
           currency={currency}
           onEditVendor={handleEditStorefront}
           onPreviewVendor={setActiveVendor}
+          onPreviewBoxAndBite={() => {
+            setAdminPanelOpen(false);
+            openBoxAndBite('top');
+          }}
           onNavigateSeoPath={handleNavigateSeoPath}
           onToast={setNotice}
         />
@@ -3328,6 +3493,15 @@ export default function App() {
 
       {/* Festive Winter Snowfall Overlay + On/Off Toggle */}
       <SnowfallOverlay enabled={snowEnabled} onToggle={() => setSnowEnabled((prev) => !prev)} />
+
+      {/* BOX & BITE Dedicated Corporate Food Gifting Sub-Brand Experience */}
+      <BoxBitePortal
+        isOpen={boxAndBiteOpen}
+        initialSection={boxAndBiteSection}
+        cloudProducts={cloudBoxBiteCatalog.products}
+        cloudBuilderItems={cloudBoxBiteCatalog.builderItems}
+        onBackToFindMyBites={closeBoxAndBite}
+      />
     </div>
   );
 }

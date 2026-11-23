@@ -1,5 +1,6 @@
 import type { User } from 'firebase/auth';
 import {
+  Briefcase,
   KeyRound,
   LogIn,
   Moon,
@@ -31,6 +32,7 @@ interface HeaderProps {
   onOpenDashboard: () => void;
   onOpenAdminPanel?: () => void;
   onOpenClaimStore?: () => void;
+  onOpenBoxAndBite?: () => void;
   onSignIn: () => void;
 }
 
@@ -51,6 +53,7 @@ export function Header({
   onOpenDashboard,
   onOpenAdminPanel,
   onOpenClaimStore,
+  onOpenBoxAndBite,
   onSignIn,
 }: HeaderProps) {
   return (
@@ -120,6 +123,17 @@ export function Header({
           >
             Bookings{bookingsCount > 0 ? ` (${bookingsCount})` : ''}
           </button>
+          {onOpenBoxAndBite && (
+            <button
+              type="button"
+              onClick={onOpenBoxAndBite}
+              className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-[#C58B55]/45 bg-[#38231E] px-3 py-1.5 text-xs font-semibold tracking-wide text-[#FFF8EF] transition-colors hover:bg-[#2A1915] whitespace-nowrap shrink-0"
+              title="Open BOX & BITE Corporate Gifting"
+            >
+              <Briefcase className="size-3.5 text-[#C58B55]" aria-hidden="true" />
+              BOX &amp; BITE
+            </button>
+          )}
         </nav>
 
         {/* Right controls: EcosystemToggle + Dark mode + Auth/Portal + List your business */}

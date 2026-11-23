@@ -74,6 +74,7 @@
 @theme {
   --font-display: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif;
   --font-sans: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-editorial: "Cormorant Garamond", Georgia, "Times New Roman", serif;
   --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
 
   --color-background: var(--background);

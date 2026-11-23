@@ -3,6 +3,7 @@ import type { User } from 'firebase/auth';
 import {
   BarChart3,
   BadgeCheck,
+  Briefcase,
   Cake,
   Check,
   ClipboardCheck,
@@ -80,7 +81,13 @@ import {
   AdminSeoManagerTab,
 } from './AdminCommandTabs';
 import { AdminChristmasMenuTab } from './AdminChristmasMenuTab';
+import { AdminBoxBiteTab } from './AdminBoxBiteTab';
 import { CustomMenuDish, mergeChristmasDishes } from '../data/christmasMenu';
+import {
+  BoxBuilderItem,
+  CorporateBoxProduct,
+  mergeBoxBiteProducts,
+} from '../data/boxAndBiteCatalog';
 
 interface AdminPanelModalProps {
   open: boolean;
@@ -89,6 +96,8 @@ interface AdminPanelModalProps {
   cloudVendors: Vendor[];
   allCatalogVendors: Vendor[];
   cloudChristmasDishes: CustomMenuDish[];
+  cloudBoxBiteProducts: CorporateBoxProduct[];
+  cloudBoxBiteBuilderItems: BoxBuilderItem[];
   transfers: AdminTransferRecord[];
   claims: StoreClaim[];
   bookings: BookingEnquiry[];
@@ -99,6 +108,7 @@ interface AdminPanelModalProps {
   currency: CurrencyCode;
   onEditVendor: (vendor: Vendor) => void;
   onPreviewVendor: (vendor: Vendor) => void;
+  onPreviewBoxAndBite: () => void;
   onNavigateSeoPath: (path: string) => void;
   onToast: (message: string) => void;
 }
@@ -107,6 +117,7 @@ type AdminTab =
   | 'overview'
   | 'approvals'
   | 'christmas-menu'
+  | 'box-and-bite'
   | 'create'
   | 'transfers'
   | 'seo'
@@ -247,6 +258,8 @@ export function AdminPanelModal({
   cloudVendors,
   allCatalogVendors,
   cloudChristmasDishes,
+  cloudBoxBiteProducts,
+  cloudBoxBiteBuilderItems,
   transfers,
   claims,
   bookings,
@@ -257,6 +270,7 @@ export function AdminPanelModal({
   currency,
   onEditVendor,
   onPreviewVendor,
+  onPreviewBoxAndBite,
   onNavigateSeoPath,
   onToast,
 }: AdminPanelModalProps) {
@@ -264,6 +278,10 @@ export function AdminPanelModal({
   const activeChristmasDishCount = useMemo(
     () => mergeChristmasDishes(cloudChristmasDishes).activeDishes.length,
     [cloudChristmasDishes]
+  );
+  const activeBoxBiteProductCount = useMemo(
+    () => mergeBoxBiteProducts(cloudBoxBiteProducts).activeProducts.length,
+    [cloudBoxBiteProducts]
   );
 
   // --- Create & Transfer Store Form State ---
@@ -742,6 +760,13 @@ export function AdminPanelModal({
                   icon: UtensilsCrossed,
                   badge: activeChristmasDishCount,
                   badgeTone: 'bg-emerald-600 text-white',
+                },
+                {
+                  id: 'box-and-bite',
+                  label: 'BOX & BITE',
+                  icon: Briefcase,
+                  badge: activeBoxBiteProductCount,
+                  badgeTone: 'bg-[#38231E] text-[#FFF8EF]',
                 },
                 { id: 'create', label: 'Create & Transfer', icon: Cake, badge: 0 },
                 {
@@ -1916,6 +1941,16 @@ export function AdminPanelModal({
             <AdminChristmasMenuTab
               adminUser={adminUser}
               cloudChristmasDishes={cloudChristmasDishes}
+              onToast={onToast}
+            />
+          )}
+
+          {/* TAB 2C: SELF-OWNED BOX & BITE CORPORATE GIFTING CATALOG */}
+          {activeTab === 'box-and-bite' && (
+            <AdminBoxBiteTab
+              cloudProducts={cloudBoxBiteProducts}
+              cloudBuilderItems={cloudBoxBiteBuilderItems}
+              onPreviewStorefront={onPreviewBoxAndBite}
               onToast={onToast}
             />
           )}

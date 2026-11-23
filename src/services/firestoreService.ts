@@ -21,6 +21,7 @@ import {
   normalizePhoneDigits,
 } from '../data/vendors';
 import { CustomMenuDish } from '../data/christmasMenu';
+import type { BoxBuilderItem, CorporateBoxProduct } from '../data/boxAndBiteCatalog';
 import { ADMIN_EMAIL, auth } from '../firebase';
 
 type TopicName =
@@ -32,7 +33,8 @@ type TopicName =
   | 'metrics'
   | 'concierge'
   | 'siteSettings'
-  | 'christmasDishes';
+  | 'christmasDishes'
+  | 'boxBiteCatalog';
 
 const topicListeners = new Map<TopicName, Set<() => void>>();
 
@@ -915,3 +917,111 @@ export async function adminRestoreChristmasDish(dishId: string): Promise<void> {
   });
   emitTopics('christmasDishes');
 }
+
+// ============================================================================
+// BOX & BITE SELF-OWNED CORPORATE GIFTING CATALOG (ADMIN-MANAGED)
+// ============================================================================
+
+export interface BoxBiteCloudCatalog {
+  products: CorporateBoxProduct[];
+  builderItems: BoxBuilderItem[];
+}
+
+export function subscribeBoxBiteCatalog(
+  onData: (catalog: BoxBiteCloudCatalog) => void
+): () => void {
+  return createPollingSubscription(
+    'boxBiteCatalog',
+    async () => {
+      const res = await apiFetch<{
+        products?: CorporateBoxProduct[];
+        builderItems?: BoxBuilderItem[];
+      }>('/box-bite-catalog');
+      return {
+        products: Array.isArray(res.products) ? res.products : [],
+        builderItems: Array.isArray(res.builderItems) ? res.builderItems : [],
+      };
+    },
+    onData,
+    { products: [], builderItems: [] }
+  );
+}
+
+export async function adminSaveBoxBiteProduct(
+  product: Omit<CorporateBoxProduct, 'id'> & { id?: string }
+): Promise<CorporateBoxProduct> {
+  const productId = product.id
+    ? sanitizeId(product.id)
+    : sanitizeId(`bb-prod-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`);
+
+  const res = await apiFetch<{ product: CorporateBoxProduct }>(
+    `/box-bite-products/${encodeURIComponent(productId)}`,
+    {
+      method: 'PUT',
+      requireAuth: true,
+      body: { ...product, id: productId },
+    }
+  );
+  emitTopics('boxBiteCatalog');
+  return res.product;
+}
+
+export async function adminDeleteBoxBiteProduct(
+  product: CorporateBoxProduct,
+  isBuiltIn: boolean
+): Promise<void> {
+  const productId = sanitizeId(product.id);
+  if (isBuiltIn) {
+    await adminSaveBoxBiteProduct({ ...product, id: productId, active: false });
+  } else {
+    await apiFetch(`/box-bite-products/${encodeURIComponent(productId)}`, {
+      method: 'DELETE',
+      requireAuth: true,
+    });
+    emitTopics('boxBiteCatalog');
+  }
+}
+
+export async function adminRestoreBoxBiteProduct(productId: string): Promise<void> {
+  await apiFetch(`/box-bite-products/${encodeURIComponent(sanitizeId(productId))}`, {
+    method: 'DELETE',
+    requireAuth: true,
+  });
+  emitTopics('boxBiteCatalog');
+}
+
+export async function adminSaveBoxBiteBuilderItem(
+  item: Omit<BoxBuilderItem, 'id'> & { id?: string }
+): Promise<BoxBuilderItem> {
+  const itemId = item.id
+    ? sanitizeId(item.id)
+    : sanitizeId(`bb-item-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`);
+
+  const res = await apiFetch<{ item: BoxBuilderItem }>(
+    `/box-bite-builder-items/${encodeURIComponent(itemId)}`,
+    {
+      method: 'PUT',
+      requireAuth: true,
+      body: { ...item, id: itemId },
+    }
+  );
+  emitTopics('boxBiteCatalog');
+  return res.item;
+}
+
+export async function adminDeleteBoxBiteBuilderItem(
+  item: BoxBuilderItem,
+  isBuiltIn: boolean
+): Promise<void> {
+  const itemId = sanitizeId(item.id);
+  if (isBuiltIn) {
+    await adminSaveBoxBiteBuilderItem({ ...item, id: itemId, active: false });
+  } else {
+    await apiFetch(`/box-bite-builder-items/${encodeURIComponent(itemId)}`, {
+      method: 'DELETE',
+      requireAuth: true,
+    });
+    emitTopics('boxBiteCatalog');
+  }
+}
+
