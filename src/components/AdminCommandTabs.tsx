@@ -504,13 +504,17 @@ export function AdminApprovalsTab({
                 <input
                   type="text"
                   required
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="characters"
+                  spellCheck={false}
                   value={transferPass}
-                  onChange={(e) => setTransferPass(normalizePasscode(e.target.value))}
-                  className="min-w-0 flex-1 rounded-xl border border-border bg-background px-3 py-2 font-mono text-xs font-black tracking-wider"
+                  onChange={(e) => setTransferPass(e.target.value)}
+                  className="min-w-0 flex-1 rounded-xl border border-border bg-background px-3 py-2 font-mono text-xs font-black uppercase tracking-wider"
                 />
                 <button
                   type="button"
-                  onClick={() => setTransferPass(generateTransferPasscode('CAKE'))}
+                  onClick={() => setTransferPass(generateTransferPasscode())}
                   className="cursor-pointer rounded-xl border border-border bg-background px-2.5 text-xs"
                 >
                   <RefreshCw className="size-3.5" />
@@ -858,7 +862,7 @@ export function AdminApprovalsTab({
                           onClick={() => {
                             setTransferTarget(v);
                             setTransferPhone(v.whatsappNumber);
-                            setTransferPass(generateTransferPasscode('CAKE'));
+                            setTransferPass(generateTransferPasscode());
                           }}
                           className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-amber-500 px-2.5 py-1.5 text-[11px] font-extrabold text-white hover:bg-amber-600"
                         >

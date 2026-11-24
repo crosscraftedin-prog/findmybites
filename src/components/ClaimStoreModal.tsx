@@ -131,19 +131,31 @@ export function ClaimStoreModal({
 
     setVerifying(true);
     try {
+      const barePass = cleanPass.replace(/-/g, '');
+      const passcodeCandidates: string[] = [cleanPass];
+      if (!barePass.startsWith('CAKE') && !barePass.startsWith('FMB') && barePass.length >= 6 && barePass.length <= 10) {
+        passcodeCandidates.push(`CAKE-${barePass}`, `FMB-${barePass}`);
+      }
+      const phoneCandidates: string[] = [fullPhone];
+      if (rawStripped && rawStripped !== fullPhone && rawStripped.length >= 7) {
+        phoneCandidates.push(rawStripped);
+      }
+
       let matchedPhone = fullPhone;
-      let result = await lookupStoreClaim(fullPhone, cleanPass);
-      // Fallback: if admin saved local digits without country code (or user pasted full international digits)
-      if (!result && rawStripped && rawStripped !== fullPhone && rawStripped.length >= 7) {
-        const alt = await lookupStoreClaim(rawStripped, cleanPass);
-        if (alt) {
-          result = alt;
-          matchedPhone = rawStripped;
+      let result: { claim: StoreClaim; claimId: string } | null = null;
+      outer: for (const candidatePhone of phoneCandidates) {
+        for (const candidatePass of passcodeCandidates) {
+          const hit = await lookupStoreClaim(candidatePhone, candidatePass);
+          if (hit) {
+            result = hit;
+            matchedPhone = candidatePhone;
+            break outer;
+          }
         }
       }
       if (!result) {
         setError(
-          'No matching store transfer found for this phone number and passcode. Double-check your country code (e.g. +91), mobile digits without spaces, and passcode.'
+          'No matching store transfer found for this phone number and secret key. Please double-check your country code, mobile number, and the secret key from WhatsApp.'
         );
         return;
       }
@@ -314,9 +326,9 @@ export function ClaimStoreModal({
       aria-modal="true"
       aria-label="Claim Your Store or Vendor Login"
     >
-      <div className="relative w-full max-w-md overflow-hidden rounded-3xl border border-border bg-background shadow-2xl">
+      <div className="relative flex max-h-[92dvh] w-full max-w-md flex-col overflow-hidden rounded-3xl border border-border bg-background shadow-2xl">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-border bg-gradient-to-r from-brand/15 via-amber-500/10 to-background px-5 py-4">
+        <div className="flex shrink-0 items-center justify-between border-b border-border bg-gradient-to-r from-brand/15 via-amber-500/10 to-background px-5 py-4">
           <div className="flex items-center gap-2.5">
             <span className="flex size-9 items-center justify-center rounded-xl bg-brand text-brand-foreground shadow-sm">
               {tab === 'claim' ? (
@@ -348,7 +360,7 @@ export function ClaimStoreModal({
         </div>
 
         {/* Mode Switcher */}
-        <div className="grid grid-cols-2 gap-1 border-b border-border bg-muted/40 p-2">
+        <div className="grid shrink-0 grid-cols-2 gap-1 border-b border-border bg-muted/40 p-2">
           <button
             type="button"
             onClick={() => {
@@ -381,7 +393,7 @@ export function ClaimStoreModal({
           </button>
         </div>
 
-        <div className="max-h-[78vh] overflow-y-auto p-5">
+        <div className="min-h-0 flex-1 overflow-y-auto p-5">
           {error && (
             <div className="mb-4 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs font-semibold leading-relaxed text-rose-700 dark:text-rose-300">
               {error}
@@ -462,12 +474,19 @@ export function ClaimStoreModal({
                     <input
                       type="text"
                       required
+                      autoComplete="off"
+                      autoCorrect="off"
+                      autoCapitalize="characters"
+                      spellCheck={false}
                       value={passcodeInput}
-                      onChange={(e) => setPasscodeInput(normalizePasscode(e.target.value))}
-                      placeholder="e.g. CAKE-7X9K2M"
+                      onChange={(e) => setPasscodeInput(e.target.value)}
+                      placeholder="e.g. 7K4M9P"
                       className="w-full rounded-xl border border-border bg-card py-2.5 pl-9 pr-3 font-mono text-sm font-black uppercase tracking-widest text-foreground focus:border-brand focus:outline-none"
                     />
                   </div>
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    Enter the 6-character secret key sent on WhatsApp (letters &amp; numbers, e.g. <span className="font-mono font-bold">7K4M9P</span>).
+                  </p>
                 </div>
 
                 <button

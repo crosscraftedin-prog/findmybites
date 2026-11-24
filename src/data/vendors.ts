@@ -643,9 +643,10 @@ export function normalizePasscode(raw: string): string {
     .slice(0, 24);
 }
 
-export function generateTransferPasscode(prefix = 'FMB'): string {
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  const bytes = new Uint8Array(6);
+export function generateTransferPasscode(): string {
+  const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const digits = '23456789';
+  const bytes = new Uint8Array(12);
   if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
     crypto.getRandomValues(bytes);
   } else {
@@ -653,9 +654,19 @@ export function generateTransferPasscode(prefix = 'FMB'): string {
       bytes[i] = Math.floor(Math.random() * 256);
     }
   }
-  const code = Array.from(bytes, (b) => alphabet[b % alphabet.length]).join('');
-  const cleanPrefix = prefix.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4) || 'FMB';
-  return `${cleanPrefix}-${code}`;
+  const chars: string[] = [
+    letters[bytes[0] % letters.length],
+    letters[bytes[1] % letters.length],
+    letters[bytes[2] % letters.length],
+    digits[bytes[3] % digits.length],
+    digits[bytes[4] % digits.length],
+    digits[bytes[5] % digits.length],
+  ];
+  for (let i = chars.length - 1; i > 0; i -= 1) {
+    const j = bytes[6 + i] % (i + 1);
+    [chars[i], chars[j]] = [chars[j], chars[i]];
+  }
+  return chars.join('');
 }
 
 export async function computeClaimId(phoneRaw: string, passcodeRaw: string): Promise<string> {

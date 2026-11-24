@@ -362,7 +362,7 @@ export function AdminPanelModal({
   const [customBuilderMinQty, setCustomBuilderMinQty] = useState(10);
   const [customBuilderPackagingLocal, setCustomBuilderPackagingLocal] = useState(0);
   const [coverImage, setCoverImage] = useState(IMG_CAKE);
-  const [passcode, setPasscode] = useState(() => generateTransferPasscode('CAKE'));
+  const [passcode, setPasscode] = useState(() => generateTransferPasscode());
   const [products, setProducts] = useState<DraftProductRow[]>([
     {
       ...BIRTHDAY_CAKE_PRESETS[0],
@@ -550,7 +550,7 @@ export function AdminPanelModal({
     setPhoneLocal('');
     setBioHandle('');
     setCoverImage(categoryDefaultImg);
-    setPasscode(generateTransferPasscode('CAKE'));
+    setPasscode(generateTransferPasscode());
     setProducts([
       {
         ...BIRTHDAY_CAKE_PRESETS[0],
@@ -584,7 +584,7 @@ export function AdminPanelModal({
 
     const cleanPass = normalizePasscode(passcode);
     if (cleanPass.length < 6) {
-      setError('Passcode must be at least 6 letters/numbers (e.g., CAKE-7492).');
+      setError('Secret key must be at least 6 letters/numbers (e.g., 7K4M9P).');
       return;
     }
 
@@ -765,7 +765,7 @@ export function AdminPanelModal({
       );
       return;
     }
-    const nextCode = generateTransferPasscode('CAKE');
+    const nextCode = generateTransferPasscode();
     setBusyVendorId(t.vendorId);
     try {
       await adminIssueTransferForExistingStore(
@@ -1952,22 +1952,27 @@ export function AdminPanelModal({
                     <div className="flex-1">
                       <label className="mb-1 flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wider text-amber-900 dark:text-amber-300">
                         <KeyRound className="size-3.5" aria-hidden="true" />
-                        3. Baker Transfer Passcode (Min 6 chars)
+                        3. Secret Transfer Key (Letters &amp; Numbers, Min 6 chars)
                       </label>
                       <p className="mb-2 text-xs text-amber-900/80 dark:text-amber-200/80">
-                        Give this code to the baker on WhatsApp. She enters her phone + this passcode to claim the store &amp; set her own password.
+                        Give this secret key to the vendor on WhatsApp. They enter their phone + this key to claim the store &amp; set their own password.
                       </p>
                       <div className="flex max-w-md gap-2">
                         <input
                           type="text"
                           required
+                          autoComplete="off"
+                          autoCorrect="off"
+                          autoCapitalize="characters"
+                          spellCheck={false}
                           value={passcode}
-                          onChange={(e) => setPasscode(normalizePasscode(e.target.value))}
-                          className="flex-1 rounded-xl border border-amber-500/40 bg-background px-3.5 py-2.5 font-mono text-base font-black tracking-widest text-foreground focus:border-amber-600 focus:outline-none"
+                          onChange={(e) => setPasscode(e.target.value)}
+                          placeholder="e.g. 7K4M9P"
+                          className="flex-1 rounded-xl border border-amber-500/40 bg-background px-3.5 py-2.5 font-mono text-base font-black uppercase tracking-widest text-foreground focus:border-amber-600 focus:outline-none"
                         />
                         <button
                           type="button"
-                          onClick={() => setPasscode(generateTransferPasscode('CAKE'))}
+                          onClick={() => setPasscode(generateTransferPasscode())}
                           className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-amber-500/40 bg-background px-3 py-2 text-xs font-bold text-foreground hover:bg-amber-500/10"
                         >
                           <RefreshCw className="size-3.5" />
