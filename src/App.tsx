@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import {
   ArrowRight,
   ArrowUpRight,
@@ -26,6 +26,7 @@ import {
   RefreshCw,
   Search,
   ShieldCheck,
+  SlidersHorizontal,
   Snowflake,
   Sparkles,
   Star,
@@ -36,33 +37,67 @@ import {
   X,
 } from 'lucide-react';
 import { onAuthStateChanged, type User as FirebaseUser } from 'firebase/auth';
-import { AdminPanelModal } from './components/AdminPanelModal';
-import { CakePricingKitModal } from './components/CakePricingKitModal';
 import { ChristmasSpotlightSection } from './components/ChristmasSpotlightSection';
 import { CityCategorySeoBanner } from './components/CityCategorySeoBanner';
-import { ClaimModalInitialTab, ClaimStoreModal } from './components/ClaimStoreModal';
+import type { ClaimModalInitialTab } from './components/ClaimStoreModal';
 import { Ecosystem, Header } from './components/Header';
 import { JoshPlannerDrawer } from './components/JoshPlannerDrawer';
-import { ListBusinessModal } from './components/ListBusinessModal';
-import { LocationPickerModal, SelectedLocation } from './components/LocationPickerModal';
-import { PostEventRequestModal } from './components/PostEventRequestModal';
+import type { SelectedLocation } from './components/LocationPickerModal';
 import { OfflineIndicator, PWAInstallBanner } from './components/PWAInstallBanner';
-import { PromoCardModal } from './components/PromoCardModal';
-import { SavedBookingsDrawer } from './components/SavedBookingsDrawer';
 import { SnowfallOverlay } from './components/SnowfallOverlay';
-import { VendorBioLinkView } from './components/VendorBioLinkView';
 import { VendorCard } from './components/VendorCard';
-import { VendorDashboardModal } from './components/VendorDashboardModal';
-import { VendorGrowthHubModal } from './components/VendorGrowthHubModal';
-import { VendorShareModal } from './components/VendorShareModal';
-import { VendorMetrics, VendorWebsiteView } from './components/VendorWebsiteView';
-import { BoxBitePortal } from './components/boxbite/BoxBitePortal';
+import type { VendorMetrics } from './components/VendorWebsiteView';
 import { BOXBITE_IMAGES } from './data/boxAndBiteCatalog';
 import { BOX_AND_BITE_CONFIG } from './data/boxAndBiteConfig';
+
+// Lazy-load heavy modals & portals so the initial customer storefront loads instantaneously
+const AdminPanelModal = lazy(() =>
+  import('./components/AdminPanelModal').then((m) => ({ default: m.AdminPanelModal }))
+);
+const CakePricingKitModal = lazy(() =>
+  import('./components/CakePricingKitModal').then((m) => ({ default: m.CakePricingKitModal }))
+);
+const ClaimStoreModal = lazy(() =>
+  import('./components/ClaimStoreModal').then((m) => ({ default: m.ClaimStoreModal }))
+);
+const ListBusinessModal = lazy(() =>
+  import('./components/ListBusinessModal').then((m) => ({ default: m.ListBusinessModal }))
+);
+const LocationPickerModal = lazy(() =>
+  import('./components/LocationPickerModal').then((m) => ({ default: m.LocationPickerModal }))
+);
+const PostEventRequestModal = lazy(() =>
+  import('./components/PostEventRequestModal').then((m) => ({ default: m.PostEventRequestModal }))
+);
+const PromoCardModal = lazy(() =>
+  import('./components/PromoCardModal').then((m) => ({ default: m.PromoCardModal }))
+);
+const SavedBookingsDrawer = lazy(() =>
+  import('./components/SavedBookingsDrawer').then((m) => ({ default: m.SavedBookingsDrawer }))
+);
+const VendorBioLinkView = lazy(() =>
+  import('./components/VendorBioLinkView').then((m) => ({ default: m.VendorBioLinkView }))
+);
+const VendorDashboardModal = lazy(() =>
+  import('./components/VendorDashboardModal').then((m) => ({ default: m.VendorDashboardModal }))
+);
+const VendorGrowthHubModal = lazy(() =>
+  import('./components/VendorGrowthHubModal').then((m) => ({ default: m.VendorGrowthHubModal }))
+);
+const VendorShareModal = lazy(() =>
+  import('./components/VendorShareModal').then((m) => ({ default: m.VendorShareModal }))
+);
+const VendorWebsiteView = lazy(() =>
+  import('./components/VendorWebsiteView').then((m) => ({ default: m.VendorWebsiteView }))
+);
+const BoxBitePortal = lazy(() =>
+  import('./components/boxbite/BoxBitePortal').then((m) => ({ default: m.BoxBitePortal }))
+);
 import {
   AdminTransferRecord,
   BookingEnquiry,
   CATEGORY_CARDS,
+  COUNTRY_DEFAULT_CURRENCY,
   COUNTRY_REGION_LABEL,
   CURRENCIES,
   CloudVendorMetric,
@@ -442,18 +477,49 @@ export default function App() {
     }
   });
 
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(() => {
+    try {
+      return new URLSearchParams(window.location.search).get('q')?.trim() || '';
+    } catch {
+      return '';
+    }
+  });
   const [locationQuery, setLocationQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
-  const [selectedCountry, setSelectedCountry] = useState<LaunchCountry>('All');
+  const [selectedCountry, setSelectedCountry] = useState<LaunchCountry>(() => {
+    try {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+      if (tz.includes('Dubai') || tz.includes('Muscat') || tz.includes('Abu_Dhabi')) return 'Dubai / UAE';
+      if (tz.includes('Colombo')) return 'Sri Lanka';
+      if (tz.includes('Karachi')) return 'Pakistan';
+      if (tz.includes('Dhaka')) return 'Bangladesh';
+      if (tz.includes('Kathmandu') || tz.includes('Katmandu')) return 'Nepal';
+    } catch {
+      // default below
+    }
+    return 'India';
+  });
   const [selectedState, setSelectedState] = useState<string>('All');
   const [selectedTierFilter, setSelectedTierFilter] = useState<'all' | 'paid' | 'free'>('all');
   const [selectedQuickTag, setSelectedQuickTag] = useState<QuickFilterTag | 'All'>('All');
   const [selectedPrice, setSelectedPrice] = useState<PriceTier | 'All'>('All');
   const [minRating, setMinRating] = useState<number>(0);
   const [sortBy, setSortBy] = useState<SortOption>('featured');
-  const [currency, setCurrency] = useState<CurrencyCode>('INR');
+  const [currency, setCurrency] = useState<CurrencyCode>(() => {
+    try {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+      if (tz.includes('Dubai') || tz.includes('Muscat') || tz.includes('Abu_Dhabi')) return 'AED';
+      if (tz.includes('Colombo')) return 'LKR';
+      if (tz.includes('Karachi')) return 'PKR';
+      if (tz.includes('Dhaka')) return 'BDT';
+      if (tz.includes('Kathmandu') || tz.includes('Katmandu')) return 'NPR';
+    } catch {
+      // default below
+    }
+    return 'INR';
+  });
   const [language, setLanguage] = useState('English');
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   const [vendorAnalytics, setVendorAnalytics] = useState<Record<string, VendorMetrics>>(() => {
     try {
@@ -465,9 +531,12 @@ export default function App() {
   });
 
   // Near Me Location State
-  const [userCoords, setUserCoords] = useState<{ lat: number; lng: number; label: string } | null>(
-    null
-  );
+  const [userCoords, setUserCoords] = useState<{
+    lat: number;
+    lng: number;
+    label: string;
+    country?: Exclude<LaunchCountry, 'All'>;
+  } | null>(null);
   const [nearMeRadiusKm, setNearMeRadiusKm] = useState<RadiusOption>(0);
   const [nearMeAllEcosystems, setNearMeAllEcosystems] = useState(false);
   const [locationPickerOpen, setLocationPickerOpen] = useState(false);
@@ -493,7 +562,9 @@ export default function App() {
   const [listModalPlan, setListModalPlan] = useState<PlanTier>('free');
   const [listModalChristmas, setListModalChristmas] = useState(false);
   const [openDinnerSignal, setOpenDinnerSignal] = useState(0);
-  const [snowEnabled, setSnowEnabled] = useState(true);
+  const [snowEnabled, setSnowEnabled] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth >= 1024 : false
+  );
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [adminPanelOpen, setAdminPanelOpen] = useState(false);
   const [claimModalOpen, setClaimModalOpen] = useState(false);
@@ -851,26 +922,30 @@ export default function App() {
       setEcosystem(resolved.categoryEntry.marketplace === 'party' ? 'PIMPMYPARTY' : 'FINDMYBITES');
       setSelectedCategory(resolved.categoryEntry.category);
       setNearMeAllEcosystems(false);
+      setSelectedQuickTag(resolved.categoryEntry.quickTag ?? 'All');
+      setSearchQuery(resolved.categoryEntry.searchKeyword ?? '');
     } else {
       setSelectedCategory('All');
+      setSelectedQuickTag('All');
+      setSearchQuery('');
       setNearMeAllEcosystems(true);
     }
     if (resolved.cityEntry) {
       setSelectedCountry(resolved.cityEntry.country);
+      setCurrency(COUNTRY_DEFAULT_CURRENCY[resolved.cityEntry.country]);
       setSelectedState(resolved.cityEntry.state);
       setUserCoords({
         lat: resolved.cityEntry.lat,
         lng: resolved.cityEntry.lng,
         label: `${resolved.cityEntry.city}, ${resolved.cityEntry.state}`,
+        country: resolved.cityEntry.country,
       });
       setNearMeRadiusKm(0);
       setSortBy('nearest');
     } else {
-      setSelectedCountry('All');
       setSelectedState('All');
       setUserCoords(null);
     }
-    setSearchQuery('');
     setLocationQuery('');
   };
 
@@ -1150,6 +1225,14 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const countryScopedAllVendors = useMemo(
+    () =>
+      selectedCountry === 'All'
+        ? allVendors
+        : allVendors.filter((v) => v.country === selectedCountry),
+    [allVendors, selectedCountry]
+  );
+
   const ecoVendors = useMemo(
     () => allVendors.filter((v) => v.marketplace === ecoKey),
     [allVendors, ecoKey]
@@ -1160,15 +1243,19 @@ export default function App() {
   const ecoCategories = ecosystem === 'FINDMYBITES' ? FOOD_CATEGORIES : PARTY_CATEGORIES;
 
   const displayedCategoryCards = useMemo(() => {
+    const countMap = new Map<string, number>();
+    for (const v of countryScopedAllVendors) {
+      countMap.set(v.category, (countMap.get(v.category) ?? 0) + 1);
+    }
     const source =
       categoryTab === 'all'
         ? CATEGORY_CARDS
         : CATEGORY_CARDS.filter((c) => c.ecosystem === ecoKey);
     return source.map((c) => ({
       ...c,
-      count: allVendors.filter((v) => v.category === c.id).length,
+      count: countMap.get(c.id) ?? 0,
     }));
-  }, [categoryTab, ecoKey, allVendors]);
+  }, [categoryTab, ecoKey, countryScopedAllVendors]);
 
   const handleChangeEcosystem = (nextEco: Ecosystem) => {
     setEcosystem(nextEco);
@@ -1196,6 +1283,9 @@ export default function App() {
     setSelectedCountry(nextCountry);
     setSelectedState('All');
     setUserCoords(null);
+    if (nextCountry !== 'All') {
+      setCurrency(COUNTRY_DEFAULT_CURRENCY[nextCountry]);
+    }
   };
 
   const handleStateSelect = (nextState: string) => {
@@ -1210,6 +1300,7 @@ export default function App() {
         lat: region.lat,
         lng: region.lng,
         label: `${region.name}, ${selectedCountry}`,
+        country: selectedCountry,
       });
       setNearMeRadiusKm(0);
       setNearMeAllEcosystems(true);
@@ -1219,11 +1310,13 @@ export default function App() {
 
   const handleSelectLocation = (loc: SelectedLocation) => {
     setSelectedCountry(loc.country);
+    setCurrency(COUNTRY_DEFAULT_CURRENCY[loc.country]);
     setSelectedState(loc.state);
     setUserCoords({
       lat: loc.lat,
       lng: loc.lng,
       label: loc.label,
+      country: loc.country,
     });
     setNearMeRadiusKm(0);
     setNearMeAllEcosystems(true);
@@ -1246,16 +1339,23 @@ export default function App() {
         lat: coords.lat,
         lng: coords.lng,
         label: resolved.label,
+        country: resolved.exactCountryMatched ? resolved.country : undefined,
       });
-      if (!options?.autoStartup) {
-        if (resolved.exactCountryMatched) {
-          setSelectedCountry(resolved.country);
+      // Always isolate vendors to the visitor's real detected country (e.g., Pakistan, Nepal, India, UAE)
+      if (resolved.exactCountryMatched) {
+        setSelectedCountry(resolved.country);
+        setCurrency(COUNTRY_DEFAULT_CURRENCY[resolved.country]);
+        if (!options?.autoStartup) {
           setSelectedState(resolved.state);
         }
+      }
+      if (!options?.autoStartup) {
         setNearMeRadiusKm(0);
         setNearMeAllEcosystems(true);
         setSortBy('nearest');
-        setNotice(`Location detected: ${resolved.label} — showing vendors near you.`);
+        setNotice(`Location detected: ${resolved.label}, ${resolved.country} — showing local vendors near you.`);
+      } else {
+        setSortBy('nearest');
       }
       setLocationBannerDismissed(true);
       if (options?.scroll) {
@@ -1300,12 +1400,50 @@ export default function App() {
   // Base pool: when Near Me is active, show BOTH Food & Event vendors near the user unless they filter a specific category
   const activeVendorPool = nearMeAllEcosystems ? allVendors : ecoVendors;
 
+  // Precompute sidebar category counts scoped to active country so counts match visible vendors
+  const sidebarCategoryCounts = useMemo(() => {
+    const map = new Map<string, number>();
+    let total = 0;
+    for (const v of activeVendorPool) {
+      if (selectedCountry !== 'All' && v.country !== selectedCountry) continue;
+      total += 1;
+      map.set(v.category, (map.get(v.category) ?? 0) + 1);
+    }
+    return { map, total };
+  }, [activeVendorPool, selectedCountry]);
+
   const filteredVendors = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
+    const qRaw = searchQuery.trim().toLowerCase();
     const loc = locationQuery.trim().toLowerCase();
+    const STOP_WORDS = new Set([
+      'near',
+      'me',
+      'in',
+      'at',
+      'best',
+      'top',
+      'order',
+      'online',
+      'buy',
+      'for',
+      'the',
+      'and',
+      'with',
+      'delivery',
+      'shop',
+      'shops',
+      'store',
+    ]);
+    const queryTokens = qRaw
+      ? qRaw
+          .replace(/[^a-z0-9\s]/g, ' ')
+          .split(/\s+/)
+          .filter((t) => t.length >= 2 && !STOP_WORDS.has(t))
+      : [];
 
     const list = activeVendorPool.filter((v) => {
       if (selectedCategory !== 'All' && v.category !== selectedCategory) return false;
+      // Strict country isolation: never mix Pakistan/Nepal/UAE/Sri Lanka/Bangladesh into India or vice versa
       if (selectedCountry !== 'All' && v.country !== selectedCountry) return false;
       if (selectedState !== 'All' && !vendorCoversState(v, selectedState, selectedCountry)) {
         return false;
@@ -1317,6 +1455,10 @@ export default function App() {
       if (minRating > 0 && v.rating < minRating) return false;
 
       if (userCoords && nearMeRadiusKm > 0) {
+        // Prevent cross-border radius leaks (e.g. Amritsar vs Lahore)
+        if (userCoords.country && v.country !== userCoords.country) {
+          return false;
+        }
         const d = haversineKm(userCoords.lat, userCoords.lng, v.lat, v.lng);
         if (d > nearMeRadiusKm) {
           const coversUserArea =
@@ -1337,13 +1479,29 @@ export default function App() {
         return false;
       }
 
-      if (q) {
-        const prodNames = v.products.map((p) => p.name).join(' ');
+      if (qRaw) {
+        const prodHay = v.products
+          .map(
+            (p) =>
+              `${p.name} ${p.description || ''} ${p.foodType || ''} ${(p.dietaryTags || []).join(' ')}`
+          )
+          .join(' ');
         const stateExtras = v.allStatesCoverage
           ? `pan-india all states ${v.country}`
           : (v.serviceStates || []).join(' ');
-        const hay = `${v.name} ${v.category} ${v.city} ${v.area} ${v.state} ${stateExtras} ${v.country} ${v.tagline} ${v.specialties.join(' ')} ${prodNames}`.toLowerCase();
-        if (!hay.includes(q)) return false;
+        const hay = `${v.name} ${v.category} ${v.city} ${v.area} ${v.state} ${stateExtras} ${v.country} ${v.tagline} ${v.description || ''} ${v.specialties.join(' ')} ${prodHay}`.toLowerCase();
+        if (queryTokens.length > 0) {
+          const allTokensMatch = queryTokens.every((tok) => {
+            if (hay.includes(tok)) return true;
+            // Handle simple plural/singular matching (cakes <-> cake, brownies <-> brownie, cupcakes <-> cupcake)
+            if (tok.endsWith('ies') && hay.includes(`${tok.slice(0, -3)}y`)) return true;
+            if (tok.endsWith('s') && tok.length > 3 && hay.includes(tok.slice(0, -1))) return true;
+            return false;
+          });
+          if (!allTokensMatch) return false;
+        } else if (!hay.includes(qRaw)) {
+          return false;
+        }
       }
 
       return true;
@@ -1404,6 +1562,7 @@ export default function App() {
   const featuredVendors = useMemo(
     () =>
       [...ecoVendors]
+        .filter((v) => selectedCountry === 'All' || v.country === selectedCountry)
         .filter((v) => v.planTier === 'business' || v.planTier === 'pro')
         .sort(
           (a, b) =>
@@ -1412,7 +1571,7 @@ export default function App() {
             b.rating - a.rating
         )
         .slice(0, 3),
-    [ecoVendors]
+    [ecoVendors, selectedCountry]
   );
 
   const savedVendors = useMemo(
@@ -1460,7 +1619,6 @@ export default function App() {
     setSearchQuery('');
     setLocationQuery('');
     setSelectedCategory('All');
-    setSelectedCountry('All');
     setSelectedState('All');
     setSelectedTierFilter('all');
     setSelectedQuickTag('All');
@@ -1546,15 +1704,17 @@ export default function App() {
 
     setEcosystem(savedVendor.marketplace === 'party' ? 'PIMPMYPARTY' : 'FINDMYBITES');
     setSelectedCategory('All');
-    setSelectedCountry('All');
+    setSelectedCountry(savedVendor.country);
+    setCurrency(COUNTRY_DEFAULT_CURRENCY[savedVendor.country]);
     setSelectedState('All');
     setNearMeAllEcosystems(false);
+    const liveUrl = `findmybites.com/v/${savedVendor.slug}`;
     setNotice(
       savedVendor.status === 'pending_review'
-        ? `"${savedVendor.name}" submitted for Admin Review! We will verify & publish it live shortly.`
+        ? `"${savedVendor.name}" submitted for Admin Review! Your link (${liveUrl}) will go live once approved.`
         : savedVendor.planTier === 'free'
-          ? `${savedVendor.name} published live to Cloud! Opening your new one-page vendor website.`
-          : `${savedVendor.name} activated on ${savedVendor.planTier === 'business' ? 'Business Spotlight' : 'Pro Auto-Pay'} — now pinned at the top!`
+          ? `${savedVendor.name} is LIVE at ${liveUrl} — opening your storefront!`
+          : `${savedVendor.name} is LIVE at ${liveUrl} on ${savedVendor.planTier === 'business' ? 'Business Spotlight' : 'Pro'}!`
     );
     setActiveVendor(savedVendor);
   };
@@ -1573,6 +1733,9 @@ export default function App() {
 
   const jumpToCountry = (c: LaunchCountry) => {
     setSelectedCountry(c);
+    if (c !== 'All') {
+      setCurrency(COUNTRY_DEFAULT_CURRENCY[c]);
+    }
     setSelectedState('All');
     setUserCoords(null);
     setNearMeAllEcosystems(c !== 'All');
@@ -1597,7 +1760,7 @@ export default function App() {
     : ecoCategories;
 
   return (
-    <div id="top" className="flex min-h-screen flex-col bg-background text-foreground pb-16 lg:pb-0">
+    <div id="top" className="flex min-h-screen flex-col overflow-x-clip bg-background text-foreground pb-16 lg:pb-0">
       <PWAInstallBanner onInstalledToast={setNotice} />
       <Header
         ecosystem={ecosystem}
@@ -1754,6 +1917,8 @@ export default function App() {
                 src={hero.image}
                 alt=""
                 aria-hidden="true"
+                fetchPriority="high"
+                decoding="async"
                 referrerPolicy="no-referrer"
                 onError={() => setHeroImgFailed(true)}
                 className="h-full w-full object-cover"
@@ -1795,10 +1960,10 @@ export default function App() {
                 {hero.subtitle}
               </p>
 
-              {/* 4-segment frosted white search box matching findmybites.com */}
+              {/* 4-segment frosted white search box — crisp on mobile, iPad & desktop */}
               <form onSubmit={handleHeroSearch} className="mx-auto mt-7 max-w-3xl">
-                <div className="flex flex-col gap-2 rounded-2xl border border-white/20 bg-white/95 p-2 shadow-2xl backdrop-blur-xl sm:flex-row sm:items-center dark:bg-neutral-900/95">
-                  <div className="relative flex-1">
+                <div className="grid grid-cols-1 gap-2 rounded-2xl border border-white/20 bg-white/95 p-2 shadow-2xl backdrop-blur-xl sm:grid-cols-2 lg:flex lg:flex-row lg:items-center dark:bg-neutral-900/95">
+                  <div className="relative sm:col-span-2 lg:flex-1">
                     <Search
                       className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
                       aria-hidden="true"
@@ -1812,12 +1977,12 @@ export default function App() {
                     />
                   </div>
 
-                  <div className="relative border-t border-border/60 sm:border-l sm:border-t-0">
+                  <div className="relative border-t border-border/60 lg:border-l lg:border-t-0">
                     <select
                       value={selectedCategory}
                       onChange={(e) => setSelectedCategory(e.target.value)}
                       aria-label="Select category"
-                      className="h-12 w-full appearance-none rounded-xl bg-transparent px-3 pr-8 text-sm font-medium text-foreground focus:outline-none sm:w-44"
+                      className="h-12 w-full appearance-none rounded-xl bg-transparent px-3 pr-8 text-sm font-medium text-foreground focus:outline-none lg:w-44"
                     >
                       <option value="All">All categories</option>
                       {ecoCategories.map((c) => (
@@ -1832,7 +1997,7 @@ export default function App() {
                     />
                   </div>
 
-                  <div className="relative border-t border-border/60 sm:border-l sm:border-t-0">
+                  <div className="relative border-t border-border/60 sm:border-l lg:border-t-0">
                     <MapPin
                       className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
                       aria-hidden="true"
@@ -1842,13 +2007,13 @@ export default function App() {
                       onChange={(e) => setLocationQuery(e.target.value)}
                       placeholder="Area / City"
                       aria-label="Area or City"
-                      className="h-12 w-full rounded-xl bg-transparent pl-9 pr-3 text-sm font-medium text-foreground placeholder:text-muted-foreground focus:outline-none sm:w-32"
+                      className="h-12 w-full rounded-xl bg-transparent pl-9 pr-3 text-sm font-medium text-foreground placeholder:text-muted-foreground focus:outline-none lg:w-36"
                     />
                   </div>
 
                   <button
                     type="submit"
-                    className="inline-flex h-12 cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-brand px-6 text-sm font-semibold text-brand-foreground shadow-lg transition-transform hover:scale-[1.02] hover:bg-brand-hover sm:px-7 whitespace-nowrap"
+                    className="inline-flex h-12 cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-brand px-6 text-sm font-semibold text-brand-foreground shadow-lg transition-transform hover:scale-[1.02] hover:bg-brand-hover sm:col-span-2 lg:px-7 whitespace-nowrap"
                   >
                     <Search className="size-4" aria-hidden="true" />
                     <span>Search</span>
@@ -1957,9 +2122,9 @@ export default function App() {
           </div>
         </section>
 
-        {/* 1B. CHRISTMAS & NEW YEAR 2026 BAKERS & FESTIVE SPOTLIGHT */}
+        {/* 1B. CHRISTMAS & NEW YEAR 2026 BAKERS & FESTIVE SPOTLIGHT (country-isolated!) */}
         <ChristmasSpotlightSection
-          vendors={allVendors}
+          vendors={countryScopedAllVendors}
           currency={currency}
           christmasDishes={activeChristmasDishes}
           isHyderabadEligible={isHyderabadEligible}
@@ -2076,6 +2241,8 @@ export default function App() {
                   <img
                     src={BOXBITE_IMAGES.heroEditorial}
                     alt="BOX & BITE corporate food gift box packaging"
+                    loading="lazy"
+                    decoding="async"
                     referrerPolicy="no-referrer"
                     className="h-full w-full object-cover transition-transform duration-300 hover:scale-[1.03]"
                   />
@@ -2165,6 +2332,8 @@ export default function App() {
                     <img
                       src={cat.image}
                       alt={cat.label}
+                      loading="lazy"
+                      decoding="async"
                       referrerPolicy="no-referrer"
                       className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
                     />
@@ -2442,9 +2611,32 @@ export default function App() {
               </div>
             </div>
 
-            <div className="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-12">
-              {/* Left Filter Sidebar */}
-              <aside className="h-fit space-y-6 rounded-2xl border border-border bg-card p-5 lg:col-span-3">
+            {/* Mobile & iPad collapsible Filters toggle so vendors show immediately without scrolling past sidebar */}
+            <div className="mt-6 flex items-center justify-between gap-2 lg:hidden">
+              <button
+                type="button"
+                onClick={() => setMobileFiltersOpen((prev) => !prev)}
+                className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-border bg-card px-4 py-2.5 text-xs font-bold text-foreground shadow-xs hover:border-brand"
+              >
+                <SlidersHorizontal className="size-4 text-brand" aria-hidden="true" />
+                {mobileFiltersOpen ? 'Hide Filters & Categories' : 'Filters & Categories'}
+                {selectedCategory !== 'All' && (
+                  <span className="rounded-full bg-brand-soft px-2 py-0.5 text-[10px] font-bold text-brand">
+                    {selectedCategory}
+                  </span>
+                )}
+              </button>
+              <span className="text-xs font-semibold text-muted-foreground">
+                {filteredVendors.length} {filteredVendors.length === 1 ? 'store' : 'stores'}
+                {selectedCountry !== 'All' ? ` · ${selectedCountry}` : ''}
+              </span>
+            </div>
+
+            <div className="mt-5 grid grid-cols-1 gap-8 lg:mt-8 lg:grid-cols-12">
+              {/* Left Filter Sidebar (collapsible on mobile/iPad, always visible on desktop) */}
+              <aside
+                className={`${mobileFiltersOpen ? 'block' : 'hidden'} h-fit space-y-6 rounded-2xl border border-border bg-card p-5 lg:col-span-3 lg:block`}
+              >
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-bold text-foreground">Filters</h3>
                   {hasActiveFilters && (
@@ -2510,7 +2702,10 @@ export default function App() {
                   <div className="mt-2.5 flex max-h-72 flex-col gap-1 overflow-y-auto pr-1">
                     <button
                       type="button"
-                      onClick={() => setSelectedCategory('All')}
+                      onClick={() => {
+                        setSelectedCategory('All');
+                        setMobileFiltersOpen(false);
+                      }}
                       className={`flex cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-left text-xs font-medium transition-colors ${
                         selectedCategory === 'All'
                           ? 'bg-brand-soft font-semibold text-brand-soft-foreground'
@@ -2518,15 +2713,18 @@ export default function App() {
                       }`}
                     >
                       <span>All categories</span>
-                      <span className="font-mono tabular-nums">({activeVendorPool.length})</span>
+                      <span className="font-mono tabular-nums">({sidebarCategoryCounts.total})</span>
                     </button>
                     {sidebarCategories.map((cat) => {
-                      const count = activeVendorPool.filter((v) => v.category === cat).length;
+                      const count = sidebarCategoryCounts.map.get(cat) ?? 0;
                       return (
                         <button
                           key={cat}
                           type="button"
-                          onClick={() => setSelectedCategory(cat)}
+                          onClick={() => {
+                            setSelectedCategory(cat);
+                            setMobileFiltersOpen(false);
+                          }}
                           className={`flex cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-left text-xs font-medium transition-colors ${
                             selectedCategory === cat
                               ? 'bg-brand-soft font-semibold text-brand-soft-foreground'
@@ -3304,301 +3502,333 @@ export default function App() {
         </button>
         <button
           type="button"
-          onClick={() => handleOpenListModal('pro')}
+          onClick={() => (authUser ? setDashboardOpen(true) : handleOpenListModal('free'))}
           className="flex cursor-pointer flex-col items-center gap-0.5 px-3 py-1.5 text-[10px] font-medium text-muted-foreground hover:text-foreground"
         >
           <User className="size-5" aria-hidden="true" />
-          Vendor
+          {authUser ? 'Portal' : 'List Store'}
         </button>
       </nav>
 
-      {/* Real Gemini-Powered AI Event Planner Chatbot */}
+      {/* Real Gemini-Powered AI Event Planner Chatbot — fed with ALL live vendors, menus, Christmas & BOX & BITE */}
       <JoshPlannerDrawer
         isOpen={aiPlannerOpen}
         onOpenChange={setAiPlannerOpen}
         vendors={allVendors}
         currency={currency}
+        selectedCountry={selectedCountry}
+        selectedState={selectedState}
         userLocationLabel={userCoords?.label}
+        christmasDishes={activeChristmasDishes}
+        boxBiteProducts={cloudBoxBiteCatalog.products}
         onSelectVendor={setActiveVendor}
-      />
-
-      {/* Full One-Page Vendor Mini-Website */}
-      <VendorWebsiteView
-        vendor={resolvedActiveVendor}
-        currency={currency}
-        isSaved={resolvedActiveVendor ? savedIds.includes(resolvedActiveVendor.id) : false}
-        metrics={resolvedActiveVendor ? vendorAnalytics[resolvedActiveVendor.id] : undefined}
-        browsingLocation={
-          [locationQuery.trim(), selectedState !== 'All' ? selectedState : '']
-            .filter((part, idx, arr) => part && arr.indexOf(part) === idx)
-            .join(', ') || userCoords?.label || undefined
+        onOpenBoxAndBite={() => openBoxAndBite('top')}
+        onOpenListBusiness={() => handleOpenListModal('free')}
+        onJumpToChristmas={() =>
+          document.getElementById('christmas-special')?.scrollIntoView({ behavior: 'smooth' })
         }
-        user={authUser}
-        canEdit={resolvedActiveVendor ? canEditVendor(resolvedActiveVendor) : false}
-        onSignIn={handleSignIn}
-        onEditStorefront={handleEditStorefront}
-        onOpenBioLink={handleOpenBioLink}
-        onClose={() => setActiveVendor(null)}
-        onToggleSave={toggleSave}
-        onCreateBooking={handleCreateBooking}
-        onOpenBookings={() => setDrawerTab('bookings')}
-        onTrackWhatsAppClick={trackWhatsAppClick}
-        onTrackShare={trackShare}
-      />
-
-      {/* FindMyBites Bio-Link (Linktree) Page: /fmb/<handle> & /@<handle> */}
-      <VendorBioLinkView
-        vendor={resolvedBioVendor}
-        currency={currency}
-        canEdit={resolvedBioVendor ? canEditVendor(resolvedBioVendor) : false}
-        onClose={() => setBioVendor(null)}
-        onOpenStorefront={handleOpenStorefrontFromBio}
-        onEditStorefront={handleEditStorefront}
-        onClaimOwnBioLink={() => {
-          setBioVendor(null);
-          handleOpenListModal('free');
-        }}
-        onTrackWhatsAppClick={trackWhatsAppClick}
-        onTrackShare={trackShare}
-      />
-
-      <SavedBookingsDrawer
-        activeTab={drawerTab}
-        onChangeTab={setDrawerTab}
-        onClose={() => setDrawerTab(null)}
-        savedVendors={savedVendors}
-        bookings={effectiveBookings}
-        currency={currency}
-        onSelectVendor={setActiveVendor}
-        onToggleSave={toggleSave}
-        onCancelBooking={handleCancelBooking}
         onTrackWhatsAppClick={trackWhatsAppClick}
       />
 
-      <ListBusinessModal
-        isOpen={listModalOpen}
-        initialPlanTier={listModalPlan}
-        initialChristmasSpecial={listModalChristmas}
-        currency={currency}
-        user={authUser}
-        onSignIn={handleSignIn}
-        onClose={() => setListModalOpen(false)}
-        onAddVendor={handleAddVendor}
-      />
-
-      <VendorDashboardModal
-        isOpen={dashboardOpen}
-        user={authUser}
-        myVendors={dashboardVendors}
-        vendorLeads={vendorLeads}
-        openEventRequests={openEventRequests}
-        currency={currency}
-        initialEditVendorId={editVendorId}
-        onClearInitialEdit={() => setEditVendorId(null)}
-        onClose={() => setDashboardOpen(false)}
-        onSignIn={handleSignIn}
-        onSignOut={handleSignOut}
-        onOpenListModal={handleOpenListModal}
-        onOpenVendorWebsite={setActiveVendor}
-        onOpenBioLink={handleOpenBioLink}
-        onOpenPricingKit={
-          isAdminUser ||
-          dashboardVendors.some((v) => {
-            const hay = `${v.category} ${v.name} ${v.tagline} ${(v.specialties || []).join(' ')}`.toLowerCase();
-            return (
-              v.category === 'Bakers & Cakes' ||
-              v.category === 'Home Bakers & Cloud Kitchens' ||
-              /\b(baker|bakery|cake|cakes|patisserie|cupcake|pastry|dessert)\b/.test(hay)
-            );
-          })
-            ? () => setPricingKitOpen(true)
-            : undefined
-        }
-        onOpenGrowthHub={openGrowthHub}
-        onTrackShare={trackShare}
-        onNotify={setNotice}
-      />
-
-      <PostEventRequestModal
-        isOpen={eventRequestModalOpen}
-        user={authUser}
-        currency={currency}
-        defaultCountry={detectDefaultCountry()}
-        myRequests={myEventRequests}
-        onClose={() => setEventRequestModalOpen(false)}
-        onSignIn={handleSignIn}
-        onNotify={setNotice}
-      />
-
-      <LocationPickerModal
-        isOpen={locationPickerOpen}
-        defaultCountry={detectDefaultCountry()}
-        onClose={() => setLocationPickerOpen(false)}
-        onSelectLocation={handleSelectLocation}
-      />
-
-      {/* Full Admin Command Center */}
-      {isAdminUser && authUser && (
-        <AdminPanelModal
-          open={adminPanelOpen}
-          onClose={() => setAdminPanelOpen(false)}
-          adminUser={authUser}
-          cloudVendors={effectiveAdminVendors}
-          allCatalogVendors={allVendors}
-          cloudChristmasDishes={cloudChristmasDishes}
-          cloudBoxBiteProducts={cloudBoxBiteCatalog.products}
-          cloudBoxBiteBuilderItems={cloudBoxBiteCatalog.builderItems}
-          transfers={adminTransfers}
-          claims={adminStoreClaims}
-          bookings={adminAllBookings}
-          reviews={adminAllReviews}
-          eventRequests={adminAllEventRequests}
-          vendorMetrics={adminAllMetrics}
-          siteSettings={siteSettings}
-          currency={currency}
-          onEditVendor={handleEditStorefront}
-          onPreviewVendor={setActiveVendor}
-          onPreviewBoxAndBite={() => {
-            setAdminPanelOpen(false);
-            openBoxAndBite('top');
-          }}
-          onNavigateSeoPath={handleNavigateSeoPath}
-          onToast={setNotice}
-        />
-      )}
-
-      {/* Baker Store Claim (Passcode + Set Password) & Phone/Google Login Modal */}
-      <ClaimStoreModal
-        open={claimModalOpen}
-        onClose={() => {
-          setClaimModalOpen(false);
-          if (window.location.pathname.startsWith('/claim')) {
-            try {
-              window.history.pushState({}, '', '/');
-            } catch {
-              // ignore history restrictions
+      {/* Lazy-Loaded Storefront Views & Modals for Instant Initial Page Load */}
+      <Suspense fallback={null}>
+        {resolvedActiveVendor && (
+          <VendorWebsiteView
+            vendor={resolvedActiveVendor}
+            currency={currency}
+            isSaved={savedIds.includes(resolvedActiveVendor.id)}
+            metrics={vendorAnalytics[resolvedActiveVendor.id]}
+            browsingLocation={
+              [locationQuery.trim(), selectedState !== 'All' ? selectedState : '']
+                .filter((part, idx, arr) => part && arr.indexOf(part) === idx)
+                .join(', ') || userCoords?.label || undefined
             }
-          }
-        }}
-        initialTab={claimModalTab}
-        hintVendorName={
-          claimHintSlug
-            ? allVendors.find(
-                (v) =>
-                  v.slug.toLowerCase() === claimHintSlug ||
-                  getVendorBioHandle(v).toLowerCase() === claimHintSlug
-              )?.name
-            : undefined
-        }
-        currentUser={authUser}
-        isAdminUser={isAdminUser}
-        onClaimSuccess={(claimedVendorId, claimedVendorName, claimedVendor) => {
-          if (claimedVendor) {
-            setMyCloudVendors((prev) => [
-              claimedVendor,
-              ...prev.filter((v) => v.id !== claimedVendor.id),
-            ]);
-            setCloudVendors((prev) => [
-              claimedVendor,
-              ...prev.filter((v) => v.id !== claimedVendor.id),
-            ]);
-          }
-          setNotice(
-            `Welcome! You now own "${claimedVendorName}". Opening your Storefront Editor so you can customize anything.`
-          );
-          setEditVendorId(claimedVendorId);
-          setDashboardOpen(true);
-          if (window.location.pathname.startsWith('/claim')) {
-            try {
-              window.history.pushState({}, '', '/');
-            } catch {
-              // ignore
+            user={authUser}
+            canEdit={canEditVendor(resolvedActiveVendor)}
+            onSignIn={handleSignIn}
+            onEditStorefront={handleEditStorefront}
+            onOpenBioLink={handleOpenBioLink}
+            onClose={() => setActiveVendor(null)}
+            onToggleSave={toggleSave}
+            onCreateBooking={handleCreateBooking}
+            onOpenBookings={() => setDrawerTab('bookings')}
+            onTrackWhatsAppClick={trackWhatsAppClick}
+            onTrackShare={trackShare}
+          />
+        )}
+
+        {resolvedBioVendor && (
+          <VendorBioLinkView
+            vendor={resolvedBioVendor}
+            currency={currency}
+            canEdit={canEditVendor(resolvedBioVendor)}
+            onClose={() => setBioVendor(null)}
+            onOpenStorefront={handleOpenStorefrontFromBio}
+            onEditStorefront={handleEditStorefront}
+            onClaimOwnBioLink={() => {
+              setBioVendor(null);
+              handleOpenListModal('free');
+            }}
+            onTrackWhatsAppClick={trackWhatsAppClick}
+            onTrackShare={trackShare}
+          />
+        )}
+
+        {drawerTab && (
+          <SavedBookingsDrawer
+            activeTab={drawerTab}
+            onChangeTab={setDrawerTab}
+            onClose={() => setDrawerTab(null)}
+            savedVendors={savedVendors}
+            bookings={effectiveBookings}
+            currency={currency}
+            onSelectVendor={setActiveVendor}
+            onToggleSave={toggleSave}
+            onCancelBooking={handleCancelBooking}
+            onTrackWhatsAppClick={trackWhatsAppClick}
+          />
+        )}
+
+        {listModalOpen && (
+          <ListBusinessModal
+            isOpen={listModalOpen}
+            initialPlanTier={listModalPlan}
+            initialChristmasSpecial={listModalChristmas}
+            defaultCountry={detectDefaultCountry()}
+            existingSlugs={allVendors.flatMap((v) => [v.slug, getVendorBioHandle(v)])}
+            currency={currency}
+            user={authUser}
+            onSignIn={handleSignIn}
+            onClose={() => setListModalOpen(false)}
+            onAddVendor={handleAddVendor}
+          />
+        )}
+
+        {dashboardOpen && (
+          <VendorDashboardModal
+            isOpen={dashboardOpen}
+            user={authUser}
+            myVendors={dashboardVendors}
+            vendorLeads={vendorLeads}
+            openEventRequests={openEventRequests}
+            currency={currency}
+            initialEditVendorId={editVendorId}
+            onClearInitialEdit={() => setEditVendorId(null)}
+            onClose={() => setDashboardOpen(false)}
+            onSignIn={handleSignIn}
+            onSignOut={handleSignOut}
+            onOpenListModal={handleOpenListModal}
+            onOpenVendorWebsite={setActiveVendor}
+            onOpenBioLink={handleOpenBioLink}
+            onOpenPricingKit={
+              isAdminUser ||
+              dashboardVendors.some((v) => {
+                const hay = `${v.category} ${v.name} ${v.tagline} ${(v.specialties || []).join(' ')}`.toLowerCase();
+                return (
+                  v.category === 'Bakers & Cakes' ||
+                  v.category === 'Home Bakers & Cloud Kitchens' ||
+                  /\b(baker|bakery|cake|cakes|patisserie|cupcake|pastry|dessert)\b/.test(hay)
+                );
+              })
+                ? () => setPricingKitOpen(true)
+                : undefined
             }
-          }
-        }}
-        onLoginSuccess={(loggedInUser) => {
-          setNotice(
-            `Signed in as ${formatUserDisplayLabel(loggedInUser)}. Cloud sync is active!`
-          );
-        }}
-      />
+            onOpenGrowthHub={openGrowthHub}
+            onTrackShare={trackShare}
+            onNotify={setNotice}
+          />
+        )}
 
-      {/* Bakery & Cake Pricing Kit (Simple Free + Full Paid Pro Suite) */}
-      <CakePricingKitModal
-        isOpen={pricingKitOpen}
-        onClose={() => {
-          setPricingKitOpen(false);
-          if (
-            window.location.pathname.startsWith('/pricing-kit') ||
-            window.location.pathname === '/cake-pricing-kit'
-          ) {
-            try {
-              window.history.pushState({}, '', '/');
-            } catch {
-              // ignore
+        {eventRequestModalOpen && (
+          <PostEventRequestModal
+            isOpen={eventRequestModalOpen}
+            user={authUser}
+            currency={currency}
+            defaultCountry={detectDefaultCountry()}
+            myRequests={myEventRequests}
+            onClose={() => setEventRequestModalOpen(false)}
+            onSignIn={handleSignIn}
+            onNotify={setNotice}
+          />
+        )}
+
+        {locationPickerOpen && (
+          <LocationPickerModal
+            isOpen={locationPickerOpen}
+            defaultCountry={detectDefaultCountry()}
+            onClose={() => setLocationPickerOpen(false)}
+            onSelectLocation={handleSelectLocation}
+          />
+        )}
+
+        {isAdminUser && authUser && adminPanelOpen && (
+          <AdminPanelModal
+            open={adminPanelOpen}
+            onClose={() => setAdminPanelOpen(false)}
+            adminUser={authUser}
+            cloudVendors={effectiveAdminVendors}
+            allCatalogVendors={allVendors}
+            cloudChristmasDishes={cloudChristmasDishes}
+            cloudBoxBiteProducts={cloudBoxBiteCatalog.products}
+            cloudBoxBiteBuilderItems={cloudBoxBiteCatalog.builderItems}
+            transfers={adminTransfers}
+            claims={adminStoreClaims}
+            bookings={adminAllBookings}
+            reviews={adminAllReviews}
+            eventRequests={adminAllEventRequests}
+            vendorMetrics={adminAllMetrics}
+            siteSettings={siteSettings}
+            currency={currency}
+            onEditVendor={handleEditStorefront}
+            onPreviewVendor={setActiveVendor}
+            onPreviewBoxAndBite={() => {
+              setAdminPanelOpen(false);
+              openBoxAndBite('top');
+            }}
+            onNavigateSeoPath={handleNavigateSeoPath}
+            onToast={setNotice}
+          />
+        )}
+
+        {claimModalOpen && (
+          <ClaimStoreModal
+            open={claimModalOpen}
+            onClose={() => {
+              setClaimModalOpen(false);
+              if (window.location.pathname.startsWith('/claim')) {
+                try {
+                  window.history.pushState({}, '', '/');
+                } catch {
+                  // ignore history restrictions
+                }
+              }
+            }}
+            initialTab={claimModalTab}
+            hintVendorName={
+              claimHintSlug
+                ? allVendors.find(
+                    (v) =>
+                      v.slug.toLowerCase() === claimHintSlug ||
+                      getVendorBioHandle(v).toLowerCase() === claimHintSlug
+                  )?.name
+                : undefined
             }
-          }
-        }}
-        currency={currency}
-        onChangeCurrency={setCurrency}
-        user={authUser}
-        isProUnlocked={
-          isAdminUser ||
-          dashboardVendors.some((v) => v.planTier === 'pro' || v.planTier === 'business')
-        }
-        isAdmin={isAdminUser}
-        myVendors={dashboardVendors}
-        onUpgradePlan={() => handleOpenListModal('pro')}
-        onSignIn={() => {
-          setPricingKitOpen(false);
-          setClaimHintSlug(null);
-          setClaimModalTab('login');
-          setClaimModalOpen(true);
-        }}
-        onToast={setNotice}
-      />
+            currentUser={authUser}
+            isAdminUser={isAdminUser}
+            onClaimSuccess={(claimedVendorId, claimedVendorName, claimedVendor) => {
+              if (claimedVendor) {
+                setMyCloudVendors((prev) => [
+                  claimedVendor,
+                  ...prev.filter((v) => v.id !== claimedVendor.id),
+                ]);
+                setCloudVendors((prev) => [
+                  claimedVendor,
+                  ...prev.filter((v) => v.id !== claimedVendor.id),
+                ]);
+              }
+              setNotice(
+                `Welcome! You now own "${claimedVendorName}". Opening your Storefront Editor so you can customize anything.`
+              );
+              setEditVendorId(claimedVendorId);
+              setDashboardOpen(true);
+              if (window.location.pathname.startsWith('/claim')) {
+                try {
+                  window.history.pushState({}, '', '/');
+                } catch {
+                  // ignore
+                }
+              }
+            }}
+            onLoginSuccess={(loggedInUser) => {
+              setNotice(
+                `Signed in as ${formatUserDisplayLabel(loggedInUser)}. Cloud sync is active!`
+              );
+            }}
+          />
+        )}
 
-      {/* Vendor Profile Share Sheet (Web Share API, Clipboard Copy, Instagram Stories, Facebook & more) */}
-      <VendorShareModal
-        vendor={shareVendor}
-        currency={currency}
-        onClose={() => setShareVendor(null)}
-        onOpenInstagramStory={(vendor) => setPromoStoryVendor(vendor)}
-        onTrackShare={trackShare}
-        onSharedFeedback={handleSharedFeedback}
-      />
+        {pricingKitOpen && (
+          <CakePricingKitModal
+            isOpen={pricingKitOpen}
+            onClose={() => {
+              setPricingKitOpen(false);
+              if (
+                window.location.pathname.startsWith('/pricing-kit') ||
+                window.location.pathname === '/cake-pricing-kit'
+              ) {
+                try {
+                  window.history.pushState({}, '', '/');
+                } catch {
+                  // ignore
+                }
+              }
+            }}
+            currency={currency}
+            onChangeCurrency={setCurrency}
+            user={authUser}
+            isProUnlocked={
+              isAdminUser ||
+              dashboardVendors.some((v) => v.planTier === 'pro' || v.planTier === 'business')
+            }
+            isAdmin={isAdminUser}
+            myVendors={dashboardVendors}
+            onUpgradePlan={() => handleOpenListModal('pro')}
+            onSignIn={() => {
+              setPricingKitOpen(false);
+              setClaimHintSlug(null);
+              setClaimModalTab('login');
+              setClaimModalOpen(true);
+            }}
+            onToast={setNotice}
+          />
+        )}
 
-      {/* Instagram Story 9:16 Promo Card Generator */}
-      <PromoCardModal
-        vendor={promoStoryVendor}
-        currency={currency}
-        onClose={() => setPromoStoryVendor(null)}
-        onTrackShare={trackShare}
-      />
+        {shareVendor && (
+          <VendorShareModal
+            vendor={shareVendor}
+            currency={currency}
+            onClose={() => setShareVendor(null)}
+            onOpenInstagramStory={(vendor) => setPromoStoryVendor(vendor)}
+            onTrackShare={trackShare}
+            onSharedFeedback={handleSharedFeedback}
+          />
+        )}
+
+        {promoStoryVendor && (
+          <PromoCardModal
+            vendor={promoStoryVendor}
+            currency={currency}
+            onClose={() => setPromoStoryVendor(null)}
+            onTrackShare={trackShare}
+          />
+        )}
+
+        {growthHubOpen && (
+          <VendorGrowthHubModal
+            isOpen={growthHubOpen}
+            onClose={closeGrowthHub}
+            currency={currency}
+            myVendors={dashboardVendors}
+            onOpenListModal={(plan) => handleOpenListModal(plan)}
+            onOpenDashboard={() => setDashboardOpen(true)}
+            onOpenBioLink={handleOpenBioLink}
+            onNotify={setNotice}
+          />
+        )}
+
+        {boxAndBiteOpen && (
+          <BoxBitePortal
+            isOpen={boxAndBiteOpen}
+            initialSection={boxAndBiteSection}
+            cloudProducts={cloudBoxBiteCatalog.products}
+            cloudBuilderItems={cloudBoxBiteCatalog.builderItems}
+            onBackToFindMyBites={closeBoxAndBite}
+          />
+        )}
+      </Suspense>
 
       {/* Festive Winter Snowfall Overlay + On/Off Toggle */}
       <SnowfallOverlay enabled={snowEnabled} onToggle={() => setSnowEnabled((prev) => !prev)} />
-
-      {/* Vendor Growth Playbook & Tips Hub (/growth-tips) */}
-      <VendorGrowthHubModal
-        isOpen={growthHubOpen}
-        onClose={closeGrowthHub}
-        currency={currency}
-        myVendors={dashboardVendors}
-        onOpenListModal={(plan) => handleOpenListModal(plan)}
-        onOpenDashboard={() => setDashboardOpen(true)}
-        onOpenBioLink={handleOpenBioLink}
-        onNotify={setNotice}
-      />
-
-      {/* BOX & BITE Dedicated Corporate Food Gifting Sub-Brand Experience */}
-      <BoxBitePortal
-        isOpen={boxAndBiteOpen}
-        initialSection={boxAndBiteSection}
-        cloudProducts={cloudBoxBiteCatalog.products}
-        cloudBuilderItems={cloudBoxBiteCatalog.builderItems}
-        onBackToFindMyBites={closeBoxAndBite}
-      />
     </div>
   );
 }

@@ -2,6 +2,7 @@ import {
   ALL_CATEGORIES,
   FOOD_CATEGORIES,
   LaunchCountry,
+  QuickFilterTag,
   STATES_BY_COUNTRY,
   Vendor,
   getVendorBioHandle,
@@ -21,6 +22,9 @@ export interface SeoCategoryEntry {
   category: string;
   marketplace: 'food' | 'party';
   isChristmasHub?: boolean;
+  displayLabel?: string;
+  searchKeyword?: string;
+  quickTag?: QuickFilterTag;
 }
 
 export interface ResolvedSeoDirectoryRoute {
@@ -88,6 +92,61 @@ export const SEO_CATEGORIES: SeoCategoryEntry[] = [
       ? 'food'
       : 'party') as 'food' | 'party',
   })),
+  {
+    slug: 'cakes-near-me',
+    category: 'Bakers & Cakes',
+    marketplace: 'food',
+    displayLabel: 'Custom Cakes & Home Bakers',
+  },
+  {
+    slug: 'birthday-cakes',
+    category: 'Bakers & Cakes',
+    marketplace: 'food',
+    displayLabel: 'Birthday Cakes & Theme Cakes',
+    searchKeyword: 'birthday',
+  },
+  {
+    slug: 'eggless-cakes',
+    category: 'Bakers & Cakes',
+    marketplace: 'food',
+    displayLabel: '100% Eggless Cakes & Bakes',
+    quickTag: 'Eggless',
+  },
+  {
+    slug: 'brownies-near-me',
+    category: 'Bakers & Cakes',
+    marketplace: 'food',
+    displayLabel: 'Fudgy Brownies & Dessert Boxes',
+    searchKeyword: 'brownie',
+  },
+  {
+    slug: 'custom-cakes',
+    category: 'Bakers & Cakes',
+    marketplace: 'food',
+    displayLabel: 'Custom Designer & Theme Cakes',
+    searchKeyword: 'custom',
+  },
+  {
+    slug: 'wedding-cakes',
+    category: 'Bakers & Cakes',
+    marketplace: 'food',
+    displayLabel: 'Tiered Wedding & Engagement Cakes',
+    quickTag: 'Wedding Ready',
+    searchKeyword: 'wedding',
+  },
+  {
+    slug: 'home-bakers',
+    category: 'Home Bakers & Cloud Kitchens',
+    marketplace: 'food',
+    displayLabel: 'Verified Home Bakers',
+  },
+  {
+    slug: 'cupcakes-and-desserts',
+    category: 'Bakers & Cakes',
+    marketplace: 'food',
+    displayLabel: 'Cupcakes, Cheesecakes & Dessert Jars',
+    searchKeyword: 'cupcake',
+  },
   {
     slug: 'christmas-cakes',
     category: 'Bakers & Cakes',
@@ -214,7 +273,9 @@ export function resolveSeoDirectoryRoute(pathname: string): ResolvedSeoDirectory
 
   const subject = categoryEntry?.isChristmasHub
     ? 'Christmas Plum Cakes & Festive Bakers'
-    : categoryEntry?.category || 'Bakers, Catering & Party Vendors';
+    : categoryEntry?.displayLabel ||
+      categoryEntry?.category ||
+      'Bakers, Catering & Party Vendors';
 
   const canonicalPath =
     cityEntry && categoryEntry

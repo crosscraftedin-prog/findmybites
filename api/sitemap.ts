@@ -27,6 +27,14 @@ const PRIORITY_CITIES = [
 ];
 
 const CORE_CATEGORIES = [
+  'cakes-near-me',
+  'birthday-cakes',
+  'eggless-cakes',
+  'brownies-near-me',
+  'custom-cakes',
+  'wedding-cakes',
+  'home-bakers',
+  'cupcakes-and-desserts',
   'bakers-and-cakes',
   'home-bakers-and-cloud-kitchens',
   'catering-services',
@@ -140,8 +148,9 @@ export default async function handler(_req: VercelRequestLike, res: VercelRespon
     entries.push({ loc, lastmod, changefreq, priority });
   };
 
-  // 1. Homepage
+  // 1. Homepage & Corporate Gifting
   pushUrl(`${SITE_ORIGIN}/`, '1.0', 'daily');
+  pushUrl(`${SITE_ORIGIN}/box-and-bite`, '0.9', 'weekly');
 
   // 2. Category Hubs
   for (const cat of CORE_CATEGORIES) {

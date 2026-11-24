@@ -1,132 +1,300 @@
-import { FormEvent, useEffect, useRef, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AlertCircle,
-  CalendarCheck2,
+  Briefcase,
   CheckCircle2,
   ExternalLink,
   Loader2,
+  MapPin,
   MessageCircle,
+  RotateCcw,
   Send,
+  Snowflake,
   Sparkles,
+  Store,
   X,
 } from 'lucide-react';
-import { CurrencyCode, Vendor, buildWhatsAppUrl, formatMoney } from '../data/vendors';
+import type { CorporateBoxProduct } from '../data/boxAndBiteCatalog';
+import type { CustomMenuDish } from '../data/christmasMenu';
+import {
+  CurrencyCode,
+  LaunchCountry,
+  Vendor,
+  buildWhatsAppUrl,
+  formatMoney,
+  getVendorBioHandle,
+} from '../data/vendors';
+
+interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  text: string;
+  recommendedVendorIds?: string[];
+  estimatedBudget?: string;
+  checklist?: string[];
+  suggestedAction?: 'none' | 'box_and_bite' | 'list_business' | 'christmas_menu';
+  isError?: boolean;
+}
 
 interface JoshPlannerDrawerProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
   vendors: Vendor[];
   currency: CurrencyCode;
+  selectedCountry?: LaunchCountry;
+  selectedState?: string;
   userLocationLabel?: string;
+  christmasDishes?: CustomMenuDish[];
+  boxBiteProducts?: CorporateBoxProduct[];
   onSelectVendor: (vendor: Vendor) => void;
+  onOpenBoxAndBite?: () => void;
+  onOpenListBusiness?: () => void;
+  onJumpToChristmas?: () => void;
+  onTrackWhatsAppClick?: (vendorId: string) => void;
 }
 
-interface EventPlanData {
-  title?: string;
-  occasion?: string;
-  location?: string;
-  guestCount?: string;
-  estimatedBudget?: string;
-  budgetSplit?: Array<{ category: string; amount: string; notes: string }>;
-  timelineChecklist?: string[];
-  menuAndDecorIdeas?: string[];
-  matchedVendorIds?: string[];
+function buildQuickPrompts(country?: LaunchCountry, locationLabel?: string): string[] {
+  const cityHint = locationLabel?.split(',')[0]?.trim();
+  if (country === 'Pakistan') {
+    const place = cityHint || 'Lahore';
+    return [
+      `Eggless birthday cake & fudgy brownies in ${place} for 20 guests`,
+      `Home bakers & custom cupcakes in ${place}`,
+      `Birthday decor + catering plan in ${place}`,
+      'How do I list my home bakery on FindMyBites?',
+    ];
+  }
+  if (country === 'Nepal') {
+    const place = cityHint || 'Kathmandu';
+    return [
+      `Custom birthday cake & brownies in ${place}`,
+      `Eggless cake & dessert box near ${place}`,
+      `Party decor + catering for 40 guests in ${place}`,
+      'How do I list my bakery on FindMyBites?',
+    ];
+  }
+  if (country === 'Dubai / UAE') {
+    const place = cityHint || 'Dubai';
+    return [
+      `Custom birthday cake & cupcakes in ${place}`,
+      `Luxury party decor + mocktail bar in ${place} for 50 guests`,
+      `Eggless & sugar-free cake bakers in ${place}`,
+      'How do I list my food or event business?',
+    ];
+  }
+  if (country === 'Sri Lanka') {
+    const place = cityHint || 'Colombo';
+    return [
+      `Birthday cakes & brownies in ${place}`,
+      `Wedding & party catering in ${place}`,
+      `Eggless dessert boxes in ${place}`,
+      'How do I list my bakery on FindMyBites?',
+    ];
+  }
+  if (country === 'Bangladesh') {
+    const place = cityHint || 'Dhaka';
+    return [
+      `Custom birthday cake & brownies in ${place}`,
+      `Home bakers & cupcakes in ${place}`,
+      `Event catering & decor in ${place}`,
+      'How do I list my business on FindMyBites?',
+    ];
+  }
+  const place = cityHint || 'Hyderabad';
+  return [
+    `Eggless birthday cake & brownies in ${place} for 25 guests`,
+    `Birthday party plan in ${place}: cake + decor + catering`,
+    'BOX & BITE corporate gifting boxes for 50 employees',
+    'Christmas plum cakes & custom festive dinner menu',
+  ];
 }
 
-interface ChatMessage {
-  id: string;
-  role: 'assistant' | 'user';
-  text: string;
-  plan?: EventPlanData;
-  quickReplies?: string[];
+function createInitialMessages(country?: LaunchCountry, locationLabel?: string): ChatMessage[] {
+  const locText =
+    locationLabel || (country && country !== 'All' ? country : 'your city');
+  return [
+    {
+      id: 'welcome-josh',
+      role: 'assistant',
+      text: `Hi! I'm **Josh**, your FindMyBites × PimpMyParty AI Concierge. I know every live baker, menu item, eggless/sugar-free option, party vendor, BOX & BITE corporate box, and Christmas special in **${locText}**! Tell me what you're craving or planning (occasion, area, guests & budget) and I'll match you with real local stores + a full checklist.`,
+    },
+  ];
 }
 
-const INITIAL_QUICK_PROMPTS = [
-  'Plan a 150-guest wedding in Mumbai with live counters, decor & cake',
-  'Birthday party for 50 guests in Dubai with cake, decor & mocktail bar',
-  'Corporate snack boxes & catering for 80 in Bengaluru',
-  'Plan a Mehndi / Dholki night in Lahore with live BBQ',
-];
+function renderFormattedReply(text: string) {
+  // Lightweight safe bold renderer (**bold**) without dangerouslySetInnerHTML
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, idx) => {
+    if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
+      return (
+        <strong key={idx} className="font-bold text-foreground">
+          {part.slice(2, -2)}
+        </strong>
+      );
+    }
+    return <span key={idx}>{part}</span>;
+  });
+}
 
 export function JoshPlannerDrawer({
   isOpen,
   onOpenChange,
   vendors,
   currency,
+  selectedCountry,
+  selectedState,
   userLocationLabel,
+  christmasDishes = [],
+  boxBiteProducts = [],
   onSelectVendor,
+  onOpenBoxAndBite,
+  onOpenListBusiness,
+  onJumpToChristmas,
+  onTrackWhatsAppClick,
 }: JoshPlannerDrawerProps) {
+  const [messages, setMessages] = useState<ChatMessage[]>(() =>
+    createInitialMessages(selectedCountry, userLocationLabel)
+  );
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: 'welcome',
-      role: 'assistant',
-      text: "Hi, I'm Josh — your AI Event Planner! Tell me your occasion (wedding, birthday, mehendi, corporate), city (India, Dubai, Sri Lanka, Pakistan, Bangladesh, or Nepal), guest count, and budget. I'll collect your details and build a complete plan with matching vendors you can message on WhatsApp.",
-      quickReplies: INITIAL_QUICK_PROMPTS,
-    },
-  ]);
-
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const quickPrompts = useMemo(
+    () => buildQuickPrompts(selectedCountry, userLocationLabel),
+    [selectedCountry, userLocationLabel]
+  );
 
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages, loading]);
+  }, [messages, loading, isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onOpenChange(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isOpen, onOpenChange]);
+
+  const handleResetChat = () => {
+    setMessages(createInitialMessages(selectedCountry, userLocationLabel));
+    setInput('');
+  };
 
   const sendMessage = async (text: string) => {
     const trimmed = text.trim();
     if (!trimmed || loading) return;
 
-    setErrorMsg(null);
-    const userMsg: ChatMessage = { id: `u-${Date.now()}`, role: 'user', text: trimmed };
+    const userMsg: ChatMessage = {
+      id: `user-${Date.now()}`,
+      role: 'user',
+      text: trimmed,
+    };
     const nextHistory = [...messages, userMsg];
     setMessages(nextHistory);
     setInput('');
     setLoading(true);
 
     try {
-      const response = await fetch('/api/ai/event-planner', {
+      // Feed ALL active vendors with full menus, dietary tags, coverage & Christmas offers
+      const vendorPayload = vendors
+        .filter((v) => v.status !== 'paused' && v.status !== 'pending_review')
+        .map((v) => ({
+          id: v.id,
+          name: v.name,
+          slug: v.slug,
+          bioHandle: getVendorBioHandle(v),
+          marketplace: v.marketplace,
+          category: v.category,
+          area: v.area,
+          city: v.city,
+          state: v.state,
+          country: v.country,
+          allStatesCoverage: v.allStatesCoverage,
+          serviceStates: v.serviceStates,
+          serviceAreas: v.serviceAreas,
+          planTier: v.planTier,
+          startingPriceUsd: v.startingPriceUsd,
+          rating: v.rating,
+          reviewCount: v.reviewCount,
+          tagline: v.tagline,
+          specialties: v.specialties,
+          christmasSpecial: v.christmasSpecial,
+          christmasOffer: v.christmasOffer,
+          products: (v.products || []).slice(0, 8).map((p) => ({
+            name: p.name,
+            priceUsd: p.priceUsd,
+            unit: p.serves,
+            foodType: p.foodType,
+            dietaryTags: p.dietaryTags,
+            variants: (p.variants || []).slice(0, 3).map((vr) => `${vr.label}`),
+          })),
+        }));
+
+      const christmasPayload = christmasDishes.slice(0, 35).map((d) => ({
+        name: d.name,
+        category: d.category,
+        foodType: d.foodType,
+        priceInr: d.priceInrPerGuest,
+        serves: d.portion,
+      }));
+
+      const boxBitePayload = boxBiteProducts.slice(0, 20).map((b) => ({
+        name: b.name,
+        category: b.categoryName,
+        priceInr: b.bulkStartingPriceInr,
+        moq: b.moqBulk,
+        tagline: b.subtitle,
+      }));
+
+      const res = await fetch('/api/ai/event-planner', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          message: trimmed,
+          history: nextHistory.slice(-8).map((m) => ({ role: m.role, text: m.text })),
           currency,
-          userLocationLabel,
-          messages: nextHistory.map((m) => ({ role: m.role, text: m.text })),
-          vendors: vendors.map((v) => ({
-            id: v.id,
-            name: v.name,
-            marketplace: v.marketplace,
-            category: v.category,
-            city: v.city,
-            country: v.country,
-            planTier: v.planTier,
-            startingPriceUsd: v.startingPriceUsd,
-            rating: v.rating,
-            tagline: v.tagline,
-            specialties: v.specialties,
-          })),
+          userLocation: userLocationLabel || '',
+          userCountry: selectedCountry || 'All',
+          userState: selectedState || 'All',
+          vendors: vendorPayload,
+          christmasDishes: christmasPayload,
+          boxBiteProducts: boxBitePayload,
         }),
       });
 
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'AI planner request failed.');
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Could not reach Josh AI right now.');
       }
 
       const aiMsg: ChatMessage = {
-        id: `a-${Date.now()}`,
+        id: `josh-${Date.now()}`,
         role: 'assistant',
-        text: data.reply || 'Here is your personalized event plan:',
-        plan: data.hasPlan ? data.plan : undefined,
-        quickReplies: Array.isArray(data.quickReplies) ? data.quickReplies : undefined,
+        text: data.reply || 'Here is your personalized plan!',
+        recommendedVendorIds: Array.isArray(data.recommendedVendorIds)
+          ? data.recommendedVendorIds
+          : [],
+        estimatedBudget: data.estimatedBudget,
+        checklist: Array.isArray(data.checklist) ? data.checklist : [],
+        suggestedAction: data.suggestedAction || 'none',
       };
       setMessages((prev) => [...prev, aiMsg]);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Unable to reach AI Event Planner.';
-      setErrorMsg(msg);
+    } catch (err) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `err-${Date.now()}`,
+          role: 'assistant',
+          isError: true,
+          text:
+            err instanceof Error
+              ? `${err.message} Please try again in a moment.`
+              : 'Something went wrong connecting to Josh AI. Please try again.',
+        },
+      ]);
     } finally {
       setLoading(false);
     }
@@ -134,227 +302,256 @@ export function JoshPlannerDrawer({
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    sendMessage(input);
+    void sendMessage(input);
   };
-
-  const lastQuickReplies =
-    [...messages].reverse().find((m) => m.role === 'assistant' && m.quickReplies?.length)
-      ?.quickReplies ?? [];
 
   return (
     <>
-      {/* Floating #FF6B35 AI Planner Trigger */}
-      <div className="fixed bottom-20 right-4 z-40 lg:bottom-5">
+      {/* Floating launcher pill matching FindMyBites × PimpMyParty branding */}
+      {!isOpen && (
         <button
           type="button"
           onClick={() => onOpenChange(true)}
-          aria-label="Open AI Event Planner Chatbot"
-          className="relative grid size-14 cursor-pointer place-items-center rounded-full bg-[#FF6B35] text-white shadow-xl shadow-[#FF6B35]/35 transition-transform hover:scale-105 hover:shadow-2xl"
+          aria-label="Open Josh AI Event Planner"
+          className="fixed bottom-20 right-3 z-40 inline-flex cursor-pointer items-center gap-2 rounded-full bg-gradient-to-r from-[#FF6B35] to-[#EC4899] px-3.5 py-2.5 text-xs font-semibold text-white shadow-lg transition-transform hover:scale-105 sm:px-4 sm:py-3 sm:text-sm lg:bottom-6 lg:right-6"
         >
-          <Sparkles className="size-6" aria-hidden="true" />
-          <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full border-2 border-white bg-foreground px-1 text-[9px] font-bold text-background">
-            AI
-          </span>
+          <Sparkles className="size-4" aria-hidden="true" />
+          <span className="hidden sm:inline">Ask Josh AI</span>
+          <span className="sm:hidden">Josh AI</span>
         </button>
-      </div>
+      )}
 
+      {/* Drawer overlay */}
       {isOpen && (
         <div
           className="fixed inset-0 z-50 flex justify-end bg-black/50 backdrop-blur-[2px]"
-          role="dialog"
-          aria-modal="true"
-          aria-label="AI Event Planner Chatbot"
           onClick={() => onOpenChange(false)}
         >
-          <div
-            className="flex h-full w-full max-w-xl flex-col bg-card text-card-foreground shadow-2xl"
+          <aside
+            role="dialog"
+            aria-modal="true"
+            aria-label="Josh AI Event Planner"
             onClick={(e) => e.stopPropagation()}
+            className="flex h-[100dvh] w-full max-w-full flex-col border-l border-border bg-card text-card-foreground shadow-2xl sm:max-w-lg md:max-w-xl"
           >
-            <div className="flex items-center justify-between border-b border-border px-5 py-4">
-              <div className="flex items-center gap-3">
-                <span className="grid size-10 place-items-center rounded-full bg-[#FF6B35] text-white shadow-sm">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-border bg-gradient-to-r from-[#FF6B35]/10 to-[#EC4899]/10 px-4 py-3.5 sm:px-5 sm:py-4">
+              <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
+                <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-[#FF6B35] to-[#EC4899] text-white shadow-sm">
                   <Sparkles className="size-5" aria-hidden="true" />
-                </span>
-                <div>
-                  <h2 className="text-sm font-bold text-foreground">
-                    Josh — AI Event Planner Chatbot
-                  </h2>
-                  <p className="text-xs text-muted-foreground">
-                    Collects your details · Builds budget, checklist &amp; matches vendors
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h2 className="truncate text-sm font-bold text-foreground sm:text-base">
+                      Josh · AI Food &amp; Event Planner
+                    </h2>
+                    <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:text-emerald-300">
+                      <span className="size-1.5 rounded-full bg-emerald-500" />
+                      Live
+                    </span>
+                  </div>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {userLocationLabel
+                      ? `Local catalog · ${userLocationLabel}`
+                      : selectedCountry && selectedCountry !== 'All'
+                        ? `Local catalog · ${selectedCountry}`
+                        : 'Cakes, brownies, catering, decor & corporate boxes'}
                   </p>
                 </div>
               </div>
-              <button
-                type="button"
-                aria-label="Close AI planner"
-                onClick={() => onOpenChange(false)}
-                className="grid size-9 cursor-pointer place-items-center rounded-lg border border-border text-muted-foreground hover:bg-accent hover:text-foreground"
-              >
-                <X className="size-4" aria-hidden="true" />
-              </button>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleResetChat}
+                  aria-label="Reset conversation"
+                  title="New chat"
+                  className="grid size-8 cursor-pointer place-items-center rounded-lg border border-border text-muted-foreground hover:bg-accent hover:text-foreground"
+                >
+                  <RotateCcw className="size-3.5" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onOpenChange(false)}
+                  aria-label="Close Josh AI Planner"
+                  className="grid size-8 cursor-pointer place-items-center rounded-lg border border-border text-muted-foreground hover:bg-accent hover:text-foreground"
+                >
+                  <X className="size-4" aria-hidden="true" />
+                </button>
+              </div>
             </div>
 
-            <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto p-5">
-              {messages.map((m) => {
-                const matchedVendors = (m.plan?.matchedVendorIds ?? [])
+            {/* Messages */}
+            <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto p-4 sm:p-5">
+              {messages.map((msg) => {
+                const matchedVendors = (msg.recommendedVendorIds ?? [])
                   .map((id) => vendors.find((v) => v.id === id))
                   .filter((v): v is Vendor => Boolean(v));
 
                 return (
                   <div
-                    key={m.id}
-                    className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}
+                    key={msg.id}
+                    className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
                   >
                     <div
-                      className={`max-w-[90%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
-                        m.role === 'user'
-                          ? 'bg-brand text-brand-foreground'
-                          : 'border border-border bg-muted/70 text-foreground'
+                      className={`max-w-[92%] rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-line ${
+                        msg.role === 'user'
+                          ? 'rounded-br-sm bg-brand text-brand-foreground'
+                          : msg.isError
+                            ? 'rounded-bl-sm border border-destructive/30 bg-destructive/10 text-destructive'
+                            : 'rounded-bl-sm border border-border bg-muted/60 text-foreground'
                       }`}
                     >
-                      {m.text}
+                      {msg.role === 'assistant' ? renderFormattedReply(msg.text) : msg.text}
                     </div>
 
-                    {m.plan && (
-                      <div className="mt-3 w-full space-y-4 rounded-2xl border border-brand-border bg-background p-4 shadow-sm">
-                        <div className="flex items-start justify-between gap-3 border-b border-border pb-3">
-                          <div>
-                            <p className="inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide text-brand">
-                              <CalendarCheck2 className="size-3.5" aria-hidden="true" />
-                              Custom AI Event Plan
-                            </p>
-                            <h3 className="mt-0.5 text-base font-extrabold text-foreground">
-                              {m.plan.title || 'Your Celebration Blueprint'}
-                            </h3>
-                            <p className="mt-0.5 text-xs text-muted-foreground">
-                              {[m.plan.occasion, m.plan.location, m.plan.guestCount]
-                                .filter(Boolean)
-                                .join(' · ')}
-                            </p>
-                          </div>
-                          {m.plan.estimatedBudget && (
-                            <div className="text-right shrink-0">
-                              <p className="text-[10px] uppercase text-muted-foreground">Est. Budget</p>
-                              <p className="font-mono text-sm font-bold text-brand">
-                                {m.plan.estimatedBudget}
-                              </p>
-                            </div>
-                          )}
-                        </div>
+                    {/* Budget badge */}
+                    {msg.estimatedBudget && (
+                      <div className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-brand-border bg-brand-soft px-3 py-1 text-xs font-semibold text-brand-soft-foreground">
+                        <span>Estimated Budget:</span>
+                        <span className="font-mono font-bold">{msg.estimatedBudget}</span>
+                      </div>
+                    )}
 
-                        {m.plan.budgetSplit && m.plan.budgetSplit.length > 0 && (
-                          <div>
-                            <p className="text-xs font-bold text-foreground">Budget Breakdown</p>
-                            <div className="mt-2 space-y-1.5">
-                              {m.plan.budgetSplit.map((row, idx) => (
-                                <div
-                                  key={idx}
-                                  className="flex items-start justify-between gap-3 rounded-lg bg-muted/60 px-3 py-2 text-xs"
-                                >
-                                  <div>
-                                    <p className="font-semibold text-foreground">{row.category}</p>
-                                    <p className="text-muted-foreground">{row.notes}</p>
-                                  </div>
-                                  <span className="font-mono font-bold text-foreground shrink-0">
-                                    {row.amount}
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
+                    {/* Recommended clickable vendor cards */}
+                    {matchedVendors.length > 0 && (
+                      <div className="mt-3 w-full space-y-2">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          Verified Local Matches
+                        </p>
+                        {matchedVendors.map((v) => (
+                          <div
+                            key={v.id}
+                            className="flex flex-col gap-2 rounded-xl border border-border bg-background p-2.5 transition-all hover:border-brand hover:shadow-sm"
+                          >
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onSelectVendor(v);
+                                onOpenChange(false);
+                              }}
+                              className="flex w-full cursor-pointer items-center gap-3 text-left"
+                            >
+                              <img
+                                src={v.image}
+                                alt={v.name}
+                                loading="lazy"
+                                decoding="async"
+                                referrerPolicy="no-referrer"
+                                className="size-13 shrink-0 rounded-lg object-cover"
+                              />
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-bold text-foreground">
+                                  {v.name}
+                                </p>
+                                <p className="flex items-center gap-1 truncate text-xs text-muted-foreground">
+                                  <MapPin className="size-3 shrink-0 text-brand" aria-hidden="true" />
+                                  {v.area ? `${v.area}, ` : ''}
+                                  {v.city}, {v.country}
+                                </p>
+                                <p className="mt-0.5 truncate text-xs font-semibold text-brand">
+                                  {v.category} · From {formatMoney(v.startingPriceUsd, currency)}
+                                </p>
+                              </div>
+                              <ExternalLink
+                                className="size-4 shrink-0 text-muted-foreground"
+                                aria-hidden="true"
+                              />
+                            </button>
 
-                        {m.plan.menuAndDecorIdeas && m.plan.menuAndDecorIdeas.length > 0 && (
-                          <div>
-                            <p className="text-xs font-bold text-foreground">
-                              Recommended Menu, Live Counters &amp; Decor
-                            </p>
-                            <ul className="mt-1.5 space-y-1 text-xs text-muted-foreground">
-                              {m.plan.menuAndDecorIdeas.map((idea, idx) => (
-                                <li key={idx} className="flex items-start gap-1.5">
-                                  <Sparkles className="mt-0.5 size-3 shrink-0 text-brand" aria-hidden="true" />
-                                  <span>{idea}</span>
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-
-                        {m.plan.timelineChecklist && m.plan.timelineChecklist.length > 0 && (
-                          <div>
-                            <p className="text-xs font-bold text-foreground">Action Checklist</p>
-                            <ul className="mt-1.5 space-y-1 text-xs text-muted-foreground">
-                              {m.plan.timelineChecklist.map((step, idx) => (
-                                <li key={idx} className="flex items-start gap-1.5">
-                                  <CheckCircle2
-                                    className="mt-0.5 size-3.5 shrink-0 text-emerald-500"
-                                    aria-hidden="true"
-                                  />
-                                  <span>{step}</span>
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-
-                        {matchedVendors.length > 0 && (
-                          <div className="border-t border-border pt-3">
-                            <p className="text-xs font-bold text-foreground">
-                              Matched Verified Vendors ({matchedVendors.length})
-                            </p>
-                            <div className="mt-2 space-y-2">
-                              {matchedVendors.map((v) => (
-                                <div
-                                  key={v.id}
-                                  className="flex items-center gap-3 rounded-xl border border-border bg-card p-2.5"
-                                >
-                                  <img
-                                    src={v.image}
-                                    alt={v.name}
-                                    referrerPolicy="no-referrer"
-                                    className="size-12 shrink-0 rounded-lg object-cover"
-                                  />
-                                  <div className="min-w-0 flex-1">
-                                    <p className="truncate text-xs font-bold text-foreground">
-                                      {v.name}
-                                    </p>
-                                    <p className="truncate text-[11px] text-muted-foreground">
-                                      {v.category} · {v.city}, {v.country}
-                                    </p>
-                                    <p className="font-mono text-[11px] font-semibold text-brand">
-                                      From {formatMoney(v.startingPriceUsd, currency)} · {v.rating.toFixed(1)}★
-                                    </p>
-                                  </div>
-                                  <div className="flex items-center gap-1.5 shrink-0">
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        onOpenChange(false);
-                                        onSelectVendor(v);
-                                      }}
-                                      aria-label={`Open ${v.name} website`}
-                                      className="grid size-8 cursor-pointer place-items-center rounded-lg border border-border text-foreground hover:border-brand hover:text-brand"
-                                    >
-                                      <ExternalLink className="size-3.5" aria-hidden="true" />
-                                    </button>
-                                    <a
-                                      href={buildWhatsAppUrl(
-                                        v,
-                                        `Hi ${v.name}, Josh AI on FindMyBites matched you for my ${m.plan?.occasion || 'event'} (${m.plan?.guestCount || ''} in ${m.plan?.location || v.city}). Can you share availability & pricing?`
-                                      )}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      aria-label={`WhatsApp ${v.name}`}
-                                      className="grid size-8 place-items-center rounded-lg bg-[#25D366] text-white hover:bg-[#1ebe5d]"
-                                    >
-                                      <MessageCircle className="size-3.5" aria-hidden="true" />
-                                    </a>
-                                  </div>
-                                </div>
-                              ))}
+                            <div className="grid grid-cols-2 gap-1.5 border-t border-border/60 pt-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  onSelectVendor(v);
+                                  onOpenChange(false);
+                                }}
+                                className="inline-flex h-8 cursor-pointer items-center justify-center gap-1 rounded-lg border border-border bg-card px-2.5 text-[11px] font-bold text-foreground hover:border-brand hover:text-brand"
+                              >
+                                <Store className="size-3" aria-hidden="true" />
+                                View Menu
+                              </button>
+                              <a
+                                href={buildWhatsAppUrl(
+                                  v,
+                                  `Hi ${v.name}! Josh AI on FindMyBites recommended you for my celebration. Could you share availability & pricing?`
+                                )}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={() => onTrackWhatsAppClick?.(v.id)}
+                                className="inline-flex h-8 items-center justify-center gap-1 rounded-lg bg-[#25D366] px-2.5 text-[11px] font-bold text-white hover:bg-[#1ebe5d]"
+                              >
+                                <MessageCircle className="size-3" aria-hidden="true" />
+                                WhatsApp
+                              </a>
                             </div>
                           </div>
-                        )}
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Platform Quick Action CTA when relevant */}
+                    {msg.suggestedAction === 'box_and_bite' && onOpenBoxAndBite && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onOpenChange(false);
+                          onOpenBoxAndBite();
+                        }}
+                        className="mt-2.5 inline-flex cursor-pointer items-center gap-1.5 rounded-xl bg-[#38231E] px-3.5 py-2 text-xs font-bold text-[#FFF8EF] shadow-xs hover:bg-[#2A1915]"
+                      >
+                        <Briefcase className="size-3.5 text-[#C58B55]" aria-hidden="true" />
+                        Open BOX &amp; BITE Corporate Gifting
+                      </button>
+                    )}
+
+                    {msg.suggestedAction === 'list_business' && onOpenListBusiness && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onOpenChange(false);
+                          onOpenListBusiness();
+                        }}
+                        className="mt-2.5 inline-flex cursor-pointer items-center gap-1.5 rounded-xl bg-brand px-3.5 py-2 text-xs font-bold text-brand-foreground shadow-xs hover:bg-brand-hover"
+                      >
+                        <Store className="size-3.5" aria-hidden="true" />
+                        List Your Business Free (2 Mins)
+                      </button>
+                    )}
+
+                    {msg.suggestedAction === 'christmas_menu' && onJumpToChristmas && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onOpenChange(false);
+                          onJumpToChristmas();
+                        }}
+                        className="mt-2.5 inline-flex cursor-pointer items-center gap-1.5 rounded-xl bg-emerald-700 px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-800"
+                      >
+                        <Snowflake className="size-3.5 text-amber-200" aria-hidden="true" />
+                        Explore Christmas Specials &amp; Menu
+                      </button>
+                    )}
+
+                    {/* Actionable checklist */}
+                    {msg.checklist && msg.checklist.length > 0 && (
+                      <div className="mt-3 w-full rounded-xl border border-border bg-background/80 p-3">
+                        <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          Your Action Checklist
+                        </p>
+                        <ul className="space-y-1.5">
+                          {msg.checklist.map((step, idx) => (
+                            <li
+                              key={idx}
+                              className="flex items-start gap-2 text-xs text-foreground"
+                            >
+                              <CheckCircle2
+                                className="mt-0.5 size-3.5 shrink-0 text-emerald-500"
+                                aria-hidden="true"
+                              />
+                              <span>{step}</span>
+                            </li>
+                          ))}
+                        </ul>
                       </div>
                     )}
                   </div>
@@ -362,56 +559,59 @@ export function JoshPlannerDrawer({
               })}
 
               {loading && (
-                <div className="flex items-center gap-2 rounded-2xl border border-border bg-muted/60 px-4 py-3 text-xs text-muted-foreground w-fit">
+                <div className="flex items-center gap-2 rounded-xl border border-border bg-muted/50 px-3.5 py-2.5 text-xs text-muted-foreground">
                   <Loader2 className="size-4 animate-spin text-brand" aria-hidden="true" />
-                  Josh AI is crafting your event plan &amp; matching local vendors…
+                  <span>Josh is checking live menus, local bakers &amp; event packages…</span>
                 </div>
               )}
 
-              {errorMsg && (
-                <div className="flex items-start gap-2 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-600 dark:text-red-400">
-                  <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-                  <span>{errorMsg}</span>
-                </div>
-              )}
-
-              {!loading && lastQuickReplies.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 pt-1">
-                  {lastQuickReplies.map((q) => (
-                    <button
-                      key={q}
-                      type="button"
-                      onClick={() => sendMessage(q)}
-                      className="cursor-pointer rounded-full border border-border bg-background px-3 py-1.5 text-left text-xs font-medium text-muted-foreground transition-colors hover:border-brand hover:text-foreground"
-                    >
-                      {q}
-                    </button>
-                  ))}
+              {/* Quick suggestion chips on initial view */}
+              {messages.length <= 1 && !loading && (
+                <div className="space-y-2 pt-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Try asking Josh
+                  </p>
+                  <div className="flex flex-col gap-1.5">
+                    {quickPrompts.map((prompt) => (
+                      <button
+                        key={prompt}
+                        type="button"
+                        onClick={() => void sendMessage(prompt)}
+                        className="cursor-pointer rounded-xl border border-border bg-background px-3 py-2.5 text-left text-xs font-medium text-foreground transition-colors hover:border-brand hover:bg-brand-soft/60"
+                      >
+                        “{prompt}”
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
 
-            <form onSubmit={handleSubmit} className="border-t border-border p-4">
-              <div className="flex items-center gap-2 rounded-xl border border-border bg-background p-1.5">
+            {/* Input bar */}
+            <form
+              onSubmit={handleSubmit}
+              className="border-t border-border bg-background p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+            >
+              <div className="flex items-center gap-2">
                 <input
                   type="text"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
+                  placeholder="Ask for eggless cakes, brownies, catering, decor…"
                   disabled={loading}
-                  placeholder="e.g., 100-guest birthday in Dubai, budget AED 12,000, need cake & live counter…"
-                  className="flex-1 bg-transparent px-2.5 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-60"
+                  className="h-11 flex-1 rounded-xl border border-border bg-card px-3.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-brand focus:outline-none disabled:opacity-60"
                 />
                 <button
                   type="submit"
                   disabled={loading || !input.trim()}
-                  aria-label="Send message to AI planner"
-                  className="grid size-10 cursor-pointer place-items-center rounded-lg bg-[#FF6B35] text-white transition-colors hover:bg-[#e55926] disabled:opacity-50"
+                  aria-label="Send message to Josh AI"
+                  className="grid size-11 shrink-0 cursor-pointer place-items-center rounded-xl bg-brand text-brand-foreground shadow-sm transition-colors hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Send className="size-4" aria-hidden="true" />
                 </button>
               </div>
             </form>
-          </div>
+          </aside>
         </div>
       )}
     </>

@@ -287,6 +287,8 @@ export function ChristmasSpotlightSection({
                     <img
                       src={vendor.image}
                       alt={`${vendor.name} — Christmas & New Year special`}
+                      loading="lazy"
+                      decoding="async"
                       referrerPolicy="no-referrer"
                       className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
                     />
@@ -378,6 +380,8 @@ export function ChristmasSpotlightSection({
                             <img
                               src={vendor.logo}
                               alt={`${vendor.name} logo`}
+                              loading="lazy"
+                              decoding="async"
                               className="size-7 shrink-0 rounded-lg border border-white/30 object-cover"
                             />
                           )}

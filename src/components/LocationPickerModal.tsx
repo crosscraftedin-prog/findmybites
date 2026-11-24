@@ -129,7 +129,7 @@ export function LocationPickerModal({
       onClick={onClose}
     >
       <div
-        className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-2xl border border-border bg-card text-card-foreground shadow-2xl"
+        className="max-h-[90dvh] w-full max-w-xl overflow-y-auto rounded-2xl border border-border bg-card text-card-foreground shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-border px-6 py-4">
@@ -286,20 +286,22 @@ export function LocationPickerModal({
             </div>
           </div>
 
-          <div className="flex items-center justify-end gap-2.5 border-t border-border pt-4">
+          <div className="flex flex-col-reverse items-stretch justify-end gap-2.5 border-t border-border pt-4 sm:flex-row sm:items-center">
             <button
               type="button"
               onClick={onClose}
-              className="cursor-pointer rounded-xl border border-border px-4 py-2.5 text-xs font-semibold text-muted-foreground hover:bg-accent hover:text-foreground"
+              className="cursor-pointer rounded-xl border border-border px-4 py-2.5 text-center text-xs font-semibold text-muted-foreground hover:bg-accent hover:text-foreground"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl bg-brand px-5 py-2.5 text-xs font-bold text-brand-foreground shadow-sm hover:bg-brand-hover sm:text-sm"
+              className="inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-brand px-5 py-2.5 text-xs font-bold text-brand-foreground shadow-sm hover:bg-brand-hover sm:text-sm"
             >
-              <Navigation className="size-4" aria-hidden="true" />
-              Show Vendors in {customArea.trim() || selectedCity}, {activeStateObj.name}
+              <Navigation className="size-4 shrink-0" aria-hidden="true" />
+              <span className="truncate">
+                Show Vendors in {customArea.trim() || selectedCity}, {activeStateObj.name}
+              </span>
             </button>
           </div>
         </form>

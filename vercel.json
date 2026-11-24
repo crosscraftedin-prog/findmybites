@@ -1,43 +1,45 @@
 {
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "npm run build",
-  "outputDirectory": "dist",
   "headers": [
     {
-      "source": "/(.*)",
+      "source": "/sw.js",
       "headers": [
-        { "key": "X-Content-Type-Options", "value": "nosniff" },
-        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" }
+        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" },
+        { "key": "Service-Worker-Allowed", "value": "/" }
       ]
     },
     {
-      "source": "/(robots\\.txt|sitemap\\.xml|favicon\\.svg|og-cover\\.png|apple-touch-icon\\.png|pwa-.*\\.png)",
-      "headers": [
-        { "key": "Cache-Control", "value": "public, max-age=3600, s-maxage=86400" }
-      ]
-    },
-    {
-      "source": "/(sw\\.js|registerSW\\.js)",
-      "headers": [
-        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
-      ]
-    },
-    {
-      "source": "/manifest\\.webmanifest",
+      "source": "/manifest.webmanifest",
       "headers": [
         { "key": "Content-Type", "value": "application/manifest+json; charset=utf-8" },
         { "key": "Cache-Control", "value": "public, max-age=3600" }
+      ]
+    },
+    {
+      "source": "/(favicon\\.ico|favicon-32x32\\.png|apple-touch-icon\\.png|icons/.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=604800, immutable" }
       ]
     }
   ],
   "rewrites": [
     {
-      "source": "/api/db/:path*",
-      "destination": "/api/db?__subpath=:path*"
-    },
-    {
       "source": "/sitemap.xml",
       "destination": "/api/sitemap"
+    },
+    {
+      "source": "/api/db/:path*",
+      "destination": "/api/db?path=:path*"
+    },
+    {
+      "source": "/@:handle",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": ".*(googlebot|bingbot|yandex|baiduspider|duckduckbot|slurp|facebookexternalhit|facebot|whatsapp|twitterbot|linkedinbot|telegrambot|slackbot|discordbot|pinterest|applebot|embedly|quora|outbrain|rogerbot).*"
+        }
+      ],
+      "destination": "/api/seo?path=/@:handle"
     },
     {
       "source": "/:prefix(v|fmb|city|category)/:slug",
@@ -45,24 +47,24 @@
         {
           "type": "header",
           "key": "user-agent",
-          "value": ".*(Googlebot|Bingbot|WhatsApp|facebookexternalhit|Twitterbot|LinkedInBot|Slackbot|TelegramBot|Applebot|DuckDuckBot).*"
+          "value": ".*(googlebot|bingbot|yandex|baiduspider|duckduckbot|slurp|facebookexternalhit|facebot|whatsapp|twitterbot|linkedinbot|telegrambot|slackbot|discordbot|pinterest|applebot|embedly|quora|outbrain|rogerbot).*"
         }
       ],
-      "destination": "/api/seo?path=:prefix/:slug"
+      "destination": "/api/seo?path=/:prefix/:slug"
     },
     {
-      "source": "/:city((?!api|assets|claim|v|fmb|city|category)[a-z0-9-]+)/:category([a-z0-9-]+)",
+      "source": "/:city/:category",
       "has": [
         {
           "type": "header",
           "key": "user-agent",
-          "value": ".*(Googlebot|Bingbot|WhatsApp|facebookexternalhit|Twitterbot|LinkedInBot|Slackbot|TelegramBot|Applebot|DuckDuckBot).*"
+          "value": ".*(googlebot|bingbot|yandex|baiduspider|duckduckbot|slurp|facebookexternalhit|facebot|whatsapp|twitterbot|linkedinbot|telegrambot|slackbot|discordbot|pinterest|applebot|embedly|quora|outbrain|rogerbot).*"
         }
       ],
-      "destination": "/api/seo?path=:city/:category"
+      "destination": "/api/seo?path=/:city/:category"
     },
     {
-      "source": "/((?!api/|assets/|robots\\.txt|sitemap\\.xml|favicon\\.svg|og-cover\\.png|apple-touch-icon\\.png|pwa-.*\\.png|manifest\\.webmanifest|sw\\.js|registerSW\\.js|workbox-.*\\.js).*)",
+      "source": "/((?!api/|assets/|icons/|sw\\.js|manifest\\.webmanifest|robots\\.txt|sitemap\\.xml|favicon\\.ico|favicon-32x32\\.png|apple-touch-icon\\.png).*)",
       "destination": "/index.html"
     }
   ]

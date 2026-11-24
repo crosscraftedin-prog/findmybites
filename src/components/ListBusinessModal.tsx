@@ -71,6 +71,8 @@ interface ListBusinessModalProps {
   isOpen: boolean;
   initialPlanTier?: PlanTier;
   initialChristmasSpecial?: boolean;
+  defaultCountry?: Exclude<LaunchCountry, 'All'>;
+  existingSlugs?: string[];
   currency: CurrencyCode;
   user: User | null;
   onSignIn: () => Promise<void>;
@@ -138,6 +140,8 @@ export function ListBusinessModal({
   isOpen,
   initialPlanTier = 'free',
   initialChristmasSpecial = false,
+  defaultCountry = 'India',
+  existingSlugs = [],
   currency,
   user,
   onSignIn,
@@ -150,13 +154,15 @@ export function ListBusinessModal({
   const [marketplace, setMarketplace] = useState<'food' | 'party'>('food');
   const [name, setName] = useState('');
   const [category, setCategory] = useState<string>(FOOD_CATEGORIES[0]);
-  const [country, setCountry] = useState<Exclude<LaunchCountry, 'All'>>('India');
-  const [formCurrency, setFormCurrency] = useState<CurrencyCode>(currency || 'INR');
-  const [stateName, setStateName] = useState<string>(STATES_BY_COUNTRY.India[0].name);
-  const [city, setCity] = useState(STATES_BY_COUNTRY.India[0].cities[0]);
+  const [country, setCountry] = useState<Exclude<LaunchCountry, 'All'>>(defaultCountry);
+  const [formCurrency, setFormCurrency] = useState<CurrencyCode>(
+    COUNTRY_DEFAULT_CURRENCY[defaultCountry] || currency || 'INR'
+  );
+  const [stateName, setStateName] = useState<string>(STATES_BY_COUNTRY[defaultCountry][0].name);
+  const [city, setCity] = useState(STATES_BY_COUNTRY[defaultCountry][0].cities[0]);
   const [area, setArea] = useState('');
-  const [latInput, setLatInput] = useState<string>(String(STATES_BY_COUNTRY.India[0].lat));
-  const [lngInput, setLngInput] = useState<string>(String(STATES_BY_COUNTRY.India[0].lng));
+  const [latInput, setLatInput] = useState<string>(String(STATES_BY_COUNTRY[defaultCountry][0].lat));
+  const [lngInput, setLngInput] = useState<string>(String(STATES_BY_COUNTRY[defaultCountry][0].lng));
   const [mapsPaste, setMapsPaste] = useState('');
   const [detectingGps, setDetectingGps] = useState(false);
   const [gpsStatus, setGpsStatus] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
@@ -200,8 +206,18 @@ export function ListBusinessModal({
   useEffect(() => {
     if (isOpen) {
       setChristmasSpecial(initialChristmasSpecial);
+      if (!name.trim()) {
+        setCountry(defaultCountry);
+        const firstState = STATES_BY_COUNTRY[defaultCountry][0];
+        setStateName(firstState.name);
+        setCity(firstState.cities[0]);
+        setLatInput(String(firstState.lat));
+        setLngInput(String(firstState.lng));
+        setFormCurrency(COUNTRY_DEFAULT_CURRENCY[defaultCountry] || currency || 'INR');
+      }
     }
-  }, [initialChristmasSpecial, isOpen]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialChristmasSpecial, isOpen, defaultCountry]);
 
   useEffect(() => {
     setCategory(marketplace === 'food' ? FOOD_CATEGORIES[0] : PARTY_CATEGORIES[0]);
@@ -499,14 +515,45 @@ export function ListBusinessModal({
         ? parsedLng
         : (matchedCity?.lng ?? matchedState?.lng ?? fallback.lng);
 
-    const slug = `${name
+    const cleanNamePart = name
+      .trim()
+      .toLowerCase()
+      .replace(/&/g, 'and')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 48);
+    const cleanCityPart = city
       .trim()
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '')}-${city
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')}`;
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 28);
+    const baseNameSlug = cleanNamePart || `store-${Date.now().toString(36).slice(-5)}`;
+    const baseFullSlug =
+      cleanCityPart && !baseNameSlug.endsWith(`-${cleanCityPart}`)
+        ? `${baseNameSlug}-${cleanCityPart}`
+        : baseNameSlug;
+
+    const existingSlugSet = new Set(existingSlugs.map((s) => s.toLowerCase()));
+    let slug = baseFullSlug;
+    let suffix = 2;
+    while (existingSlugSet.has(slug.toLowerCase())) {
+      slug = `${baseFullSlug}-${suffix}`;
+      suffix += 1;
+    }
+
+    let bioHandle = baseNameSlug;
+    if (existingSlugSet.has(bioHandle.toLowerCase())) {
+      bioHandle = slug;
+    }
+
+    const trimmedMaps = mapsPaste.trim();
+    const googleMapsUrl =
+      /^https?:\/\/(www\.)?(google\.[a-z.]+\/maps|maps\.app\.goo\.gl|goo\.gl\/maps)/i.test(
+        trimmedMaps
+      )
+        ? trimmedMaps
+        : undefined;
 
     const coverImg = coverDataUrl || defaultCover;
     const digits =
@@ -545,6 +592,8 @@ export function ListBusinessModal({
     const newVendor: Vendor = {
       id: `custom-${Date.now()}`,
       slug,
+      bioHandle,
+      ...(googleMapsUrl ? { googleMapsUrl } : {}),
       name: name.trim(),
       marketplace,
       category,

@@ -82,6 +82,8 @@ export function VendorCard({
           <img
             src={vendor.image}
             alt={`${vendor.name} — ${vendor.category} in ${vendor.city}`}
+            loading="lazy"
+            decoding="async"
             referrerPolicy="no-referrer"
             onError={() => setImgFailed(true)}
             className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
@@ -168,7 +170,11 @@ export function VendorCard({
             {isMultiState && distanceKm > 60 ? (
               <>
                 <Globe2 className="size-3 text-emerald-400" aria-hidden="true" />
-                {vendor.allStatesCoverage ? 'Pan-India Delivery' : 'Delivers to Your Area'}
+                {vendor.allStatesCoverage
+                  ? vendor.country === 'India'
+                    ? 'Pan-India Delivery'
+                    : `All ${vendor.country} Delivery`
+                  : 'Delivers to Your Area'}
               </>
             ) : (
               <>
@@ -182,7 +188,11 @@ export function VendorCard({
         ) : coverageLabel ? (
           <div className="absolute bottom-3 left-3 inline-flex items-center gap-1 rounded-full bg-indigo-600/90 px-2.5 py-1 text-[11px] font-bold text-white backdrop-blur-md">
             <Globe2 className="size-3" aria-hidden="true" />
-            {vendor.allStatesCoverage ? 'Pan-India' : coverageLabel}
+            {vendor.allStatesCoverage
+              ? vendor.country === 'India'
+                ? 'Pan-India'
+                : `All ${vendor.country}`
+              : coverageLabel}
           </div>
         ) : null}
 
@@ -210,6 +220,8 @@ export function VendorCard({
                 <img
                   src={vendor.logo}
                   alt={`${vendor.name} logo`}
+                  loading="lazy"
+                  decoding="async"
                   className="size-7 shrink-0 rounded-lg border border-border object-cover"
                 />
               )}

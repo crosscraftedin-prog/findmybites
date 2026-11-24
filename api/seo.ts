@@ -64,6 +64,8 @@ interface VendorRecord {
   seoTitle?: string;
   seoDescription?: string;
   seoKeywords?: string;
+  googleMapsUrl?: string;
+  instagramUrl?: string;
   products: Array<{ name: string; description: string; priceUsd: number }>;
 }
 
@@ -113,6 +115,14 @@ function parseSupabaseVendor(row: Record<string, unknown>): VendorRecord | null 
     seoKeywords:
       typeof row.seo_keywords === 'string' && row.seo_keywords.trim()
         ? row.seo_keywords.trim()
+        : undefined,
+    googleMapsUrl:
+      typeof row.google_maps_url === 'string' && row.google_maps_url.trim()
+        ? row.google_maps_url.trim()
+        : undefined,
+    instagramUrl:
+      typeof row.instagram_url === 'string' && row.instagram_url.trim()
+        ? row.instagram_url.trim()
         : undefined,
     products,
   };
@@ -244,18 +254,23 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.setHeader('Cache-Control', 'public, s-maxage=900, stale-while-revalidate=3600');
 
-  // Case 1: Vendor Storefront (/v/:slug) or Bio-Link (/fmb/:handle)
-  if (segments.length === 2 && (segments[0] === 'v' || segments[0] === 'fmb')) {
-    const key = segments[1].replace(/[^a-z0-9-]/g, '');
-    const fieldPath = segments[0] === 'fmb' ? 'bioHandle' : 'slug';
+  // Case 1: Vendor Storefront (/v/:slug), Bio-Link (/fmb/:handle), or Short Handle (/@:handle)
+  const isAtHandle = segments.length === 1 && segments[0].startsWith('@') && segments[0].length > 1;
+  if (isAtHandle || (segments.length === 2 && (segments[0] === 'v' || segments[0] === 'fmb'))) {
+    const rawKey = isAtHandle ? segments[0].slice(1) : segments[1];
+    const key = rawKey.replace(/[^a-z0-9-]/g, '');
+    const isBioMode = isAtHandle || segments[0] === 'fmb';
+    const fieldPath = isBioMode ? 'bioHandle' : 'slug';
     let matches = await queryActiveVendors({ fieldPath, value: key }, 2);
-    if (matches.length === 0 && segments[0] === 'fmb') {
+    if (matches.length === 0 && isBioMode) {
       matches = await queryActiveVendors({ fieldPath: 'slug', value: key }, 2);
     }
     if (matches.length === 0 && key) {
-      const allActive = await queryActiveVendors(undefined, 100);
+      const allActive = await queryActiveVendors(undefined, 150);
       const aliasMatch = allActive.find(
         (v) =>
+          v.bioHandle.toLowerCase() === key ||
+          v.slug.toLowerCase() === key ||
           v.slug.toLowerCase().startsWith(`${key}-`) ||
           v.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') === key
       );
@@ -308,6 +323,7 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
             image: ogImage,
             telephone: vendor.whatsappNumber ? `+${vendor.whatsappNumber}` : undefined,
             priceRange: vendor.priceTier,
+            sameAs: [vendor.googleMapsUrl, vendor.instagramUrl].filter(Boolean),
             geo: {
               '@type': 'GeoCoordinates',
               latitude: vendor.lat,
@@ -390,12 +406,23 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
     ? `${catLabel.toLowerCase()} in ${cityLabel.toLowerCase()}, best ${catLabel.toLowerCase()} ${cityLabel.toLowerCase()}, FindMyBites`
     : `${catLabel.toLowerCase()} near me, FindMyBites, PimpMyParty`;
 
-  const activeVendors = await queryActiveVendors(undefined, 60);
+  const isBakerySpecialty =
+    /^(cakes-near-me|birthday-cakes|eggless-cakes|brownies-near-me|custom-cakes|wedding-cakes|home-bakers|cupcakes-and-desserts)$/.test(
+      catSlug
+    );
+  const activeVendors = await queryActiveVendors(undefined, 80);
   const matching = activeVendors.filter((v) => {
-    const cityOk = !cityLabel || v.city.toLowerCase().includes(cityLabel.toLowerCase()) || v.state.toLowerCase().includes(cityLabel.toLowerCase());
+    const cityOk =
+      !cityLabel ||
+      v.city.toLowerCase().includes(cityLabel.toLowerCase()) ||
+      v.state.toLowerCase().includes(cityLabel.toLowerCase()) ||
+      v.country.toLowerCase().includes(cityLabel.toLowerCase());
     const catOk =
       !catSlug ||
       isChristmas ||
+      (isBakerySpecialty &&
+        (v.category.toLowerCase().includes('baker') ||
+          v.category.toLowerCase().includes('dessert'))) ||
       v.category.toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]+/g, '-').includes(catSlug);
     return cityOk && catOk;
   });
