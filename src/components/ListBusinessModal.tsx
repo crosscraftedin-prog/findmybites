@@ -1528,10 +1528,10 @@ export function ListBusinessModal({
                 <Cloud className="mt-0.5 size-4 shrink-0 text-brand" aria-hidden="true" />
                 <div>
                   <p className="font-bold text-foreground">
-                    Sign in with Google to save your storefront to the live cloud
+                    Sign in or create a free account to save your storefront to the live cloud
                   </p>
                   <p className="mt-0.5 text-muted-foreground">
-                    So customers on any device can find you and you can edit products anytime.
+                    Works with Google, Email, or Phone + Password so you can edit products anytime.
                   </p>
                 </div>
               </div>
@@ -1541,7 +1541,7 @@ export function ListBusinessModal({
                 className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-brand px-4 py-2 text-xs font-bold text-brand-foreground hover:bg-brand-hover whitespace-nowrap"
               >
                 <LogIn className="size-3.5" aria-hidden="true" />
-                Sign in with Google
+                Sign In / Sign Up
               </button>
             </div>
           ) : (
@@ -1578,7 +1578,7 @@ export function ListBusinessModal({
                 {submitting
                   ? 'Publishing to Cloud…'
                   : !user
-                    ? 'Sign in with Google & Publish'
+                    ? 'Sign In & Publish'
                     : isPaidPlan
                       ? `Activate ${selectedPlanMeta.name} & Publish`
                       : 'Publish Free Listing'}

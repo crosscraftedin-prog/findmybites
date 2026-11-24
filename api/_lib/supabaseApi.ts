@@ -1382,21 +1382,34 @@ export function createSupabaseApiRouter(): MicroRouter {
       }
 
       const nowIso = new Date().toISOString();
-      const { error: insErr } = await supabase.from('user_profiles').insert({
-        uid: user.uid,
-        display_name: clampStr(
-          req.body?.displayName || user.name || user.email?.split('@')[0] || 'Member',
-          1,
-          100,
-          'Member'
-        ),
-        email: clampStr(user.email || 'user@example.com', 3, 160, 'user@example.com'),
-        saved_vendor_ids: fallbackSaved,
-        created_at: nowIso,
-        updated_at: nowIso,
+      const { error: upsertErr } = await supabase.from('user_profiles').upsert(
+        {
+          uid: user.uid,
+          display_name: clampStr(
+            req.body?.displayName || user.name || user.email?.split('@')[0] || 'Member',
+            1,
+            100,
+            'Member'
+          ),
+          email: clampStr(user.email || 'user@example.com', 3, 160, 'user@example.com'),
+          saved_vendor_ids: fallbackSaved,
+          created_at: nowIso,
+          updated_at: nowIso,
+        },
+        { onConflict: 'uid', ignoreDuplicates: true }
+      );
+      if (upsertErr) throw new Error(upsertErr.message);
+
+      const { data: confirmed } = await supabase
+        .from('user_profiles')
+        .select('saved_vendor_ids')
+        .eq('uid', user.uid)
+        .maybeSingle();
+      res.json({
+        savedVendorIds: Array.isArray(confirmed?.saved_vendor_ids)
+          ? confirmed.saved_vendor_ids
+          : fallbackSaved,
       });
-      if (insErr) throw new Error(insErr.message);
-      res.json({ savedVendorIds: fallbackSaved });
     } catch (err) {
       handleApiError(res, err, 'Failed to sync user profile.');
     }

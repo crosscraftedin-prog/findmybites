@@ -93,7 +93,7 @@ import {
   vendorCoversLocationQuery,
   vendorCoversState,
 } from './data/vendors';
-import { ADMIN_EMAIL, auth, signInWithGoogle, signOutUser } from './firebase';
+import { ADMIN_EMAIL, auth, formatUserDisplayLabel, signOutUser } from './firebase';
 import { useSeoMeta } from './hooks/useSeoMeta';
 import {
   AdminReviewRecord,
@@ -1430,19 +1430,9 @@ export default function App() {
   };
 
   const handleSignIn = async () => {
-    try {
-      const user = await signInWithGoogle();
-      setNotice(`Signed in as ${user.displayName || user.email}. Cloud sync is active!`);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Sign-in cancelled.';
-      if (msg.includes('unauthorized-domain')) {
-        setNotice(
-          `Add "${window.location.hostname}" in Firebase Console → Authentication → Settings → Authorized domains to enable Google Sign-In on this domain.`
-        );
-      } else if (!msg.includes('popup-closed-by-user')) {
-        setNotice('Could not complete Google Sign-In. Please allow popups and try again.');
-      }
-    }
+    setClaimHintSlug(null);
+    setClaimModalTab('login');
+    setClaimModalOpen(true);
   };
 
   const handleSignOut = async () => {
@@ -3484,7 +3474,7 @@ export default function App() {
         }}
         onLoginSuccess={(loggedInUser) => {
           setNotice(
-            `Signed in as ${loggedInUser.displayName || loggedInUser.email}. Cloud sync is active!`
+            `Signed in as ${formatUserDisplayLabel(loggedInUser)}. Cloud sync is active!`
           );
         }}
       />

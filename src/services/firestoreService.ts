@@ -304,6 +304,8 @@ export async function ensureUserProfile(
   const res = await apiFetch<{ savedVendorIds: string[] }>('/users/ensure', {
     method: 'POST',
     requireAuth: true,
+    authUser: user,
+    forceRefreshToken: true,
     body: {
       displayName: user.displayName || user.email?.split('@')[0] || 'Member',
       fallbackSavedIds,

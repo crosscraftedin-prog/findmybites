@@ -9,10 +9,12 @@ import {
   Loader2,
   Lock,
   LogIn,
+  Mail,
   Phone,
   ShieldCheck,
   Sparkles,
   Store,
+  UserPlus,
   X,
 } from 'lucide-react';
 import {
@@ -22,14 +24,19 @@ import {
   normalizePhoneDigits,
 } from '../data/vendors';
 import {
+  formatUserDisplayLabel,
   mapAuthErrorMessage,
   registerVendorWithPhonePassword,
+  registerWithEmailPassword,
+  sendAccountPasswordReset,
   signInVendorWithPhonePassword,
+  signInWithEmailPassword,
   signInWithGoogle,
 } from '../firebase';
 import { ensureUserProfile, lookupStoreClaim, redeemStoreClaim } from '../services/firestoreService';
 
-export type ClaimModalInitialTab = 'claim' | 'login';
+export type ClaimModalInitialTab = 'claim' | 'login' | 'signup';
+type AuthMethod = 'phone' | 'email';
 
 interface ClaimStoreModalProps {
   open: boolean;
@@ -63,7 +70,7 @@ export function ClaimStoreModal({
 }: ClaimStoreModalProps) {
   const [tab, setTab] = useState<ClaimModalInitialTab>(initialTab);
 
-  // Claim Step 1: Verify Phone + Passcode
+  // Claim Step 1: Verify Phone + Secret Key
   const [dialCode, setDialCode] = useState('91');
   const [phoneInput, setPhoneInput] = useState('');
   const [passcodeInput, setPasscodeInput] = useState('');
@@ -81,11 +88,27 @@ export function ClaimStoreModal({
   const [showPassword, setShowPassword] = useState(false);
   const [claiming, setClaiming] = useState(false);
 
-  // Vendor Login Tab (Phone + Password or Google)
+  // Sign In Tab (Google, Email + Password, or Phone + Password)
+  const [loginMethod, setLoginMethod] = useState<AuthMethod>('phone');
   const [loginDialCode, setLoginDialCode] = useState('91');
   const [loginPhone, setLoginPhone] = useState('');
+  const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [signingIn, setSigningIn] = useState(false);
+  const [sendingReset, setSendingReset] = useState(false);
+  const [resetMessage, setResetMessage] = useState<string | null>(null);
+
+  // Sign Up Tab (Google, Email + Password, or Phone + Password)
+  const [signupMethod, setSignupMethod] = useState<AuthMethod>('email');
+  const [signupName, setSignupName] = useState('');
+  const [signupEmail, setSignupEmail] = useState('');
+  const [signupDialCode, setSignupDialCode] = useState('91');
+  const [signupPhone, setSignupPhone] = useState('');
+  const [signupPassword, setSignupPassword] = useState('');
+  const [signupConfirmPassword, setSignupConfirmPassword] = useState('');
+  const [showSignupPassword, setShowSignupPassword] = useState(false);
+  const [signingUp, setSigningUp] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
 
@@ -93,6 +116,15 @@ export function ClaimStoreModal({
     if (open) {
       setTab(initialTab);
       setError(null);
+      setResetMessage(null);
+    } else {
+      // Clear sensitive password fields whenever modal closes
+      setNewPassword('');
+      setConfirmPassword('');
+      setLoginPassword('');
+      setSignupPassword('');
+      setSignupConfirmPassword('');
+      setResetMessage(null);
     }
   }, [open, initialTab]);
 
@@ -125,7 +157,7 @@ export function ClaimStoreModal({
       return;
     }
     if (cleanPass.length < 6) {
-      setError('Please enter the full passcode sent to you on WhatsApp.');
+      setError('Please enter the 6-character secret key sent to you on WhatsApp.');
       return;
     }
 
@@ -137,7 +169,12 @@ export function ClaimStoreModal({
       if (strippedPrefix && strippedPrefix !== barePass && strippedPrefix.length >= 6) {
         passcodeCandidates.push(strippedPrefix);
       }
-      if (!barePass.startsWith('CAKE') && !barePass.startsWith('FMB') && barePass.length >= 6 && barePass.length <= 10) {
+      if (
+        !barePass.startsWith('CAKE') &&
+        !barePass.startsWith('FMB') &&
+        barePass.length >= 6 &&
+        barePass.length <= 10
+      ) {
         passcodeCandidates.push(`CAKE-${barePass}`, `FMB-${barePass}`);
       }
       const phoneCandidates: string[] = [fullPhone];
@@ -165,12 +202,12 @@ export function ClaimStoreModal({
       }
       if (result.claim.status === 'claimed') {
         setError(
-          `This storefront (${result.claim.vendorName}) has already been claimed! Switch to the "Sign In / Vendor Login" tab to sign in with your phone & password.`
+          `This storefront (${result.claim.vendorName}) has already been claimed! Switch to the "Sign In" tab to sign in with your phone & password.`
         );
         return;
       }
       if (result.claim.status === 'revoked') {
-        setError('This passcode has expired or was replaced. Ask FindMyBites admin for your latest passcode.');
+        setError('This secret key has expired or was replaced. Ask FindMyBites admin for your latest key.');
         return;
       }
       setVerifiedTicket({
@@ -180,7 +217,7 @@ export function ClaimStoreModal({
       });
       setOwnerName(result.claim.vendorName);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not verify passcode. Please try again.');
+      setError(err instanceof Error ? err.message : 'Could not verify secret key. Please try again.');
     } finally {
       setVerifying(false);
     }
@@ -214,7 +251,7 @@ export function ClaimStoreModal({
           typeof regErr === 'object' && regErr !== null && 'code' in regErr
             ? String((regErr as { code?: unknown }).code || '')
             : '';
-        // If baker already created an account with this phone earlier, sign in with that password and claim!
+        // If vendor already created an account with this phone earlier, sign in with that password and claim!
         if (code === 'auth/email-already-in-use') {
           user = await signInVendorWithPhonePassword(verifiedTicket.fullPhone, newPassword);
         } else {
@@ -285,22 +322,58 @@ export function ClaimStoreModal({
     }
   };
 
-  const handlePhonePasswordSignIn = async (e: FormEvent) => {
+  const handleCredentialsSignIn = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
-    const fullPhone = combinePhone(loginDialCode, loginPhone);
-    if (fullPhone.length < 8) {
-      setError('Enter your registered phone number with country code.');
-      return;
-    }
+    setResetMessage(null);
+
     if (!loginPassword) {
       setError('Please enter your password.');
       return;
     }
+
+    if (loginMethod === 'email') {
+      const cleanEmail = loginEmail.trim().toLowerCase();
+      if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+        setError('Please enter a valid email address.');
+        return;
+      }
+      setSigningIn(true);
+      try {
+        const user = await signInWithEmailPassword(cleanEmail, loginPassword);
+        void ensureUserProfile(user, []).catch(() => {});
+        onLoginSuccess(user);
+        setLoginPassword('');
+        onClose();
+      } catch (err) {
+        setError(mapAuthErrorMessage(err));
+      } finally {
+        setSigningIn(false);
+      }
+      return;
+    }
+
+    const fullPhone = combinePhone(loginDialCode, loginPhone);
+    const rawStripped = normalizePhoneDigits(loginPhone).replace(/^0+/, '');
+    if (fullPhone.length < 8) {
+      setError('Enter your registered phone number with country code.');
+      return;
+    }
     setSigningIn(true);
     try {
-      const user = await signInVendorWithPhonePassword(fullPhone, loginPassword);
+      let user: User;
+      try {
+        user = await signInVendorWithPhonePassword(fullPhone, loginPassword);
+      } catch (firstErr) {
+        if (rawStripped && rawStripped !== fullPhone && rawStripped.length >= 7) {
+          user = await signInVendorWithPhonePassword(rawStripped, loginPassword);
+        } else {
+          throw firstErr;
+        }
+      }
+      void ensureUserProfile(user, []).catch(() => {});
       onLoginSuccess(user);
+      setLoginPassword('');
       onClose();
     } catch (err) {
       setError(mapAuthErrorMessage(err));
@@ -309,11 +382,94 @@ export function ClaimStoreModal({
     }
   };
 
+  const handleForgotPassword = async () => {
+    setError(null);
+    setResetMessage(null);
+    const cleanEmail = loginEmail.trim().toLowerCase();
+    if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      setError('Enter your registered email address above first, then click Forgot password.');
+      return;
+    }
+    setSendingReset(true);
+    try {
+      await sendAccountPasswordReset(cleanEmail);
+      setResetMessage(
+        `Password reset link sent to ${cleanEmail}. Check your inbox (and spam folder) to set a new password.`
+      );
+    } catch (err) {
+      setError(mapAuthErrorMessage(err));
+    } finally {
+      setSendingReset(false);
+    }
+  };
+
+  const handleSignUp = async (e: FormEvent) => {
+    e.preventDefault();
+    setError(null);
+
+    const trimmedName = signupName.trim();
+    if (trimmedName.length < 2) {
+      setError('Please enter your name or business name.');
+      return;
+    }
+    if (signupPassword.length < 6) {
+      setError('Password must be at least 6 characters long.');
+      return;
+    }
+    if (signupPassword !== signupConfirmPassword) {
+      setError('Passwords do not match. Please re-enter.');
+      return;
+    }
+
+    if (signupMethod === 'email') {
+      const cleanEmail = signupEmail.trim().toLowerCase();
+      if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+        setError('Please enter a valid email address.');
+        return;
+      }
+      setSigningUp(true);
+      try {
+        const user = await registerWithEmailPassword(cleanEmail, signupPassword, trimmedName);
+        void ensureUserProfile(user, []).catch(() => {});
+        onLoginSuccess(user);
+        setSignupPassword('');
+        setSignupConfirmPassword('');
+        onClose();
+      } catch (err) {
+        setError(mapAuthErrorMessage(err));
+      } finally {
+        setSigningUp(false);
+      }
+      return;
+    }
+
+    const fullPhone = combinePhone(signupDialCode, signupPhone);
+    if (fullPhone.length < 8) {
+      setError('Please enter a valid phone number (select country code + mobile digits).');
+      return;
+    }
+    setSigningUp(true);
+    try {
+      const user = await registerVendorWithPhonePassword(fullPhone, signupPassword, trimmedName);
+      void ensureUserProfile(user, []).catch(() => {});
+      onLoginSuccess(user);
+      setSignupPassword('');
+      setSignupConfirmPassword('');
+      onClose();
+    } catch (err) {
+      setError(mapAuthErrorMessage(err));
+    } finally {
+      setSigningUp(false);
+    }
+  };
+
   const handleGoogleSignIn = async () => {
     setError(null);
+    setResetMessage(null);
     setSigningIn(true);
     try {
       const user = await signInWithGoogle();
+      void ensureUserProfile(user, []).catch(() => {});
       onLoginSuccess(user);
       onClose();
     } catch (err) {
@@ -328,27 +484,39 @@ export function ClaimStoreModal({
       className="fixed inset-0 z-[85] flex items-center justify-center bg-neutral-950/75 p-3 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
-      aria-label="Claim Your Store or Vendor Login"
+      aria-label="Sign In, Create Account, or Claim Store"
+      onClick={onClose}
     >
-      <div className="relative flex max-h-[92dvh] w-full max-w-md flex-col overflow-hidden rounded-3xl border border-border bg-background shadow-2xl">
+      <div
+        className="relative flex max-h-[92dvh] w-full max-w-md flex-col overflow-hidden rounded-3xl border border-border bg-background shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="flex shrink-0 items-center justify-between border-b border-border bg-gradient-to-r from-brand/15 via-amber-500/10 to-background px-5 py-4">
           <div className="flex items-center gap-2.5">
             <span className="flex size-9 items-center justify-center rounded-xl bg-brand text-brand-foreground shadow-sm">
               {tab === 'claim' ? (
                 <KeyRound className="size-4" aria-hidden="true" />
+              ) : tab === 'signup' ? (
+                <UserPlus className="size-4" aria-hidden="true" />
               ) : (
                 <LogIn className="size-4" aria-hidden="true" />
               )}
             </span>
             <div>
               <h2 className="text-base font-extrabold text-foreground">
-                {tab === 'claim' ? 'Claim Your Bakery Store' : 'Sign In to FindMyBites'}
+                {tab === 'claim'
+                  ? 'Claim Your Storefront'
+                  : tab === 'signup'
+                    ? 'Create Free Account'
+                    : 'Sign In to FindMyBites'}
               </h2>
               <p className="text-[11px] text-muted-foreground">
                 {tab === 'claim'
-                  ? 'Enter your WhatsApp passcode & set your password'
-                  : 'Phone + Password or Google account'}
+                  ? 'Enter your WhatsApp secret key & set your password'
+                  : tab === 'signup'
+                    ? 'Google, Email, or Phone + Password — takes 10 seconds'
+                    : 'Google, Phone + Password, or Email + Password'}
               </p>
             </div>
           </div>
@@ -363,37 +531,55 @@ export function ClaimStoreModal({
           </button>
         </div>
 
-        {/* Mode Switcher */}
-        <div className="grid shrink-0 grid-cols-2 gap-1 border-b border-border bg-muted/40 p-2">
-          <button
-            type="button"
-            onClick={() => {
-              setTab('claim');
-              setError(null);
-            }}
-            className={`inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-bold transition-colors ${
-              tab === 'claim'
-                ? 'bg-background text-foreground shadow-xs ring-1 ring-border'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            <KeyRound className="size-3.5 text-brand" />
-            Claim Store (Passcode)
-          </button>
+        {/* 3-Tab Mode Switcher */}
+        <div className="grid shrink-0 grid-cols-3 gap-1 border-b border-border bg-muted/40 p-2">
           <button
             type="button"
             onClick={() => {
               setTab('login');
               setError(null);
+              setResetMessage(null);
             }}
-            className={`inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-bold transition-colors ${
+            className={`inline-flex cursor-pointer items-center justify-center gap-1 rounded-xl py-2 text-xs font-bold transition-colors ${
               tab === 'login'
                 ? 'bg-background text-foreground shadow-xs ring-1 ring-border'
                 : 'text-muted-foreground hover:text-foreground'
             }`}
           >
             <LogIn className="size-3.5 text-brand" />
-            Sign In / Vendor Login
+            Sign In
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setTab('signup');
+              setError(null);
+              setResetMessage(null);
+            }}
+            className={`inline-flex cursor-pointer items-center justify-center gap-1 rounded-xl py-2 text-xs font-bold transition-colors ${
+              tab === 'signup'
+                ? 'bg-background text-foreground shadow-xs ring-1 ring-border'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <UserPlus className="size-3.5 text-brand" />
+            Sign Up
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setTab('claim');
+              setError(null);
+              setResetMessage(null);
+            }}
+            className={`inline-flex cursor-pointer items-center justify-center gap-1 rounded-xl py-2 text-xs font-bold transition-colors ${
+              tab === 'claim'
+                ? 'bg-background text-foreground shadow-xs ring-1 ring-border'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <KeyRound className="size-3.5 text-brand" />
+            Claim Store
           </button>
         </div>
 
@@ -404,9 +590,15 @@ export function ClaimStoreModal({
             </div>
           )}
 
+          {resetMessage && (
+            <div className="mb-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs font-semibold leading-relaxed text-emerald-800 dark:text-emerald-200">
+              {resetMessage}
+            </div>
+          )}
+
           {/* TAB 1: CLAIM STORE */}
-          {tab === 'claim' && (
-            !verifiedTicket ? (
+          {tab === 'claim' &&
+            (!verifiedTicket ? (
               <form onSubmit={(e) => void handleVerifyPasscode(e)} className="space-y-4">
                 {hintVendorName && (
                   <div className="flex items-center gap-2.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3">
@@ -416,7 +608,7 @@ export function ClaimStoreModal({
                         Claiming {hintVendorName}
                       </p>
                       <p className="text-muted-foreground">
-                        Enter your phone number &amp; secret passcode from WhatsApp to unlock ownership.
+                        Enter your phone number &amp; secret key from WhatsApp to unlock ownership.
                       </p>
                     </div>
                   </div>
@@ -471,7 +663,7 @@ export function ClaimStoreModal({
 
                 <div>
                   <label className="mb-1.5 block text-xs font-bold text-foreground">
-                    2. Secret Passcode (from FindMyBites)
+                    2. Secret Key (from FindMyBites)
                   </label>
                   <div className="relative">
                     <KeyRound className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -489,7 +681,8 @@ export function ClaimStoreModal({
                     />
                   </div>
                   <p className="mt-1 text-[11px] text-muted-foreground">
-                    Enter the 6-character secret key sent on WhatsApp (letters &amp; numbers, e.g. <span className="font-mono font-bold">7K4M9P</span>).
+                    Enter the 6-character secret key sent on WhatsApp (letters &amp; numbers, e.g.{' '}
+                    <span className="font-mono font-bold">7K4M9P</span>).
                   </p>
                 </div>
 
@@ -502,7 +695,7 @@ export function ClaimStoreModal({
                     <Loader2 className="size-4 animate-spin" />
                   ) : (
                     <>
-                      Verify Passcode
+                      Verify Secret Key
                       <ArrowRight className="size-4" />
                     </>
                   )}
@@ -516,7 +709,7 @@ export function ClaimStoreModal({
                     <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-emerald-600 dark:text-emerald-400" />
                     <div className="text-xs">
                       <p className="font-extrabold text-emerald-900 dark:text-emerald-200">
-                        Passcode Verified! Ready to Claim:
+                        Secret Key Verified! Ready to Claim:
                       </p>
                       <p className="mt-0.5 text-sm font-black text-foreground">
                         {verifiedTicket.claim.vendorName}
@@ -538,7 +731,7 @@ export function ClaimStoreModal({
                       required
                       value={ownerName}
                       onChange={(e) => setOwnerName(e.target.value)}
-                      placeholder="Your name or bakery name"
+                      placeholder="Your name or business name"
                       className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground focus:border-brand focus:outline-none"
                     />
                   </div>
@@ -553,6 +746,7 @@ export function ClaimStoreModal({
                         type={showPassword ? 'text' : 'password'}
                         required
                         minLength={6}
+                        autoComplete="new-password"
                         value={newPassword}
                         onChange={(e) => setNewPassword(e.target.value)}
                         placeholder="Create a strong password"
@@ -577,6 +771,7 @@ export function ClaimStoreModal({
                       type={showPassword ? 'text' : 'password'}
                       required
                       minLength={6}
+                      autoComplete="new-password"
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
                       placeholder="Re-enter your password"
@@ -623,7 +818,7 @@ export function ClaimStoreModal({
                     className="inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-border bg-card py-2.5 text-xs font-bold text-foreground hover:border-brand disabled:opacity-50"
                   >
                     <ShieldCheck className="size-4 text-emerald-600" />
-                    Claim into Signed-In Account ({currentUser.displayName || currentUser.email})
+                    Claim into Signed-In Account ({formatUserDisplayLabel(currentUser)})
                   </button>
                 ) : (
                   <button
@@ -645,15 +840,22 @@ export function ClaimStoreModal({
                   }}
                   className="w-full cursor-pointer text-center text-xs font-semibold text-muted-foreground hover:text-foreground"
                 >
-                  ← Use a different phone or passcode
+                  ← Use a different phone or secret key
                 </button>
               </div>
-            )
-          )}
+            ))}
 
-          {/* TAB 2: SIGN IN (GOOGLE OR PHONE + PASSWORD) */}
+          {/* TAB 2: SIGN IN (GOOGLE, PHONE + PASSWORD, OR EMAIL + PASSWORD) */}
           {tab === 'login' && (
             <div className="space-y-4">
+              {isInAppBrowser && (
+                <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] leading-relaxed text-amber-900 dark:text-amber-200">
+                  <strong>Opened inside WhatsApp / Instagram?</strong> Sign in with{' '}
+                  <strong>Phone</strong> or <strong>Email + Password</strong> below — it works
+                  directly inside this browser without popups.
+                </p>
+              )}
+
               <button
                 type="button"
                 disabled={signingIn}
@@ -674,52 +876,149 @@ export function ClaimStoreModal({
                 </div>
                 <div className="relative flex justify-center text-[10px] font-bold uppercase tracking-wider">
                   <span className="bg-background px-2 text-muted-foreground">
-                    or claimed baker login
+                    or sign in with password
                   </span>
                 </div>
               </div>
 
-              <form onSubmit={(e) => void handlePhonePasswordSignIn(e)} className="space-y-3">
-                <div>
-                  <label className="mb-1 block text-xs font-bold text-foreground">
-                    Registered Phone Number
-                  </label>
-                  <div className="flex gap-1.5">
-                    <div className="relative w-20">
-                      <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 font-mono text-xs font-bold text-muted-foreground">
-                        +
-                      </span>
+              {/* Phone vs Email Method Switcher */}
+              <div className="grid grid-cols-2 gap-1 rounded-xl border border-border bg-muted/40 p-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLoginMethod('phone');
+                    setError(null);
+                    setResetMessage(null);
+                  }}
+                  className={`inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-bold transition-colors ${
+                    loginMethod === 'phone'
+                      ? 'bg-background text-foreground shadow-xs'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <Phone className="size-3.5 text-brand" />
+                  Phone Number
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLoginMethod('email');
+                    setError(null);
+                    setResetMessage(null);
+                  }}
+                  className={`inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-bold transition-colors ${
+                    loginMethod === 'email'
+                      ? 'bg-background text-foreground shadow-xs'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <Mail className="size-3.5 text-brand" />
+                  Email Address
+                </button>
+              </div>
+
+              <form onSubmit={(e) => void handleCredentialsSignIn(e)} className="space-y-3">
+                {loginMethod === 'phone' ? (
+                  <div>
+                    <label className="mb-1 block text-xs font-bold text-foreground">
+                      Registered Phone Number
+                    </label>
+                    <div className="mb-1.5 flex flex-wrap gap-1">
+                      {QUICK_DIAL_CODES.map((c) => (
+                        <button
+                          key={c.code}
+                          type="button"
+                          onClick={() => setLoginDialCode(c.code)}
+                          className={`cursor-pointer rounded-lg border px-2 py-0.5 text-[10px] font-bold transition-colors ${
+                            loginDialCode === c.code
+                              ? 'border-brand bg-brand-soft text-brand'
+                              : 'border-border bg-card text-muted-foreground hover:text-foreground'
+                          }`}
+                        >
+                          {c.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex gap-1.5">
+                      <div className="relative w-20">
+                        <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 font-mono text-xs font-bold text-muted-foreground">
+                          +
+                        </span>
+                        <input
+                          type="text"
+                          value={loginDialCode}
+                          onChange={(e) =>
+                            setLoginDialCode(e.target.value.replace(/\D/g, '').slice(0, 4))
+                          }
+                          aria-label="Country code"
+                          className="w-full rounded-xl border border-border bg-card py-2.5 pl-6 pr-2 font-mono text-sm font-bold text-foreground focus:border-brand focus:outline-none"
+                        />
+                      </div>
                       <input
-                        type="text"
-                        value={loginDialCode}
-                        onChange={(e) =>
-                          setLoginDialCode(e.target.value.replace(/\D/g, '').slice(0, 4))
-                        }
-                        aria-label="Country code"
-                        className="w-full rounded-xl border border-border bg-card py-2.5 pl-6 pr-2 font-mono text-sm font-bold text-foreground focus:border-brand focus:outline-none"
+                        type="tel"
+                        required
+                        autoComplete="tel-national"
+                        value={loginPhone}
+                        onChange={(e) => setLoginPhone(e.target.value)}
+                        placeholder="9876543210"
+                        className="flex-1 rounded-xl border border-border bg-card px-3 py-2.5 font-mono text-sm font-semibold text-foreground focus:border-brand focus:outline-none"
                       />
                     </div>
-                    <input
-                      type="tel"
-                      required
-                      value={loginPhone}
-                      onChange={(e) => setLoginPhone(e.target.value)}
-                      placeholder="9876543210"
-                      className="flex-1 rounded-xl border border-border bg-card px-3 py-2.5 font-mono text-sm font-semibold text-foreground focus:border-brand focus:outline-none"
-                    />
                   </div>
-                </div>
+                ) : (
+                  <div>
+                    <label className="mb-1 block text-xs font-bold text-foreground">
+                      Email Address
+                    </label>
+                    <div className="relative">
+                      <Mail className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                      <input
+                        type="email"
+                        required
+                        autoComplete="email"
+                        value={loginEmail}
+                        onChange={(e) => setLoginEmail(e.target.value)}
+                        placeholder="you@example.com"
+                        className="w-full rounded-xl border border-border bg-card py-2.5 pl-9 pr-3 text-sm text-foreground focus:border-brand focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                )}
 
                 <div>
-                  <label className="mb-1 block text-xs font-bold text-foreground">Password</label>
-                  <input
-                    type="password"
-                    required
-                    value={loginPassword}
-                    onChange={(e) => setLoginPassword(e.target.value)}
-                    placeholder="Enter your store password"
-                    className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm text-foreground focus:border-brand focus:outline-none"
-                  />
+                  <div className="mb-1 flex items-center justify-between">
+                    <label className="block text-xs font-bold text-foreground">Password</label>
+                    {loginMethod === 'email' && (
+                      <button
+                        type="button"
+                        disabled={sendingReset}
+                        onClick={() => void handleForgotPassword()}
+                        className="cursor-pointer text-[11px] font-bold text-brand hover:underline disabled:opacity-50"
+                      >
+                        {sendingReset ? 'Sending link…' : 'Forgot password?'}
+                      </button>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <Lock className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                    <input
+                      type={showLoginPassword ? 'text' : 'password'}
+                      required
+                      autoComplete="current-password"
+                      value={loginPassword}
+                      onChange={(e) => setLoginPassword(e.target.value)}
+                      placeholder="Enter your password"
+                      className="w-full rounded-xl border border-border bg-card py-2.5 pl-9 pr-10 text-sm text-foreground focus:border-brand focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowLoginPassword((p) => !p)}
+                      aria-label={showLoginPassword ? 'Hide password' : 'Show password'}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer text-muted-foreground hover:text-foreground"
+                    >
+                      {showLoginPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                    </button>
+                  </div>
                 </div>
 
                 <button
@@ -732,18 +1031,270 @@ export function ClaimStoreModal({
                   ) : (
                     <LogIn className="size-4" />
                   )}
-                  Sign In with Phone &amp; Password
+                  {loginMethod === 'email'
+                    ? 'Sign In with Email'
+                    : 'Sign In with Phone & Password'}
+                </button>
+              </form>
+
+              <div className="space-y-1.5 text-center text-xs text-muted-foreground">
+                <p>
+                  New to FindMyBites?{' '}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTab('signup');
+                      setError(null);
+                      setResetMessage(null);
+                    }}
+                    className="cursor-pointer font-bold text-brand hover:underline"
+                  >
+                    Create a free account
+                  </button>
+                </p>
+                <p>
+                  Got a secret key from FindMyBites?{' '}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTab('claim');
+                      setError(null);
+                      setResetMessage(null);
+                    }}
+                    className="cursor-pointer font-bold text-emerald-600 hover:underline dark:text-emerald-400"
+                  >
+                    Claim your store here
+                  </button>
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 3: SIGN UP (CREATE NEW ACCOUNT WITH GOOGLE, EMAIL, OR PHONE) */}
+          {tab === 'signup' && (
+            <div className="space-y-4">
+              {isInAppBrowser && (
+                <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] leading-relaxed text-amber-900 dark:text-amber-200">
+                  <strong>Opened inside WhatsApp / Instagram?</strong> Create your account with{' '}
+                  <strong>Email</strong> or <strong>Phone + Password</strong> below — no Google
+                  popup needed.
+                </p>
+              )}
+
+              <button
+                type="button"
+                disabled={signingIn || signingUp}
+                onClick={() => void handleGoogleSignIn()}
+                className="inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-2xl border border-border bg-card py-3 text-sm font-extrabold text-foreground shadow-2xs transition-colors hover:border-brand hover:bg-accent disabled:opacity-60"
+              >
+                {signingIn ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <ShieldCheck className="size-4 text-brand" />
+                )}
+                Sign Up Instantly with Google
+              </button>
+
+              <div className="relative py-1">
+                <div className="absolute inset-0 flex items-center">
+                  <span className="w-full border-t border-border" />
+                </div>
+                <div className="relative flex justify-center text-[10px] font-bold uppercase tracking-wider">
+                  <span className="bg-background px-2 text-muted-foreground">
+                    or create account with password
+                  </span>
+                </div>
+              </div>
+
+              {/* Email vs Phone Method Switcher */}
+              <div className="grid grid-cols-2 gap-1 rounded-xl border border-border bg-muted/40 p-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSignupMethod('email');
+                    setError(null);
+                  }}
+                  className={`inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-bold transition-colors ${
+                    signupMethod === 'email'
+                      ? 'bg-background text-foreground shadow-xs'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <Mail className="size-3.5 text-brand" />
+                  Email
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSignupMethod('phone');
+                    setError(null);
+                  }}
+                  className={`inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-bold transition-colors ${
+                    signupMethod === 'phone'
+                      ? 'bg-background text-foreground shadow-xs'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <Phone className="size-3.5 text-brand" />
+                  Phone Number
+                </button>
+              </div>
+
+              <form onSubmit={(e) => void handleSignUp(e)} className="space-y-3">
+                <div>
+                  <label className="mb-1 block text-xs font-bold text-foreground">
+                    Full Name or Business Name
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    autoComplete="name"
+                    value={signupName}
+                    onChange={(e) => setSignupName(e.target.value)}
+                    placeholder="e.g. Priya Sharma or Sweet Crumb Bakery"
+                    className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm text-foreground focus:border-brand focus:outline-none"
+                  />
+                </div>
+
+                {signupMethod === 'email' ? (
+                  <div>
+                    <label className="mb-1 block text-xs font-bold text-foreground">
+                      Email Address
+                    </label>
+                    <div className="relative">
+                      <Mail className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                      <input
+                        type="email"
+                        required
+                        autoComplete="email"
+                        value={signupEmail}
+                        onChange={(e) => setSignupEmail(e.target.value)}
+                        placeholder="you@example.com"
+                        className="w-full rounded-xl border border-border bg-card py-2.5 pl-9 pr-3 text-sm text-foreground focus:border-brand focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="mb-1 block text-xs font-bold text-foreground">
+                      Phone / WhatsApp Number
+                    </label>
+                    <div className="mb-1.5 flex flex-wrap gap-1">
+                      {QUICK_DIAL_CODES.map((c) => (
+                        <button
+                          key={c.code}
+                          type="button"
+                          onClick={() => setSignupDialCode(c.code)}
+                          className={`cursor-pointer rounded-lg border px-2 py-0.5 text-[10px] font-bold transition-colors ${
+                            signupDialCode === c.code
+                              ? 'border-brand bg-brand-soft text-brand'
+                              : 'border-border bg-card text-muted-foreground hover:text-foreground'
+                          }`}
+                        >
+                          {c.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex gap-1.5">
+                      <div className="relative w-20">
+                        <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 font-mono text-xs font-bold text-muted-foreground">
+                          +
+                        </span>
+                        <input
+                          type="text"
+                          value={signupDialCode}
+                          onChange={(e) =>
+                            setSignupDialCode(e.target.value.replace(/\D/g, '').slice(0, 4))
+                          }
+                          aria-label="Country code"
+                          className="w-full rounded-xl border border-border bg-card py-2.5 pl-6 pr-2 font-mono text-sm font-bold text-foreground focus:border-brand focus:outline-none"
+                        />
+                      </div>
+                      <input
+                        type="tel"
+                        required
+                        autoComplete="tel-national"
+                        value={signupPhone}
+                        onChange={(e) => setSignupPhone(e.target.value)}
+                        placeholder="9876543210"
+                        className="flex-1 rounded-xl border border-border bg-card px-3 py-2.5 font-mono text-sm font-semibold text-foreground focus:border-brand focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <label className="mb-1 block text-xs font-bold text-foreground">
+                    Create Password (min 6 characters)
+                  </label>
+                  <div className="relative">
+                    <Lock className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                    <input
+                      type={showSignupPassword ? 'text' : 'password'}
+                      required
+                      minLength={6}
+                      autoComplete="new-password"
+                      value={signupPassword}
+                      onChange={(e) => setSignupPassword(e.target.value)}
+                      placeholder="Create a strong password"
+                      className="w-full rounded-xl border border-border bg-card py-2.5 pl-9 pr-10 text-sm text-foreground focus:border-brand focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowSignupPassword((p) => !p)}
+                      aria-label={showSignupPassword ? 'Hide password' : 'Show password'}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer text-muted-foreground hover:text-foreground"
+                    >
+                      {showSignupPassword ? (
+                        <EyeOff className="size-4" />
+                      ) : (
+                        <Eye className="size-4" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-bold text-foreground">
+                    Confirm Password
+                  </label>
+                  <input
+                    type={showSignupPassword ? 'text' : 'password'}
+                    required
+                    minLength={6}
+                    autoComplete="new-password"
+                    value={signupConfirmPassword}
+                    onChange={(e) => setSignupConfirmPassword(e.target.value)}
+                    placeholder="Re-enter your password"
+                    className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm text-foreground focus:border-brand focus:outline-none"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={signingUp}
+                  className="inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-2xl bg-brand py-3 text-sm font-extrabold text-brand-foreground shadow-md hover:bg-brand-hover disabled:opacity-60"
+                >
+                  {signingUp ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <UserPlus className="size-4" />
+                  )}
+                  Create Free Account
                 </button>
               </form>
 
               <p className="text-center text-xs text-muted-foreground">
-                Got a passcode from FindMyBites?{' '}
+                Already have an account?{' '}
                 <button
                   type="button"
-                  onClick={() => setTab('claim')}
+                  onClick={() => {
+                    setTab('login');
+                    setError(null);
+                  }}
                   className="cursor-pointer font-bold text-brand hover:underline"
                 >
-                  Claim your store here
+                  Sign in here
                 </button>
               </p>
             </div>

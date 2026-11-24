@@ -498,7 +498,7 @@ export function PostEventRequestModal({
                     <Cloud className="mt-0.5 size-4 shrink-0 text-brand" aria-hidden="true" />
                     <div>
                       <p className="font-bold text-foreground">
-                        Sign in with Google to broadcast your event brief
+                        Sign in or create a free account to broadcast your event brief
                       </p>
                       <p className="text-muted-foreground">
                         Receive real vendor quotes privately without exposing your phone number.
@@ -511,7 +511,7 @@ export function PostEventRequestModal({
                     className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-brand px-4 py-2 text-xs font-bold text-brand-foreground hover:bg-brand-hover"
                   >
                     <LogIn className="size-3.5" aria-hidden="true" />
-                    Sign in with Google
+                    Sign In / Sign Up
                   </button>
                 </div>
               ) : (
@@ -534,7 +534,7 @@ export function PostEventRequestModal({
           ) : !user ? (
             <div className="py-12 text-center">
               <p className="text-sm font-bold text-foreground">
-                Sign in with Google to view your posted requests &amp; incoming vendor quotes.
+                Sign in to view your posted requests &amp; incoming vendor quotes.
               </p>
               <button
                 type="button"
@@ -542,7 +542,7 @@ export function PostEventRequestModal({
                 className="mt-4 inline-flex cursor-pointer items-center gap-1.5 rounded-xl bg-brand px-5 py-2.5 text-xs font-bold text-brand-foreground hover:bg-brand-hover"
               >
                 <LogIn className="size-4" aria-hidden="true" />
-                Sign in with Google
+                Sign In / Sign Up
               </button>
             </div>
           ) : myRequests.length === 0 ? (

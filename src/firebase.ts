@@ -3,6 +3,7 @@ import {
   GoogleAuthProvider,
   createUserWithEmailAndPassword,
   getAuth,
+  sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signInWithPopup,
   signOut,
@@ -75,7 +76,7 @@ export function handleFirestoreError(
 }
 
 // Database reads and writes are served via /api/db (Supabase PostgreSQL + Storage).
-// Firebase is used strictly for user authentication (Google Sign-In & vendor login).
+// Firebase is used strictly for user authentication (Google Sign-In, Email & Phone+Password).
 
 export async function signInWithGoogle(): Promise<User> {
   const result = await signInWithPopup(auth, googleProvider);
@@ -85,6 +86,15 @@ export async function signInWithGoogle(): Promise<User> {
 export function phoneToVendorAuthEmail(phoneDigits: string): string {
   const digits = phoneDigits.replace(/\D/g, '').slice(0, 18);
   return `v${digits}@phone.findmybites.com`;
+}
+
+export function formatUserDisplayLabel(user: Pick<User, 'displayName' | 'email'>): string {
+  const name = user.displayName?.trim();
+  if (name) return name;
+  const email = user.email?.trim() || '';
+  const phoneMatch = email.match(/^v(\d+)@phone\.findmybites\.com$/i);
+  if (phoneMatch) return `+${phoneMatch[1]}`;
+  return email || 'Member';
 }
 
 export async function registerVendorWithPhonePassword(
@@ -113,6 +123,37 @@ export async function signInVendorWithPhonePassword(
   return credential.user;
 }
 
+export async function registerWithEmailPassword(
+  emailRaw: string,
+  password: string,
+  displayName: string
+): Promise<User> {
+  const email = emailRaw.trim().toLowerCase();
+  const credential = await createUserWithEmailAndPassword(auth, email, password);
+  if (displayName.trim()) {
+    try {
+      await updateProfile(credential.user, { displayName: displayName.trim().slice(0, 80) });
+    } catch {
+      // Non-fatal profile name update
+    }
+  }
+  return credential.user;
+}
+
+export async function signInWithEmailPassword(
+  emailRaw: string,
+  password: string
+): Promise<User> {
+  const email = emailRaw.trim().toLowerCase();
+  const credential = await signInWithEmailAndPassword(auth, email, password);
+  return credential.user;
+}
+
+export async function sendAccountPasswordReset(emailRaw: string): Promise<void> {
+  const email = emailRaw.trim().toLowerCase();
+  await sendPasswordResetEmail(auth, email);
+}
+
 export function mapAuthErrorMessage(err: unknown): string {
   const code =
     typeof err === 'object' && err !== null && 'code' in err
@@ -125,35 +166,44 @@ export function mapAuthErrorMessage(err: unknown): string {
     code === 'auth/configuration-not-found' ||
     msg.includes('operation-not-allowed')
   ) {
-    return 'Email/Password login is not enabled yet in Firebase Console (Authentication → Sign-in method → Email/Password). Enable it once, or click "Claim with Google" below for instant access.';
+    return 'Email/Password login is not enabled yet in Firebase Console. Please use "Continue with Google" for instant access.';
   }
   if (code === 'auth/email-already-in-use') {
-    return 'An account for this phone number already exists. Enter your existing password or switch to Vendor Login.';
+    return 'An account with this email or phone number already exists. Switch to Sign In and enter your password.';
+  }
+  if (code === 'auth/invalid-email') {
+    return 'Please enter a valid email address.';
   }
   if (code === 'auth/weak-password') {
     return 'Password must be at least 6 characters long.';
+  }
+  if (code === 'auth/missing-password') {
+    return 'Please enter your password.';
   }
   if (
     code === 'auth/invalid-credential' ||
     code === 'auth/wrong-password' ||
     code === 'auth/user-not-found'
   ) {
-    return 'Incorrect phone number or password. Please check your country code and try again.';
+    return 'Incorrect email/phone or password. Double-check your details (and country code if using phone) and try again.';
   }
   if (code === 'auth/too-many-requests') {
-    return 'Too many attempts. Please wait a minute and try again.';
+    return 'Too many failed attempts. Please wait a minute and try again.';
+  }
+  if (code === 'auth/network-request-failed') {
+    return 'Network error while connecting to sign-in. Please check your internet connection and try again.';
   }
   if (
     code === 'auth/popup-blocked' ||
     code === 'auth/operation-not-supported-in-this-environment' ||
     msg.includes('disallowed_useragent')
   ) {
-    return 'Google Sign-In popup is blocked in WhatsApp/Instagram browsers. Use "Create Password & Claim My Store" above instead (works right here), or tap the menu to Open in Chrome/Safari.';
+    return 'Google Sign-In popup is blocked inside WhatsApp/Instagram browsers. Use Email or Phone + Password right here, or tap the menu to Open in Chrome/Safari.';
   }
   if (code === 'auth/unauthorized-domain') {
-    return 'Google Sign-In is not enabled on this domain yet. Use "Create Password & Claim My Store" above — it works immediately.';
+    return 'Google Sign-In is not enabled on this domain yet. Use Email or Phone + Password — it works immediately.';
   }
-  if (code === 'auth/popup-closed-by-user') {
+  if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
     return 'Sign-in popup was closed before completing.';
   }
   return msg || 'Authentication failed. Please try again.';

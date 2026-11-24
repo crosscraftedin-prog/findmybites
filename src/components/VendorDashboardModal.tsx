@@ -955,7 +955,7 @@ export function VendorDashboardModal({
               <p className="text-xs text-muted-foreground">
                 {user
                   ? `Signed in as ${user.displayName || user.email}`
-                  : 'Sign in with Google to manage storefronts, quote local event leads & track views'}
+                  : 'Sign in with Google, Phone, or Email to manage storefronts, quote leads & track views'}
               </p>
             </div>
           </div>
@@ -1002,11 +1002,11 @@ export function VendorDashboardModal({
               <Store className="size-7" aria-hidden="true" />
             </div>
             <h3 className="mt-4 text-xl font-extrabold text-foreground">
-              Sign in with Google to open your Vendor Portal
+              Sign in to open your Vendor Portal
             </h3>
             <p className="mt-2 max-w-md text-sm text-muted-foreground">
-              Edit your storefront, upload portfolio photos, generate WhatsApp Status promo cards,
-              view real-time click analytics, and quote incoming local event requests.
+              Sign in with Google, Phone + Password, or Email to edit your storefront, upload
+              photos, view real-time analytics, and quote incoming local event requests.
             </p>
             <button
               type="button"
@@ -1014,7 +1014,7 @@ export function VendorDashboardModal({
               className="mt-6 inline-flex cursor-pointer items-center gap-2 rounded-xl bg-brand px-6 py-3 text-sm font-bold text-brand-foreground shadow-md transition-transform hover:scale-[1.02] hover:bg-brand-hover"
             >
               <LogIn className="size-4" aria-hidden="true" />
-              Continue with Google
+              Sign In / Vendor Login
             </button>
           </div>
         ) : (

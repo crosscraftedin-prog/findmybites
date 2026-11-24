@@ -1244,7 +1244,7 @@ export function VendorWebsiteView({
               {!user ? (
                 <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
                   <p className="text-xs text-muted-foreground">
-                    Sign in with Google to leave a verified rating.
+                    Sign in or create a free account to leave a verified rating.
                   </p>
                   <button
                     type="button"
@@ -1252,7 +1252,7 @@ export function VendorWebsiteView({
                     className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-xs font-bold text-brand-foreground hover:bg-brand-hover"
                   >
                     <LogIn className="size-3.5" aria-hidden="true" />
-                    Sign in
+                    Sign In / Sign Up
                   </button>
                 </div>
               ) : (
