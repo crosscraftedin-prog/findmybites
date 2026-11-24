@@ -53,6 +53,7 @@ import { SnowfallOverlay } from './components/SnowfallOverlay';
 import { VendorBioLinkView } from './components/VendorBioLinkView';
 import { VendorCard } from './components/VendorCard';
 import { VendorDashboardModal } from './components/VendorDashboardModal';
+import { VendorGrowthHubModal } from './components/VendorGrowthHubModal';
 import { VendorShareModal } from './components/VendorShareModal';
 import { VendorMetrics, VendorWebsiteView } from './components/VendorWebsiteView';
 import { BoxBitePortal } from './components/boxbite/BoxBitePortal';
@@ -500,6 +501,7 @@ export default function App() {
   const [claimHintSlug, setClaimHintSlug] = useState<string | null>(null);
   const [editVendorId, setEditVendorId] = useState<string | null>(null);
   const [pricingKitOpen, setPricingKitOpen] = useState(false);
+  const [growthHubOpen, setGrowthHubOpen] = useState(false);
   const [boxAndBiteOpen, setBoxAndBiteOpen] = useState(false);
   const [boxAndBiteSection, setBoxAndBiteSection] = useState<'top' | 'builder' | 'quote'>('top');
   const [notice, setNotice] = useState<string | null>(null);
@@ -934,8 +936,22 @@ export default function App() {
         setBioVendor(null);
         setSeoDirectoryRoute(null);
         setPricingKitOpen(false);
+        setGrowthHubOpen(false);
         setBoxAndBiteSection(pathname.includes('builder') ? 'builder' : pathname.includes('quote') ? 'quote' : 'top');
         setBoxAndBiteOpen(true);
+      } else if (
+        pathname === '/growth-tips' ||
+        pathname === '/vendor-guide' ||
+        pathname === '/vendor-tips' ||
+        pathname.startsWith('/growth-tips/') ||
+        pathname.startsWith('/vendor-guide/')
+      ) {
+        setActiveVendor(null);
+        setBioVendor(null);
+        setSeoDirectoryRoute(null);
+        setBoxAndBiteOpen(false);
+        setPricingKitOpen(false);
+        setGrowthHubOpen(true);
       } else if (
         pathname === '/pricing-kit' ||
         pathname === '/cake-pricing-kit' ||
@@ -945,6 +961,7 @@ export default function App() {
         setBioVendor(null);
         setSeoDirectoryRoute(null);
         setBoxAndBiteOpen(false);
+        setGrowthHubOpen(false);
         setPricingKitOpen(true);
       } else if (pathname === '/claim' || pathname.startsWith('/claim/')) {
         const slugPart = pathname.startsWith('/claim/')
@@ -986,6 +1003,7 @@ export default function App() {
           setBioVendor(null);
           setClaimModalOpen(false);
           setPricingKitOpen(false);
+          setGrowthHubOpen(false);
           setBoxAndBiteOpen(false);
           setSeoDirectoryRoute(null);
         }
@@ -1061,6 +1079,31 @@ export default function App() {
     setBoxAndBiteOpen(false);
     const pathname = window.location.pathname;
     if (pathname.startsWith('/box-and-bite') || pathname.startsWith('/corporate-gifting')) {
+      try {
+        window.history.pushState({}, '', '/');
+      } catch {
+        // ignore sandbox history restrictions
+      }
+    }
+  };
+
+  const openGrowthHub = () => {
+    setGrowthHubOpen(true);
+    try {
+      window.history.pushState({ growthHub: true }, '', '/growth-tips');
+    } catch {
+      // ignore sandbox history restrictions
+    }
+  };
+
+  const closeGrowthHub = () => {
+    setGrowthHubOpen(false);
+    const pathname = window.location.pathname;
+    if (
+      pathname.startsWith('/growth-tips') ||
+      pathname.startsWith('/vendor-guide') ||
+      pathname.startsWith('/vendor-tips')
+    ) {
       try {
         window.history.pushState({}, '', '/');
       } catch {
@@ -3371,6 +3414,7 @@ export default function App() {
             ? () => setPricingKitOpen(true)
             : undefined
         }
+        onOpenGrowthHub={openGrowthHub}
         onTrackShare={trackShare}
         onNotify={setNotice}
       />
@@ -3534,6 +3578,18 @@ export default function App() {
 
       {/* Festive Winter Snowfall Overlay + On/Off Toggle */}
       <SnowfallOverlay enabled={snowEnabled} onToggle={() => setSnowEnabled((prev) => !prev)} />
+
+      {/* Vendor Growth Playbook & Tips Hub (/growth-tips) */}
+      <VendorGrowthHubModal
+        isOpen={growthHubOpen}
+        onClose={closeGrowthHub}
+        currency={currency}
+        myVendors={dashboardVendors}
+        onOpenListModal={(plan) => handleOpenListModal(plan)}
+        onOpenDashboard={() => setDashboardOpen(true)}
+        onOpenBioLink={handleOpenBioLink}
+        onNotify={setNotice}
+      />
 
       {/* BOX & BITE Dedicated Corporate Food Gifting Sub-Brand Experience */}
       <BoxBitePortal

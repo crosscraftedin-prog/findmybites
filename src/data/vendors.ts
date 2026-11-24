@@ -470,6 +470,8 @@ export interface Vendor {
   bioHandle?: string;
   bioTheme?: BioTheme;
   instagramHandle?: string;
+  googleMapsUrl?: string;
+  googleReviewUrl?: string;
   customLinks?: VendorBioLink[];
   serviceAreas: string[];
   allStatesCoverage?: boolean;

@@ -666,7 +666,105 @@ async function normalizeProductsForStorage(
   );
 }
 
+const GBP_MAPS_LINK_ID = '__gbp_maps__';
+const GBP_REVIEW_LINK_ID = '__gbp_review__';
+
+function extractGbpAndCustomLinks(raw: unknown): {
+  customLinks?: Array<{ id: string; title: string; url: string; badge?: string }>;
+  googleMapsUrl?: string;
+  googleReviewUrl?: string;
+} {
+  if (!Array.isArray(raw)) return {};
+  let googleMapsUrl: string | undefined;
+  let googleReviewUrl: string | undefined;
+  const regular: Array<{ id: string; title: string; url: string; badge?: string }> = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const obj = item as Record<string, unknown>;
+    const id = typeof obj.id === 'string' ? obj.id : '';
+    const url = typeof obj.url === 'string' ? obj.url.trim() : '';
+    if (id === GBP_MAPS_LINK_ID) {
+      if (url) googleMapsUrl = url;
+      continue;
+    }
+    if (id === GBP_REVIEW_LINK_ID) {
+      if (url) googleReviewUrl = url;
+      continue;
+    }
+    if (url && typeof obj.title === 'string' && obj.title.trim()) {
+      regular.push({
+        id: id || `link-${regular.length + 1}`,
+        title: obj.title.trim(),
+        url,
+        ...(typeof obj.badge === 'string' && obj.badge.trim() ? { badge: obj.badge.trim() } : {}),
+      });
+    }
+  }
+  return {
+    customLinks: regular.length > 0 ? regular : undefined,
+    googleMapsUrl,
+    googleReviewUrl,
+  };
+}
+
+function buildStoredCustomLinks(
+  existingRaw: unknown,
+  nextCustomLinks: unknown,
+  nextGoogleMapsUrl: unknown,
+  nextGoogleReviewUrl: unknown
+): Array<{ id: string; title: string; url: string; badge?: string }> {
+  const existing = extractGbpAndCustomLinks(existingRaw);
+  const regularSource = Array.isArray(nextCustomLinks)
+    ? nextCustomLinks
+    : existing.customLinks || [];
+  const regular = regularSource
+    .slice(0, 8)
+    .map((item, idx) => {
+      const l = (item && typeof item === 'object' ? item : {}) as Record<string, unknown>;
+      const id = sanitizeId(l.id || `link-${idx + 1}`, 'link');
+      if (id === GBP_MAPS_LINK_ID || id === GBP_REVIEW_LINK_ID) return null;
+      const safeUrl = sanitizeSafeHttpUrl(l.url);
+      const title = typeof l.title === 'string' ? l.title.trim().slice(0, 60) : '';
+      if (!safeUrl || !title) return null;
+      return {
+        id,
+        title,
+        url: safeUrl.slice(0, 300),
+        ...(typeof l.badge === 'string' && l.badge.trim()
+          ? { badge: l.badge.trim().slice(0, 24) }
+          : {}),
+      };
+    })
+    .filter((x): x is { id: string; title: string; url: string; badge?: string } => Boolean(x));
+
+  const resolvedMaps =
+    nextGoogleMapsUrl !== undefined
+      ? sanitizeSafeHttpUrl(nextGoogleMapsUrl)
+      : existing.googleMapsUrl;
+  const resolvedReview =
+    nextGoogleReviewUrl !== undefined
+      ? sanitizeSafeHttpUrl(nextGoogleReviewUrl)
+      : existing.googleReviewUrl;
+
+  if (resolvedMaps) {
+    regular.push({
+      id: GBP_MAPS_LINK_ID,
+      title: 'Google Maps',
+      url: resolvedMaps.slice(0, 400),
+    });
+  }
+  if (resolvedReview) {
+    regular.push({
+      id: GBP_REVIEW_LINK_ID,
+      title: 'Google Reviews',
+      url: resolvedReview.slice(0, 400),
+    });
+  }
+  return regular;
+}
+
 function rowToVendor(row: Record<string, unknown>) {
+  const { customLinks, googleMapsUrl, googleReviewUrl } = extractGbpAndCustomLinks(row.custom_links);
   return {
     id: String(row.id || ''),
     ownerId: typeof row.owner_id === 'string' ? row.owner_id : undefined,
@@ -723,7 +821,9 @@ function rowToVendor(row: Record<string, unknown>) {
       typeof row.instagram_handle === 'string' && row.instagram_handle.trim()
         ? row.instagram_handle
         : undefined,
-    customLinks: Array.isArray(row.custom_links) ? row.custom_links : undefined,
+    googleMapsUrl,
+    googleReviewUrl,
+    customLinks,
     serviceAreas: Array.isArray(row.service_areas) ? row.service_areas : [],
     allStatesCoverage: Boolean(row.all_states_coverage),
     serviceStates: Array.isArray(row.service_states) ? row.service_states : undefined,
@@ -1135,6 +1235,12 @@ export function createSupabaseApiRouter(): MicroRouter {
           typeof vendor.instagramHandle === 'string' && vendor.instagramHandle.trim()
             ? vendor.instagramHandle.trim().slice(0, 80)
             : null,
+        custom_links: buildStoredCustomLinks(
+          [],
+          vendor.customLinks,
+          vendor.googleMapsUrl,
+          vendor.googleReviewUrl
+        ),
         claim_status: 'none',
         created_at: nowIso,
         updated_at: nowIso,
@@ -1157,7 +1263,7 @@ export function createSupabaseApiRouter(): MicroRouter {
 
       const { data: existing, error: fetchErr } = await supabase
         .from('vendors')
-        .select('id, owner_id, status')
+        .select('id, owner_id, status, custom_links')
         .eq('id', vendorId)
         .maybeSingle();
 
@@ -1205,24 +1311,17 @@ export function createSupabaseApiRouter(): MicroRouter {
       }
       if (updates.instagramHandle !== undefined)
         patch.instagram_handle = String(updates.instagramHandle || '').trim().slice(0, 80) || null;
-      if (Array.isArray(updates.customLinks)) {
-        patch.custom_links = updates.customLinks
-          .slice(0, 8)
-          .map((item, idx) => {
-            const l = (item && typeof item === 'object' ? item : {}) as Record<string, unknown>;
-            const safeUrl = sanitizeSafeHttpUrl(l.url);
-            const title = typeof l.title === 'string' ? l.title.trim().slice(0, 60) : '';
-            if (!safeUrl || !title) return null;
-            return {
-              id: sanitizeId(l.id || `link-${idx + 1}`, 'link'),
-              title,
-              url: safeUrl.slice(0, 300),
-              ...(typeof l.badge === 'string' && l.badge.trim()
-                ? { badge: l.badge.trim().slice(0, 24) }
-                : {}),
-            };
-          })
-          .filter(Boolean);
+      if (
+        Array.isArray(updates.customLinks) ||
+        updates.googleMapsUrl !== undefined ||
+        updates.googleReviewUrl !== undefined
+      ) {
+        patch.custom_links = buildStoredCustomLinks(
+          existing.custom_links,
+          updates.customLinks,
+          updates.googleMapsUrl,
+          updates.googleReviewUrl
+        );
       }
       if (updates.whatsappNumber !== undefined)
         patch.whatsapp_number = sanitizeDigits(updates.whatsappNumber);
@@ -2256,6 +2355,12 @@ export function createSupabaseApiRouter(): MicroRouter {
           typeof vendor.instagramHandle === 'string' && vendor.instagramHandle.trim()
             ? vendor.instagramHandle.trim().slice(0, 80)
             : null,
+        custom_links: buildStoredCustomLinks(
+          [],
+          vendor.customLinks,
+          vendor.googleMapsUrl,
+          vendor.googleReviewUrl
+        ),
         claim_status: 'pending',
         created_at: nowIso,
         updated_at: nowIso,

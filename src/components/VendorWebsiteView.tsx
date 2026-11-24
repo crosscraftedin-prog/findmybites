@@ -7,6 +7,7 @@ import {
   Copy,
   Crown,
   Edit3,
+  ExternalLink,
   Eye,
   Globe2,
   Heart,
@@ -17,6 +18,7 @@ import {
   MapPin,
   MessageCircle,
   Minus,
+  Navigation,
   Package,
   Plus,
   QrCode,
@@ -41,6 +43,7 @@ import {
   getVendorCoverageLabel,
   getVendorCoveredStatesList,
   getVendorQuickTags,
+  sanitizeSafeHttpUrl,
   suggestBuilderModeForCategory,
 } from '../data/vendors';
 import {
@@ -165,6 +168,66 @@ export function VendorWebsiteView({
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
   }, [vendor, qrOpen, promoCardOpen, lightboxImg, onClose]);
+
+  // Inject LocalBusiness JSON-LD with sameAs (Google Maps & Instagram) for SEO
+  useEffect(() => {
+    if (!vendor) return;
+    const sameAs: string[] = [];
+    const safeMaps = vendor.googleMapsUrl ? sanitizeSafeHttpUrl(vendor.googleMapsUrl) : null;
+    if (safeMaps) sameAs.push(safeMaps);
+    if (vendor.instagramHandle?.trim()) {
+      const rawIg = vendor.instagramHandle.trim();
+      const igHref = /^https?:\/\//i.test(rawIg)
+        ? sanitizeSafeHttpUrl(rawIg)
+        : `https://instagram.com/${rawIg.replace(/^@+/, '').replace(/[^a-zA-Z0-9._]/g, '')}`;
+      if (igHref) sameAs.push(igHref);
+    }
+
+    const ldJson: Record<string, unknown> = {
+      '@context': 'https://schema.org',
+      '@type': vendor.marketplace === 'food' ? 'FoodEstablishment' : 'LocalBusiness',
+      name: vendor.name,
+      description: vendor.description || vendor.tagline,
+      url: `https://www.findmybites.com/v/${vendor.slug}`,
+      telephone: vendor.whatsappNumber ? `+${vendor.whatsappNumber}` : undefined,
+      address: {
+        '@type': 'PostalAddress',
+        addressLocality: vendor.city,
+        addressRegion: vendor.state,
+        addressCountry: vendor.country,
+      },
+      geo: {
+        '@type': 'GeoCoordinates',
+        latitude: vendor.lat,
+        longitude: vendor.lng,
+      },
+      ...(sameAs.length > 0 ? { sameAs } : {}),
+      ...(vendor.reviewCount > 0
+        ? {
+            aggregateRating: {
+              '@type': 'AggregateRating',
+              ratingValue: vendor.rating,
+              reviewCount: vendor.reviewCount,
+            },
+          }
+        : {}),
+    };
+
+    const scriptId = 'fmb-vendor-jsonld';
+    let scriptEl = document.getElementById(scriptId) as HTMLScriptElement | null;
+    if (!scriptEl) {
+      scriptEl = document.createElement('script');
+      scriptEl.id = scriptId;
+      scriptEl.type = 'application/ld+json';
+      document.head.appendChild(scriptEl);
+    }
+    scriptEl.textContent = JSON.stringify(ldJson);
+
+    return () => {
+      const existing = document.getElementById(scriptId);
+      if (existing) existing.remove();
+    };
+  }, [vendor]);
 
   const basketItems = useMemo(() => {
     if (!vendor) return [];
@@ -356,6 +419,12 @@ export function VendorWebsiteView({
   const displayWaClicks = Math.max(metrics?.whatsappClicks ?? 0, cloudMetric?.whatsappClicks ?? 0);
 
   const isPaid = vendor.planTier === 'business' || vendor.planTier === 'pro';
+  const safeGoogleMapsUrl = vendor.googleMapsUrl
+    ? sanitizeSafeHttpUrl(vendor.googleMapsUrl)
+    : null;
+  const safeGoogleReviewUrl = vendor.googleReviewUrl
+    ? sanitizeSafeHttpUrl(vendor.googleReviewUrl)
+    : null;
 
   return (
     <div
@@ -588,6 +657,28 @@ export function VendorWebsiteView({
                 <QrCode className="size-4" aria-hidden="true" />
                 QR Menu Poster
               </button>
+              {safeGoogleMapsUrl && (
+                <a
+                  href={safeGoogleMapsUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 rounded-xl border border-white/25 bg-white/10 px-4 py-3 text-sm font-semibold text-white backdrop-blur-md transition-colors hover:bg-white/20"
+                >
+                  <Navigation className="size-4" aria-hidden="true" />
+                  Directions
+                </a>
+              )}
+              {safeGoogleReviewUrl && (
+                <a
+                  href={safeGoogleReviewUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 rounded-xl border border-white/25 bg-white/10 px-4 py-3 text-sm font-semibold text-white backdrop-blur-md transition-colors hover:bg-white/20"
+                >
+                  <Star className="size-4 text-amber-300" aria-hidden="true" />
+                  Google Reviews
+                </a>
+              )}
             </div>
           </div>
         </div>
@@ -1228,14 +1319,28 @@ export function VendorWebsiteView({
           </div>
 
           <div className="lg:col-span-5">
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-xl font-extrabold text-foreground">
                 Verified Reviews ({effectiveReviewCount})
               </h2>
-              <span className="inline-flex items-center gap-1 font-mono text-sm font-bold text-amber-500">
-                <Star className="size-4 fill-amber-400 text-amber-400" aria-hidden="true" />
-                {effectiveRating.toFixed(1)}
-              </span>
+              <div className="flex items-center gap-2.5">
+                {safeGoogleReviewUrl && (
+                  <a
+                    href={safeGoogleReviewUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 rounded-lg border border-border bg-card px-2.5 py-1 text-xs font-semibold text-foreground transition-colors hover:border-brand hover:text-brand"
+                  >
+                    <Star className="size-3.5 text-amber-500" aria-hidden="true" />
+                    Review on Google
+                    <ExternalLink className="size-3" aria-hidden="true" />
+                  </a>
+                )}
+                <span className="inline-flex items-center gap-1 font-mono text-sm font-bold text-amber-500">
+                  <Star className="size-4 fill-amber-400 text-amber-400" aria-hidden="true" />
+                  {effectiveRating.toFixed(1)}
+                </span>
+              </div>
             </div>
 
             {/* Write a Verified Cloud Review */}

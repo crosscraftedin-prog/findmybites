@@ -349,6 +349,8 @@ export function AdminPanelModal({
   const [phoneCode, setPhoneCode] = useState('91');
   const [phoneLocal, setPhoneLocal] = useState('');
   const [bioHandle, setBioHandle] = useState('');
+  const [googleMapsUrl, setGoogleMapsUrl] = useState('');
+  const [googleReviewUrl, setGoogleReviewUrl] = useState('');
   const [tagline, setTagline] = useState('Handcrafted custom cakes, plum cakes & party desserts');
   const [description, setDescription] = useState(
     'Freshly baked to order with premium ingredients. Message us on WhatsApp for custom birthday cakes, wedding tiers, and festive hampers.'
@@ -551,6 +553,8 @@ export function AdminPanelModal({
     setCustomBuilderPackagingLocal(0);
     setPhoneLocal('');
     setBioHandle('');
+    setGoogleMapsUrl('');
+    setGoogleReviewUrl('');
     setCoverImage(categoryDefaultImg);
     setPasscode(generateTransferPasscode());
     setProducts([
@@ -693,6 +697,8 @@ export function AdminPanelModal({
           ? Math.max(0, Math.min(500, localToUsd(customBuilderPackagingLocal, formCurrency)))
           : undefined,
       bioHandle: bioHandle.trim() || slugBase,
+      ...(googleMapsUrl.trim() ? { googleMapsUrl: googleMapsUrl.trim() } : {}),
+      ...(googleReviewUrl.trim() ? { googleReviewUrl: googleReviewUrl.trim() } : {}),
       serviceAreas: [area.trim() || city, city].filter(Boolean),
       allStatesCoverage,
       serviceStates: allStatesCoverage
@@ -1301,6 +1307,32 @@ export function AdminPanelModal({
                         )}
                         {lat.toFixed(3)}, {lng.toFixed(3)} · Tap GPS
                       </button>
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-xs font-bold text-foreground">
+                        Google Maps Place Link (Optional)
+                      </label>
+                      <input
+                        type="url"
+                        value={googleMapsUrl}
+                        onChange={(e) => setGoogleMapsUrl(e.target.value)}
+                        placeholder="https://maps.app.goo.gl/..."
+                        className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-brand focus:outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-xs font-bold text-foreground">
+                        Google Review Link (Optional)
+                      </label>
+                      <input
+                        type="url"
+                        value={googleReviewUrl}
+                        onChange={(e) => setGoogleReviewUrl(e.target.value)}
+                        placeholder="https://g.page/r/.../review"
+                        className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-brand focus:outline-none"
+                      />
                     </div>
                   </div>
 

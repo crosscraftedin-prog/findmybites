@@ -253,6 +253,8 @@ export async function updateVendorInCloud(
     bioHandle: string;
     bioTheme: BioTheme;
     instagramHandle: string;
+    googleMapsUrl: string;
+    googleReviewUrl: string;
     customLinks: VendorBioLink[];
     whatsappNumber: string;
     planTier: PlanTier;

@@ -144,9 +144,17 @@ export function VendorBioLinkView({
   const t = THEME_STYLES[themeKey];
 
   const instagramUrl = buildInstagramUrl(vendor.instagramHandle);
-  const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-    `${vendor.lat},${vendor.lng}`
-  )}`;
+  const customGoogleMapsUrl = vendor.googleMapsUrl
+    ? sanitizeSafeHttpUrl(vendor.googleMapsUrl)
+    : null;
+  const googleMapsUrl =
+    customGoogleMapsUrl ||
+    `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+      `${vendor.lat},${vendor.lng}`
+    )}`;
+  const googleReviewUrl = vendor.googleReviewUrl
+    ? sanitizeSafeHttpUrl(vendor.googleReviewUrl)
+    : null;
 
   const handleCopy = (mode: 'fmb' | 'at') => {
     const url = mode === 'fmb' ? fmbShortUrl : atShortUrl;
@@ -377,7 +385,7 @@ export function VendorBioLinkView({
               </a>
             )}
 
-            {/* #5 Google Maps Directions from GPS Pin */}
+            {/* #5 Google Maps Directions (Official GBP or GPS Pin fallback) */}
             <a
               href={googleMapsUrl}
               target="_blank"
@@ -391,12 +399,37 @@ export function VendorBioLinkView({
                 <div className="text-left">
                   <p className="text-sm font-bold leading-tight">Get Directions on Google Maps</p>
                   <p className="text-[11px] opacity-70">
-                    {vendor.area}, {vendor.city}
+                    {customGoogleMapsUrl
+                      ? `Official Google Profile · ${vendor.city}`
+                      : `${vendor.area}, ${vendor.city}`}
                   </p>
                 </div>
               </div>
               <ChevronRight className="size-4 shrink-0 opacity-60" aria-hidden="true" />
             </a>
+
+            {/* #6 Direct Google Review Button (when configured by vendor) */}
+            {googleReviewUrl && (
+              <a
+                href={googleReviewUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`flex w-full items-center justify-between rounded-2xl border px-4 py-3.5 transition-all ${t.linkBg} ${t.linkHover}`}
+              >
+                <div className="flex items-center gap-3">
+                  <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-amber-500/15 text-amber-600">
+                    <Star className="size-4 fill-amber-400 text-amber-500" aria-hidden="true" />
+                  </span>
+                  <div className="text-left">
+                    <p className="text-sm font-bold leading-tight">Leave Us a Google Review</p>
+                    <p className="text-[11px] opacity-70">
+                      Loved your order? Share a quick 5-star review
+                    </p>
+                  </div>
+                </div>
+                <ChevronRight className="size-4 shrink-0 opacity-60" aria-hidden="true" />
+              </a>
+            )}
           </div>
 
           {/* Bestsellers Quick-Order Strip (Top 3 Products) */}

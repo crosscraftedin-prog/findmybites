@@ -2,6 +2,7 @@ import { ChangeEvent, FormEvent, useEffect, useState } from 'react';
 import type { User } from 'firebase/auth';
 import {
   BarChart3,
+  BookOpen,
   Calculator,
   Calendar,
   CheckCircle2,
@@ -9,6 +10,7 @@ import {
   Edit3,
   ExternalLink,
   Eye,
+  Globe2,
   ImagePlus,
   Instagram,
   Link2,
@@ -76,6 +78,7 @@ import { compressDataUrlImage, compressImageFile } from '../utils/imageUpload';
 import { FoodTypeBadge, FoodTypeIcon } from './FoodTypeBadge';
 import { PromoCardModal } from './PromoCardModal';
 import { QrPosterModal } from './QrPosterModal';
+import { VendorGoogleToolkit } from './VendorGoogleToolkit';
 
 interface VendorDashboardModalProps {
   isOpen: boolean;
@@ -93,6 +96,7 @@ interface VendorDashboardModalProps {
   onOpenVendorWebsite: (vendor: Vendor) => void;
   onOpenBioLink?: (vendor: Vendor) => void;
   onOpenPricingKit?: () => void;
+  onOpenGrowthHub?: () => void;
   onTrackShare?: (vendorId: string) => void;
   onNotify: (msg: string) => void;
 }
@@ -193,10 +197,11 @@ export function VendorDashboardModal({
   onOpenVendorWebsite,
   onOpenBioLink,
   onOpenPricingKit,
+  onOpenGrowthHub,
   onTrackShare,
   onNotify,
 }: VendorDashboardModalProps) {
-  const [tab, setTab] = useState<'storefronts' | 'board' | 'leads'>('storefronts');
+  const [tab, setTab] = useState<'storefronts' | 'growth' | 'board' | 'leads'>('storefronts');
   const [addingProductForId, setAddingProductForId] = useState<string | null>(null);
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const [confirmDeleteProdKey, setConfirmDeleteProdKey] = useState<string | null>(null);
@@ -234,6 +239,8 @@ export function VendorDashboardModal({
   const [editBioHandle, setEditBioHandle] = useState('');
   const [editBioTheme, setEditBioTheme] = useState<BioTheme>('saffron');
   const [editInstagram, setEditInstagram] = useState('');
+  const [editGoogleMapsUrl, setEditGoogleMapsUrl] = useState('');
+  const [editGoogleReviewUrl, setEditGoogleReviewUrl] = useState('');
   const [editCustomLinks, setEditCustomLinks] = useState<VendorBioLink[]>([]);
   const [newLinkTitle, setNewLinkTitle] = useState('');
   const [newLinkUrl, setNewLinkUrl] = useState('');
@@ -291,6 +298,8 @@ export function VendorDashboardModal({
     setEditBioHandle(getVendorBioHandle(target));
     setEditBioTheme(target.bioTheme ?? (target.marketplace === 'party' ? 'party' : 'saffron'));
     setEditInstagram(target.instagramHandle || '');
+    setEditGoogleMapsUrl(target.googleMapsUrl || '');
+    setEditGoogleReviewUrl(target.googleReviewUrl || '');
     setEditCustomLinks(target.customLinks ? [...target.customLinks] : []);
     setNewLinkTitle('');
     setNewLinkUrl('');
@@ -342,6 +351,8 @@ export function VendorDashboardModal({
     setEditBioHandle(getVendorBioHandle(v));
     setEditBioTheme(v.bioTheme ?? (v.marketplace === 'party' ? 'party' : 'saffron'));
     setEditInstagram(v.instagramHandle || '');
+    setEditGoogleMapsUrl(v.googleMapsUrl || '');
+    setEditGoogleReviewUrl(v.googleReviewUrl || '');
     setEditCustomLinks(v.customLinks ? [...v.customLinks] : []);
     setNewLinkTitle('');
     setNewLinkUrl('');
@@ -446,6 +457,8 @@ export function VendorDashboardModal({
         bioHandle: editBioHandle,
         bioTheme: editBioTheme,
         instagramHandle: editInstagram,
+        googleMapsUrl: editGoogleMapsUrl.trim(),
+        googleReviewUrl: editGoogleReviewUrl.trim(),
         customLinks: editCustomLinks,
         planTier: editPlanTier,
         monthlyAutoPay: editPlanTier !== 'free',
@@ -961,6 +974,19 @@ export function VendorDashboardModal({
           </div>
 
           <div className="flex items-center gap-2">
+            {user && onOpenGrowthHub && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenGrowthHub();
+                }}
+                className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-brand-border bg-brand-soft px-3 py-1.5 text-xs font-bold text-brand hover:bg-brand hover:text-brand-foreground"
+              >
+                <BookOpen className="size-3.5" aria-hidden="true" />
+                <span>Growth Tips</span>
+              </button>
+            )}
             {onOpenPricingKit && (
               <button
                 type="button"
@@ -1031,6 +1057,18 @@ export function VendorDashboardModal({
                   }`}
                 >
                   My Storefronts ({myVendors.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTab('growth')}
+                  className={`inline-flex cursor-pointer items-center gap-1 rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+                    tab === 'growth'
+                      ? 'bg-background text-foreground shadow-xs'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <Globe2 className="size-3.5 text-brand" aria-hidden="true" />
+                  Google &amp; Growth
                 </button>
                 <button
                   type="button"
@@ -1635,6 +1673,35 @@ export function VendorDashboardModal({
                                       value={editInstagram}
                                       onChange={(e) => setEditInstagram(e.target.value)}
                                       placeholder="@yourbakery"
+                                      className="mt-1 w-full rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs text-foreground"
+                                    />
+                                  </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                  <div>
+                                    <label className="block text-[11px] font-semibold text-foreground">
+                                      Google Maps Place Link (Optional)
+                                    </label>
+                                    <input
+                                      type="url"
+                                      maxLength={300}
+                                      value={editGoogleMapsUrl}
+                                      onChange={(e) => setEditGoogleMapsUrl(e.target.value)}
+                                      placeholder="https://maps.app.goo.gl/..."
+                                      className="mt-1 w-full rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs text-foreground"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[11px] font-semibold text-foreground">
+                                      Google Review Link (Optional)
+                                    </label>
+                                    <input
+                                      type="url"
+                                      maxLength={300}
+                                      value={editGoogleReviewUrl}
+                                      onChange={(e) => setEditGoogleReviewUrl(e.target.value)}
+                                      placeholder="https://g.page/r/.../review"
                                       className="mt-1 w-full rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs text-foreground"
                                     />
                                   </div>
@@ -2288,6 +2355,23 @@ export function VendorDashboardModal({
                     })}
                   </div>
                 )
+              ) : tab === 'growth' ? (
+                <VendorGoogleToolkit
+                  vendors={myVendors}
+                  onNotify={onNotify}
+                  onOpenGrowthHub={
+                    onOpenGrowthHub
+                      ? () => {
+                          onClose();
+                          onOpenGrowthHub();
+                        }
+                      : undefined
+                  }
+                  onOpenVendorWebsite={(vendor) => {
+                    onClose();
+                    onOpenVendorWebsite(vendor);
+                  }}
+                />
               ) : tab === 'board' ? (
                 openEventRequests.length === 0 ? (
                   <div className="rounded-2xl border border-dashed border-border p-10 text-center">
