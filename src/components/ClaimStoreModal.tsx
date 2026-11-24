@@ -132,7 +132,11 @@ export function ClaimStoreModal({
     setVerifying(true);
     try {
       const barePass = cleanPass.replace(/-/g, '');
+      const strippedPrefix = barePass.replace(/^(?:CAKE|FMB)/, '');
       const passcodeCandidates: string[] = [cleanPass];
+      if (strippedPrefix && strippedPrefix !== barePass && strippedPrefix.length >= 6) {
+        passcodeCandidates.push(strippedPrefix);
+      }
       if (!barePass.startsWith('CAKE') && !barePass.startsWith('FMB') && barePass.length >= 6 && barePass.length <= 10) {
         passcodeCandidates.push(`CAKE-${barePass}`, `FMB-${barePass}`);
       }

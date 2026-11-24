@@ -21,6 +21,7 @@ export function usePWAInstall() {
   const [isIOS, setIsIOS] = useState(false);
   const [isIOSSafari, setIsIOSSafari] = useState(false);
   const [isAndroid, setIsAndroid] = useState(false);
+  const [isInAppBrowser, setIsInAppBrowser] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
 
   useEffect(() => {
@@ -35,12 +36,17 @@ export function usePWAInstall() {
       /iphone|ipad|ipod/.test(ua) ||
       (window.navigator.platform === 'MacIntel' && window.navigator.maxTouchPoints > 1);
     const androidDevice = /android/.test(ua);
+    const inApp = /fban|fbav|instagram|whatsapp|micromessenger|line\/|wv\)/.test(ua);
     const iosSafari =
-      iosDevice && /safari/.test(ua) && !/crios|fxios|edgios|opios|fban|fbav|instagram/.test(ua);
+      iosDevice &&
+      /safari/.test(ua) &&
+      !/crios|fxios|edgios|opios/.test(ua) &&
+      !inApp;
 
     setIsIOS(iosDevice);
     setIsIOSSafari(iosSafari);
     setIsAndroid(androidDevice);
+    setIsInAppBrowser(inApp);
 
     const updateViewport = () => setIsMobileViewport(window.innerWidth < 768);
     updateViewport();
@@ -107,6 +113,7 @@ export function usePWAInstall() {
     isIOS,
     isIOSSafari,
     isAndroid,
+    isInAppBrowser,
     isMobile: isIOS || isAndroid || isMobileViewport,
     install,
   };

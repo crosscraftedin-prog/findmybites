@@ -643,6 +643,12 @@ export function normalizePasscode(raw: string): string {
     .slice(0, 24);
 }
 
+export function formatDisplayPasscode(raw: string): string {
+  const clean = normalizePasscode(raw);
+  const stripped = clean.replace(/^(?:CAKE|FMB)-?/i, '');
+  return stripped.length >= 6 ? stripped : clean;
+}
+
 export function generateTransferPasscode(): string {
   const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
   const digits = '23456789';

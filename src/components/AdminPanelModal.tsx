@@ -59,6 +59,7 @@ import {
   Vendor,
   VendorProduct,
   VendorProductVariant,
+  formatDisplayPasscode,
   generateTransferPasscode,
   getCustomBuilderModeConfig,
   getVendorBioHandle,
@@ -232,10 +233,11 @@ function buildHandoverWhatsAppMessage(
   const storeUrl = `${origin}/v/${vendorSlug}`;
   const bioUrl = `${origin}/fmb/${bioHandle}`;
   const claimUrl = `${origin}/claim/${vendorSlug}`;
+  const displayCode = formatDisplayPasscode(passcode);
   return [
     `Hi ${vendorName}!`,
     ``,
-    `Great news — we have already built your FREE online storefront & menu on FindMyBites so local customers can discover your cakes and order directly on WhatsApp!`,
+    `Great news — we have already built your FREE online storefront & catalog on FindMyBites × PimpMyParty so local customers can discover your services and order directly on WhatsApp!`,
     ``,
     `Your Live Storefront: ${storeUrl}`,
     `Your Short Bio-Link (for Instagram): ${bioUrl}`,
@@ -244,9 +246,9 @@ function buildHandoverWhatsAppMessage(
     `${claimUrl}`,
     ``,
     `Phone Number: +${targetPhone}`,
-    `Secret Passcode: ${passcode}`,
+    `Secret Key: ${displayCode}`,
     ``,
-    `Once you claim it, you can edit prices, add photos, update your Christmas menu, and receive direct customer orders with 0% commission!`,
+    `Once you claim it, you can edit prices, add photos, update your menu & offers, and receive direct customer orders with 0% commission!`,
   ].join('\n');
 }
 
@@ -735,7 +737,7 @@ export function AdminPanelModal({
           setCreatedHandover({ vendor, transfer: prevTransfer });
           setActiveTab('create');
           onToast(
-            `Same passcode ${prevTransfer.passcode} stays locked until ${lockInfo.unlockDateLabel} (${lockInfo.daysLeft}d left).`
+            `Same secret key ${formatDisplayPasscode(prevTransfer.passcode)} stays locked until ${lockInfo.unlockDateLabel} (${lockInfo.daysLeft}d left).`
           );
           return;
         }
@@ -749,9 +751,9 @@ export function AdminPanelModal({
       );
       setCreatedHandover({ vendor, transfer: record });
       setActiveTab('create');
-      onToast(`Transfer passcode generated for ${vendor.name}!`);
+      onToast(`Transfer secret key generated for ${vendor.name}!`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not issue transfer passcode.');
+      setError(err instanceof Error ? err.message : 'Could not issue transfer secret key.');
     }
   };
 
@@ -761,7 +763,7 @@ export function AdminPanelModal({
     const lockInfo = getPasscodeLockInfo(t);
     if (lockInfo.locked) {
       onToast(
-        `Passcode ${t.passcode} is locked until ${lockInfo.unlockDateLabel} (${lockInfo.daysLeft}d left) so the baker's link stays valid.`
+        `Secret key ${formatDisplayPasscode(t.passcode)} is locked until ${lockInfo.unlockDateLabel} (${lockInfo.daysLeft}d left) so the vendor's link stays valid.`
       );
       return;
     }
@@ -998,7 +1000,11 @@ export function AdminPanelModal({
                       <button
                         type="button"
                         onClick={() =>
-                          copyText(createdHandover.transfer.passcode, 'pass', 'Passcode')
+                          copyText(
+                            formatDisplayPasscode(createdHandover.transfer.passcode),
+                            'pass',
+                            'Secret key'
+                          )
                         }
                         className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-amber-500/20 px-2 py-1 text-[11px] font-bold text-amber-900 hover:bg-amber-500/30 dark:text-amber-200"
                       >
@@ -1007,7 +1013,7 @@ export function AdminPanelModal({
                       </button>
                     </div>
                     <p className="mt-1 font-mono text-xl font-black tracking-widest text-amber-900 dark:text-amber-200">
-                      {createdHandover.transfer.passcode}
+                      {formatDisplayPasscode(createdHandover.transfer.passcode)}
                     </p>
                   </div>
                 </div>
@@ -2078,9 +2084,9 @@ export function AdminPanelModal({
                               </strong>
                             </span>
                             <span>
-                              Passcode:{' '}
+                              Secret Key:{' '}
                               <strong className="rounded bg-amber-500/15 px-1.5 py-0.5 font-mono text-amber-900 dark:text-amber-200">
-                                {t.passcode}
+                                {formatDisplayPasscode(t.passcode)}
                               </strong>
                             </span>
                             {vendor && (
