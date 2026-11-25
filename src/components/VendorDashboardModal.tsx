@@ -816,6 +816,13 @@ export function VendorDashboardModal({
     setEditingProductId(null);
   };
 
+  const scrollToProductForm = (vendorId: string) => {
+    window.requestAnimationFrame(() => {
+      const el = document.getElementById(`vendor-product-form-${vendorId}`);
+      el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+  };
+
   const openAddProductForm = (vendorId: string) => {
     if (addingProductForId === vendorId && !editingProductId) {
       setAddingProductForId(null);
@@ -825,6 +832,7 @@ export function VendorDashboardModal({
     resetProductForm();
     setAddingProductForId(vendorId);
     setConfirmDeleteProdKey(null);
+    scrollToProductForm(vendorId);
   };
 
   const openEditProductForm = (vendorId: string, product: VendorProduct) => {
@@ -861,6 +869,7 @@ export function VendorDashboardModal({
           }))
         : []
     );
+    scrollToProductForm(vendorId);
   };
 
   const getBaseOneKgLocalPrice = () => {
@@ -2546,16 +2555,6 @@ export function VendorDashboardModal({
                               <p className="text-xs font-bold text-foreground">
                                 Products &amp; Packages ({v.products.length})
                               </p>
-                              <button
-                                type="button"
-                                onClick={() => openAddProductForm(v.id)}
-                                className="inline-flex cursor-pointer items-center gap-1 text-xs font-semibold text-brand hover:underline"
-                              >
-                                <Plus className="size-3.5" aria-hidden="true" />
-                                {addingProductForId === v.id && !editingProductId
-                                  ? 'Close Form'
-                                  : 'Add Product'}
-                              </button>
                             </div>
 
                             {v.products.length === 0 ? (
@@ -2708,8 +2707,22 @@ export function VendorDashboardModal({
                               </div>
                             )}
 
+                            <div className="mt-3 flex items-center justify-end">
+                              <button
+                                type="button"
+                                onClick={() => openAddProductForm(v.id)}
+                                className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-brand bg-brand-soft/70 px-3.5 py-2 text-xs font-bold text-brand transition-colors hover:bg-brand hover:text-brand-foreground"
+                              >
+                                <Plus className="size-3.5" aria-hidden="true" />
+                                {addingProductForId === v.id && !editingProductId
+                                  ? 'Close Form'
+                                  : 'Add Product'}
+                              </button>
+                            </div>
+
                             {addingProductForId === v.id && (
                               <form
+                                id={`vendor-product-form-${v.id}`}
                                 onSubmit={(e) => void handleSaveProduct(e, v)}
                                 className="mt-3 space-y-3 rounded-xl border border-brand-border bg-brand-soft/25 p-3.5"
                               >
