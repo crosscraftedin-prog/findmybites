@@ -1728,38 +1728,87 @@ export function AdminPanelModal({
                               />
                             </div>
 
-                            {/* Multi-Weight / Size Options (500g to 5 kg on same product) */}
+                            {/* Multi-Weight / Size Options (250g to 5 kg & custom grams/sizes on same product) */}
                             <div className="space-y-1.5 rounded-lg border border-border/80 bg-muted/30 p-2 sm:col-span-4">
                               <div className="flex flex-wrap items-center justify-between gap-1.5">
                                 <span className="text-[11px] font-bold text-foreground">
                                   Weight / Size Options (Same Product):
                                 </span>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const base = Number(prod.priceLocal) || 1000;
-                                    const isHalfKg = /500\s*g|0\.5\s*kg/i.test(prod.serves);
-                                    const base1Kg = isHalfKg ? base * 1.85 : base;
-                                    const std = new Set(['w-500g', 'w-1kg', 'w-2kg', 'w-3kg', 'w-5kg']);
-                                    const autoRows = CAKE_WEIGHT_PRESETS.filter((w) => std.has(w.id)).map((w) => ({
-                                      id: w.id,
-                                      label: w.label,
-                                      priceLocal: String(Math.max(10, Math.round((base1Kg * w.kgRatio) / 10) * 10)),
-                                      serves: w.serves,
-                                    }));
-                                    setProducts((prev) =>
-                                      prev.map((p) => (p.id === prod.id ? { ...p, variants: autoRows } : p))
-                                    );
-                                  }}
-                                  className="cursor-pointer rounded bg-brand/15 px-2 py-0.5 text-[10px] font-extrabold text-brand hover:bg-brand hover:text-brand-foreground"
-                                >
-                                  Auto-fill 500g – 5 kg
-                                </button>
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const base = Number(prod.priceLocal) || 1000;
+                                      const isQuarterKg = /250\s*g|0\.25\s*kg/i.test(prod.serves);
+                                      const isHalfKg = /500\s*g|0\.5\s*kg/i.test(prod.serves);
+                                      const base1Kg = isQuarterKg
+                                        ? base * 3.35
+                                        : isHalfKg
+                                          ? base * 1.85
+                                          : base;
+                                      const std = new Set([
+                                        'w-250g',
+                                        'w-500g',
+                                        'w-1kg',
+                                        'w-2kg',
+                                        'w-3kg',
+                                        'w-5kg',
+                                      ]);
+                                      const autoRows = CAKE_WEIGHT_PRESETS.filter((w) =>
+                                        std.has(w.id)
+                                      ).map((w) => ({
+                                        id: w.id,
+                                        label: w.label,
+                                        priceLocal: String(
+                                          Math.max(10, Math.round((base1Kg * w.kgRatio) / 10) * 10)
+                                        ),
+                                        serves: w.serves,
+                                      }));
+                                      setProducts((prev) =>
+                                        prev.map((p) =>
+                                          p.id === prod.id ? { ...p, variants: autoRows } : p
+                                        )
+                                      );
+                                    }}
+                                    className="cursor-pointer rounded bg-brand/15 px-2 py-0.5 text-[10px] font-extrabold text-brand hover:bg-brand hover:text-brand-foreground"
+                                  >
+                                    Auto-fill 250g – 5 kg
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setProducts((prev) =>
+                                        prev.map((p) => {
+                                          if (p.id !== prod.id) return p;
+                                          const existing = p.variants || [];
+                                          if (existing.length >= 12) return p;
+                                          return {
+                                            ...p,
+                                            variants: [
+                                              ...existing,
+                                              {
+                                                id: `var-${Date.now()}-${existing.length + 1}`,
+                                                label: '',
+                                                priceLocal: prod.priceLocal || '350',
+                                                serves: '',
+                                              },
+                                            ],
+                                          };
+                                        })
+                                      );
+                                    }}
+                                    className="cursor-pointer rounded border border-border bg-card px-2 py-0.5 text-[10px] font-bold text-foreground hover:border-brand hover:text-brand"
+                                  >
+                                    + Custom Size / Gram
+                                  </button>
+                                </div>
                               </div>
                               <div className="flex flex-wrap items-center gap-1">
                                 {CAKE_WEIGHT_PRESETS.map((preset) => {
                                   const active = (prod.variants || []).some(
-                                    (v) => v.id === preset.id || v.label.toLowerCase() === preset.label.toLowerCase()
+                                    (v) =>
+                                      v.id === preset.id ||
+                                      v.label.toLowerCase() === preset.label.toLowerCase()
                                   );
                                   return (
                                     <button
@@ -1767,8 +1816,13 @@ export function AdminPanelModal({
                                       type="button"
                                       onClick={() => {
                                         const base = Number(prod.priceLocal) || 1000;
+                                        const isQuarterKg = /250\s*g|0\.25\s*kg/i.test(prod.serves);
                                         const isHalfKg = /500\s*g|0\.5\s*kg/i.test(prod.serves);
-                                        const base1Kg = isHalfKg ? base * 1.85 : base;
+                                        const base1Kg = isQuarterKg
+                                          ? base * 3.35
+                                          : isHalfKg
+                                            ? base * 1.85
+                                            : base;
                                         setProducts((prev) =>
                                           prev.map((p) => {
                                             if (p.id !== prod.id) return p;
@@ -1777,20 +1831,34 @@ export function AdminPanelModal({
                                               return {
                                                 ...p,
                                                 variants: existing.filter(
-                                                  (v) => v.id !== preset.id && v.label.toLowerCase() !== preset.label.toLowerCase()
+                                                  (v) =>
+                                                    v.id !== preset.id &&
+                                                    v.label.toLowerCase() !==
+                                                      preset.label.toLowerCase()
                                                 ),
                                               };
                                             }
-                                            const orderMap = new Map(CAKE_WEIGHT_PRESETS.map((w, i) => [w.id, i]));
+                                            const orderMap = new Map(
+                                              CAKE_WEIGHT_PRESETS.map((w, i) => [w.id, i])
+                                            );
                                             const next = [
                                               ...existing,
                                               {
                                                 id: preset.id,
                                                 label: preset.label,
-                                                priceLocal: String(Math.max(10, Math.round((base1Kg * preset.kgRatio) / 10) * 10)),
+                                                priceLocal: String(
+                                                  Math.max(
+                                                    10,
+                                                    Math.round((base1Kg * preset.kgRatio) / 10) * 10
+                                                  )
+                                                ),
                                                 serves: preset.serves,
                                               },
-                                            ].sort((a, b) => (orderMap.get(a.id) ?? 99) - (orderMap.get(b.id) ?? 99));
+                                            ].sort(
+                                              (a, b) =>
+                                                (orderMap.get(a.id) ?? 99) -
+                                                (orderMap.get(b.id) ?? 99)
+                                            );
                                             return { ...p, variants: next };
                                           })
                                         );
@@ -1808,18 +1876,40 @@ export function AdminPanelModal({
                                 })}
                               </div>
                               {prod.variants && prod.variants.length > 0 && (
-                                <div className="grid grid-cols-2 gap-1.5 pt-1 sm:grid-cols-3">
+                                <div className="grid grid-cols-1 gap-1.5 pt-1 sm:grid-cols-2 lg:grid-cols-3">
                                   {prod.variants.map((v) => (
                                     <div
                                       key={v.id}
                                       className="flex items-center gap-1 rounded border border-border bg-card px-1.5 py-1"
                                     >
-                                      <span className="font-mono text-[10px] font-bold text-foreground">
-                                        {v.label}
-                                      </span>
+                                      <input
+                                        type="text"
+                                        value={v.label}
+                                        placeholder="e.g. 250g / Box of 6"
+                                        aria-label="Weight or custom size label"
+                                        onChange={(e) =>
+                                          setProducts((prev) =>
+                                            prev.map((p) =>
+                                              p.id === prod.id
+                                                ? {
+                                                    ...p,
+                                                    variants: (p.variants || []).map((row) =>
+                                                      row.id === v.id
+                                                        ? { ...row, label: e.target.value }
+                                                        : row
+                                                    ),
+                                                  }
+                                                : p
+                                            )
+                                          )
+                                        }
+                                        className="w-24 min-w-0 rounded border border-border bg-background px-1.5 py-0.5 font-mono text-[10px] font-bold text-foreground placeholder:font-sans placeholder:font-normal placeholder:text-muted-foreground focus:border-brand focus:outline-none"
+                                      />
                                       <input
                                         type="number"
                                         min="1"
+                                        placeholder="Price"
+                                        aria-label={`Price for ${v.label || 'custom size'}`}
                                         value={v.priceLocal}
                                         onChange={(e) =>
                                           setProducts((prev) =>
@@ -1841,14 +1931,16 @@ export function AdminPanelModal({
                                       />
                                       <button
                                         type="button"
-                                        aria-label={`Remove ${v.label}`}
+                                        aria-label={`Remove ${v.label || 'size'}`}
                                         onClick={() =>
                                           setProducts((prev) =>
                                             prev.map((p) =>
                                               p.id === prod.id
                                                 ? {
                                                     ...p,
-                                                    variants: (p.variants || []).filter((row) => row.id !== v.id),
+                                                    variants: (p.variants || []).filter(
+                                                      (row) => row.id !== v.id
+                                                    ),
                                                   }
                                                 : p
                                             )

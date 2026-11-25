@@ -676,7 +676,7 @@ export function VendorDashboardModal({
 
   const autoFillCakeWeights = () => {
     const base1Kg = getBaseOneKgLocalPrice();
-    const standardIds = new Set(['w-500g', 'w-1kg', 'w-2kg', 'w-3kg', 'w-5kg']);
+    const standardIds = new Set(['w-250g', 'w-500g', 'w-1kg', 'w-2kg', 'w-3kg', 'w-5kg']);
     const generated = CAKE_WEIGHT_PRESETS.filter((p) => standardIds.has(p.id)).map((preset) => ({
       id: preset.id,
       label: preset.label,
@@ -2075,7 +2075,7 @@ export function VendorDashboardModal({
                                   })}
                                 </div>
 
-                                {/* Multiple Weight / Size Options on the Same Product (500g – 5 kg & custom) */}
+                                {/* Multiple Weight / Size Options on the Same Product (250g – 5 kg & custom) */}
                                 <div className="space-y-2 rounded-lg border border-brand-border/80 bg-background/80 p-2.5">
                                   <div className="flex flex-wrap items-center justify-between gap-2">
                                     <div>
@@ -2083,7 +2083,7 @@ export function VendorDashboardModal({
                                         Multiple Weight / Size Options (Same Product)
                                       </p>
                                       <p className="text-[10px] text-muted-foreground">
-                                        Offer 500g, 1 kg, 2 kg up to 5 kg on one cake card — customers pick their weight before ordering.
+                                        Offer 250g, 500g, 1 kg up to 5 kg — or add any custom gram, box, or pack size.
                                       </p>
                                     </div>
                                     <div className="flex items-center gap-1.5">
@@ -2092,14 +2092,14 @@ export function VendorDashboardModal({
                                         onClick={autoFillCakeWeights}
                                         className="cursor-pointer rounded-md bg-brand/15 px-2 py-1 text-[10px] font-extrabold text-brand transition-colors hover:bg-brand hover:text-brand-foreground"
                                       >
-                                        Auto-fill 500g – 5 kg
+                                        Auto-fill 250g – 5 kg
                                       </button>
                                       <button
                                         type="button"
                                         onClick={addCustomVariantRow}
                                         className="cursor-pointer rounded-md border border-border bg-background px-2 py-1 text-[10px] font-bold text-foreground transition-colors hover:border-brand hover:text-brand"
                                       >
-                                        + Custom Size
+                                        + Custom Size / Gram
                                       </button>
                                     </div>
                                   </div>
@@ -2150,9 +2150,9 @@ export function VendorDashboardModal({
                                                 )
                                               )
                                             }
-                                            placeholder="e.g. 500g"
+                                            placeholder="e.g. 250g / Box of 6"
                                             aria-label="Variant weight or size"
-                                            className="w-20 min-w-0 rounded border border-border bg-background px-2 py-1 font-mono text-[11px] font-bold text-foreground focus:border-brand focus:outline-none"
+                                            className="w-28 min-w-0 rounded border border-border bg-background px-2 py-1 font-mono text-[11px] font-bold text-foreground focus:border-brand focus:outline-none"
                                           />
                                           <div className="relative flex-1">
                                             <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 font-mono text-[11px] font-bold text-muted-foreground">

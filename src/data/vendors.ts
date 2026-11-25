@@ -393,6 +393,7 @@ export const CAKE_WEIGHT_PRESETS: ReadonlyArray<{
   kgRatio: number;
   serves: string;
 }> = [
+  { id: 'w-250g', label: '250g', kgRatio: 0.3, serves: 'Serves 2-3' },
   { id: 'w-500g', label: '500g', kgRatio: 0.55, serves: 'Serves 4-6' },
   { id: 'w-1kg', label: '1 kg', kgRatio: 1, serves: 'Serves 8-10' },
   { id: 'w-1-5kg', label: '1.5 kg', kgRatio: 1.5, serves: 'Serves 12-15' },
