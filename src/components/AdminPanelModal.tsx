@@ -1619,7 +1619,7 @@ export function AdminPanelModal({
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <h3 className="text-sm font-extrabold text-foreground">
-                        2. Add Baker&apos;s Cakes &amp; Products ({products.length}/50)
+                        2. Add Baker&apos;s Cakes &amp; Products ({products.length}/300)
                       </h3>
                       <p className="text-xs text-muted-foreground">
                         Pre-fill their menu so their storefront looks complete the moment you send the link!
@@ -1644,7 +1644,7 @@ export function AdminPanelModal({
                       </button>
                       <button
                         type="button"
-                        disabled={products.length >= 50}
+                        disabled={products.length >= 300}
                         onClick={() =>
                           setProducts((prev) => [...prev, makeEmptyProduct(categoryDefaultImg)])
                         }

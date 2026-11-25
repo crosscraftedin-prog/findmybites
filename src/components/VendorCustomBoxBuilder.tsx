@@ -97,13 +97,17 @@ export function VendorCustomBoxBuilder({
   );
   const hasFoodTags = vegCount > 0 || nonVegCount > 0;
 
+  const resolveProductSection = (p: VendorProduct): string =>
+    p.builderSection?.trim() || p.menuSection?.trim() || '';
+
   // Build dynamic section tabs based on products actually listed
   const sectionTabs = useMemo(() => {
     const presentSections = new Set<string>();
     let hasUnassigned = false;
     for (const p of vendor.products) {
-      if (p.builderSection && p.builderSection.trim()) {
-        presentSections.add(p.builderSection.trim());
+      const sec = resolveProductSection(p);
+      if (sec) {
+        presentSections.add(sec);
       } else {
         hasUnassigned = true;
       }
@@ -143,12 +147,12 @@ export function VendorCustomBoxBuilder({
     const q = searchQuery.trim().toLowerCase();
     return vendor.products.filter((p) => {
       if (foodFilter !== 'all' && p.foodType !== foodFilter) return false;
+      const sec = resolveProductSection(p) || 'Other Items';
       if (activeSection !== 'all') {
-        const sec = p.builderSection?.trim() || 'Other Items';
         if (sec !== activeSection) return false;
       }
       if (q) {
-        const hay = `${p.name} ${p.description} ${p.serves} ${p.builderSection ?? ''} ${(p.dietaryTags ?? []).join(' ')}`.toLowerCase();
+        const hay = `${p.name} ${p.description} ${p.serves} ${p.builderSection ?? ''} ${p.menuSection ?? ''} ${(p.dietaryTags ?? []).join(' ')}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -168,7 +172,7 @@ export function VendorCustomBoxBuilder({
   const selectedCountBySection = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const { product } of selectedEntries) {
-      const sec = product.builderSection?.trim() || 'Other Items';
+      const sec = resolveProductSection(product) || 'Other Items';
       counts[sec] = (counts[sec] || 0) + 1;
     }
     return counts;
@@ -577,7 +581,9 @@ export function VendorCustomBoxBuilder({
                             </h4>
                             <p className="mt-0.5 text-[11px] text-muted-foreground">
                               {product.serves}
-                              {product.builderSection ? ` · ${product.builderSection}` : ''}
+                              {resolveProductSection(product)
+                                ? ` · ${resolveProductSection(product)}`
+                                : ''}
                             </p>
                           </div>
                         </div>

@@ -2491,7 +2491,7 @@ export function VendorDashboardModal({
                           <div className="mt-4 border-t border-border pt-4">
                             <div className="flex items-center justify-between">
                               <p className="text-xs font-bold text-foreground">
-                                Products &amp; Packages ({v.products.length}/50)
+                                Products &amp; Packages ({v.products.length})
                               </p>
                               <button
                                 type="button"

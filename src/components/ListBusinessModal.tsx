@@ -1396,7 +1396,7 @@ export function ListBusinessModal({
               <div>
                 <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
                   5. Products &amp; Packages ({currencyMeta.code} {currencyMeta.symbol.trim()}) ·{' '}
-                  {products.length}/25
+                  {products.length}/150
                 </p>
                 <p className="text-[11px] text-muted-foreground">
                   {customBuilderEnabled
@@ -1407,7 +1407,7 @@ export function ListBusinessModal({
               <button
                 type="button"
                 onClick={addDraftProduct}
-                disabled={products.length >= 25}
+                disabled={products.length >= 150}
                 className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-brand bg-brand-soft/60 px-3 py-1.5 text-xs font-bold text-brand hover:bg-brand-soft disabled:opacity-50"
               >
                 <Plus className="size-3.5" aria-hidden="true" />

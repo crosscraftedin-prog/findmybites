@@ -580,7 +580,7 @@ async function normalizeProductsForStorage(
   const validUnits = new Set(['kg', 'g', 'pcs', 'box', 'dozen', 'pax', 'custom']);
   const validPresets = new Set(['veg', 'non-veg', 'party']);
 
-  const bounded = rawProducts.slice(0, 60);
+  const bounded = rawProducts.slice(0, 300);
   return Promise.all(
     bounded.map(async (item, idx) => {
       const p = (item && typeof item === 'object' ? item : {}) as Record<string, unknown>;
