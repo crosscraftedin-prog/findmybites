@@ -66,6 +66,7 @@ import {
 import { compressImageFile, parseCoordsFromMapsLink } from '../utils/imageUpload';
 import { requestBrowserGpsLocation, resolveRegionFromCoords } from '../utils/geolocation';
 import { FoodTypeIcon } from './FoodTypeBadge';
+import { StateCoveragePicker } from './StateCoveragePicker';
 
 interface ListBusinessModalProps {
   isOpen: boolean;
@@ -160,6 +161,10 @@ export function ListBusinessModal({
   );
   const [stateName, setStateName] = useState<string>(STATES_BY_COUNTRY[defaultCountry][0].name);
   const [city, setCity] = useState(STATES_BY_COUNTRY[defaultCountry][0].cities[0]);
+  const [customCityMode, setCustomCityMode] = useState(false);
+  const [extraCities, setExtraCities] = useState('');
+  const [allStatesCoverage, setAllStatesCoverage] = useState(false);
+  const [serviceStates, setServiceStates] = useState<string[]>([]);
   const [area, setArea] = useState('');
   const [latInput, setLatInput] = useState<string>(String(STATES_BY_COUNTRY[defaultCountry][0].lat));
   const [lngInput, setLngInput] = useState<string>(String(STATES_BY_COUNTRY[defaultCountry][0].lng));
@@ -238,6 +243,8 @@ export function ListBusinessModal({
   const isPaidPlan = planTier === 'pro' || planTier === 'business';
   const selectedPlanMeta = SAAS_PLANS.find((p) => p.id === planTier) ?? SAAS_PLANS[0];
   const statesForCountry = STATES_BY_COUNTRY[country];
+  const activeStateObj =
+    statesForCountry.find((s) => s.name === stateName) || statesForCountry[0];
   const currencyMeta = CURRENCIES[formCurrency];
   const defaultCover = DEFAULT_IMAGE_BY_CATEGORY[category] || IMG_CAKE;
 
@@ -246,6 +253,9 @@ export function ListBusinessModal({
     const firstState = STATES_BY_COUNTRY[nextCountry][0];
     setStateName(firstState.name);
     setCity(firstState.cities[0]);
+    setCustomCityMode(false);
+    setAllStatesCoverage(false);
+    setServiceStates([]);
     setLatInput(String(firstState.lat));
     setLngInput(String(firstState.lng));
 
@@ -267,6 +277,7 @@ export function ListBusinessModal({
     const found = statesForCountry.find((s) => s.name === nextState);
     if (found) {
       setCity(found.cities[0]);
+      setCustomCityMode(false);
       setLatInput(String(found.lat));
       setLngInput(String(found.lng));
     }
@@ -629,9 +640,19 @@ export function ListBusinessModal({
         marketplace === 'food' && customBuilderEnabled && customBuilderPackagingLocal > 0
           ? Math.max(0, Math.min(500, localToUsd(customBuilderPackagingLocal, formCurrency)))
           : undefined,
-      serviceAreas: [area.trim() || city.trim(), city.trim(), stateName, `${city.trim()} Metro`].filter(
-        (v, i, arr) => v && arr.indexOf(v) === i
-      ),
+      serviceAreas: [
+        area.trim() || city.trim(),
+        city.trim(),
+        stateName,
+        ...extraCities
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean),
+      ].filter((v, i, arr) => v && arr.indexOf(v) === i),
+      allStatesCoverage,
+      serviceStates: allStatesCoverage
+        ? []
+        : serviceStates.filter((s) => s && s !== stateName),
       specialties: [category, 'Direct WhatsApp Booking', 'Custom Orders'],
       image: coverImg,
       logo: logoDataUrl || undefined,
@@ -643,6 +664,10 @@ export function ListBusinessModal({
       await onAddVendor(newVendor);
       setName('');
       setArea('');
+      setCustomCityMode(false);
+      setExtraCities('');
+      setAllStatesCoverage(false);
+      setServiceStates([]);
       setWhatsappNumber('');
       setTagline('');
       setChristmasOffer('');
@@ -953,18 +978,61 @@ export function ListBusinessModal({
                 </select>
               </div>
               <div>
-                <label htmlFor="biz-city" className="block text-xs font-semibold text-foreground">
-                  City
-                </label>
-                <input
-                  id="biz-city"
-                  type="text"
-                  required
-                  value={city}
-                  onChange={(e) => handleCityChange(e.target.value)}
-                  placeholder="Hyderabad"
-                  className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:border-brand focus:outline-none"
-                />
+                <div className="flex items-center justify-between gap-1">
+                  <label htmlFor="biz-city" className="block text-xs font-semibold text-foreground">
+                    City
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (customCityMode) {
+                        setCustomCityMode(false);
+                        if (activeStateObj?.cities[0] && !activeStateObj.cities.includes(city)) {
+                          handleCityChange(activeStateObj.cities[0]);
+                        }
+                      } else {
+                        setCustomCityMode(true);
+                        setCity('');
+                      }
+                    }}
+                    className="cursor-pointer text-[11px] font-bold text-brand hover:underline"
+                  >
+                    {customCityMode ? 'Pick from list' : '+ Custom City'}
+                  </button>
+                </div>
+                {customCityMode ||
+                (activeStateObj && !activeStateObj.cities.includes(city) && city.trim() !== '') ? (
+                  <input
+                    id="biz-city"
+                    type="text"
+                    required
+                    value={city}
+                    onChange={(e) => handleCityChange(e.target.value)}
+                    placeholder="Type any city name (e.g. Khammam)"
+                    className="mt-1.5 w-full rounded-lg border border-brand/60 bg-background px-3 py-2.5 text-sm text-foreground focus:border-brand focus:outline-none"
+                  />
+                ) : (
+                  <select
+                    id="biz-city"
+                    value={city}
+                    onChange={(e) => {
+                      if (e.target.value === '__custom__') {
+                        setCustomCityMode(true);
+                        setCity('');
+                      } else {
+                        handleCityChange(e.target.value);
+                      }
+                    }}
+                    className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:border-brand focus:outline-none"
+                  >
+                    {(activeStateObj?.cities || [city]).map((ct) => (
+                      <option key={ct} value={ct}>
+                        {ct}
+                      </option>
+                    ))}
+                    <option value="__custom__">+ Create / Type Custom City…</option>
+                  </select>
+                )}
               </div>
               <div>
                 <label htmlFor="biz-area" className="block text-xs font-semibold text-foreground">
@@ -980,6 +1048,30 @@ export function ListBusinessModal({
                 />
               </div>
             </div>
+
+            <div>
+              <label htmlFor="biz-extra-cities" className="block text-xs font-semibold text-foreground">
+                Additional Delivery Cities / Towns (Optional)
+              </label>
+              <input
+                id="biz-extra-cities"
+                type="text"
+                value={extraCities}
+                onChange={(e) => setExtraCities(e.target.value)}
+                placeholder="Add custom cities you also serve (comma separated, e.g. Secunderabad, Vijayawada, Guntur)"
+                className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-brand focus:outline-none"
+              />
+            </div>
+
+            {/* Pan-India / Nationwide & Multi-State Delivery Coverage */}
+            <StateCoveragePicker
+              country={country}
+              primaryState={stateName}
+              allStatesCoverage={allStatesCoverage}
+              serviceStates={serviceStates}
+              onChangeAllStates={setAllStatesCoverage}
+              onChangeServiceStates={setServiceStates}
+            />
 
             <div className="space-y-3 rounded-xl border border-border bg-muted/30 p-3.5">
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">

@@ -97,7 +97,9 @@ export function StateCoveragePicker({
         <div className="min-w-0">
           <p className="flex items-center gap-1.5 text-xs font-extrabold text-foreground">
             <Globe2 className="size-3.5 text-indigo-600 dark:text-indigo-400" aria-hidden="true" />
-            Multi-{regionLabel} Storefront Visibility (Admin Outsourcing / Pan-India)
+            {country === 'India'
+              ? `Pan-India & Multi-${regionLabel} Delivery Coverage`
+              : `Nationwide & Multi-${regionLabel} Delivery Coverage`}
           </p>
           <p className="mt-0.5 text-[11px] text-muted-foreground">
             Choose where this store shows up in search, {regionLabel.toLowerCase()} filters &amp; SEO city pages.

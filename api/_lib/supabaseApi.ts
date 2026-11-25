@@ -1194,13 +1194,12 @@ export function createSupabaseApiRouter(): MicroRouter {
             ? vendor.christmasOffer.trim().slice(0, 160)
             : null,
         service_areas: Array.isArray(vendor.serviceAreas)
-          ? vendor.serviceAreas.map((s) => String(s).trim().slice(0, 100)).filter(Boolean).slice(0, 10)
+          ? vendor.serviceAreas.map((s) => String(s).trim().slice(0, 100)).filter(Boolean).slice(0, 25)
           : [String(vendor.city || 'Hyderabad')],
-        all_states_coverage: admin ? Boolean(vendor.allStatesCoverage) : false,
-        service_states:
-          admin && Array.isArray(vendor.serviceStates)
-            ? vendor.serviceStates.map((s) => String(s).trim().slice(0, 80)).filter(Boolean).slice(0, 40)
-            : [],
+        all_states_coverage: Boolean(vendor.allStatesCoverage),
+        service_states: Array.isArray(vendor.serviceStates)
+          ? vendor.serviceStates.map((s) => String(s).trim().slice(0, 80)).filter(Boolean).slice(0, 40)
+          : [],
         specialties: Array.isArray(vendor.specialties)
           ? vendor.specialties.map((s) => String(s).trim().slice(0, 100)).filter(Boolean).slice(0, 10)
           : [String(vendor.category || 'Bakers & Cakes')],
@@ -1397,6 +1396,31 @@ export function createSupabaseApiRouter(): MicroRouter {
         );
       }
 
+      if (typeof updates.city === 'string' && updates.city.trim()) {
+        patch.city = clampStr(updates.city, 2, 80, 'Hyderabad');
+      }
+      if (typeof updates.state === 'string' && updates.state.trim()) {
+        patch.state = clampStr(updates.state, 2, 80, 'Telangana');
+      }
+      if (typeof updates.area === 'string' && updates.area.trim()) {
+        patch.area = clampStr(updates.area, 1, 100, 'City Center');
+      }
+      if (Array.isArray(updates.serviceAreas)) {
+        patch.service_areas = updates.serviceAreas
+          .map((s) => String(s).trim().slice(0, 100))
+          .filter(Boolean)
+          .slice(0, 25);
+      }
+      if (updates.allStatesCoverage !== undefined) {
+        patch.all_states_coverage = Boolean(updates.allStatesCoverage);
+      }
+      if (Array.isArray(updates.serviceStates)) {
+        patch.service_states = updates.serviceStates
+          .map((s) => String(s).trim().slice(0, 80))
+          .filter(Boolean)
+          .slice(0, 40);
+      }
+
       // Admin-only fields
       if (admin) {
         if (updates.verified !== undefined) patch.verified = Boolean(updates.verified);
@@ -1406,14 +1430,6 @@ export function createSupabaseApiRouter(): MicroRouter {
           patch.seo_description = String(updates.seoDescription || '').trim().slice(0, 240) || null;
         if (updates.seoKeywords !== undefined)
           patch.seo_keywords = String(updates.seoKeywords || '').trim().slice(0, 300) || null;
-        if (updates.allStatesCoverage !== undefined)
-          patch.all_states_coverage = Boolean(updates.allStatesCoverage);
-        if (Array.isArray(updates.serviceStates)) {
-          patch.service_states = updates.serviceStates
-            .map((s) => String(s).trim().slice(0, 80))
-            .filter(Boolean)
-            .slice(0, 40);
-        }
       }
 
       const { data, error } = await supabase

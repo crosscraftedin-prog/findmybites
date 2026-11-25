@@ -265,6 +265,10 @@ export async function updateVendorInCloud(
     seoTitle: string;
     seoDescription: string;
     seoKeywords: string;
+    city: string;
+    state: string;
+    area: string;
+    serviceAreas: string[];
     allStatesCoverage: boolean;
     serviceStates: string[];
     image: string;

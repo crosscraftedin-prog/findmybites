@@ -1110,7 +1110,11 @@ export default function App() {
       const targetPath = `/v/${resolvedActiveVendor.slug}`;
       if (pathname !== targetPath) {
         try {
-          window.history.pushState({ vendorSlug: resolvedActiveVendor.slug }, '', targetPath);
+          const itemQuery = new URLSearchParams(window.location.search).get('item');
+          const nextUrl = itemQuery
+            ? `${targetPath}?item=${encodeURIComponent(itemQuery)}`
+            : targetPath;
+          window.history.pushState({ vendorSlug: resolvedActiveVendor.slug }, '', nextUrl);
         } catch {
           // ignore sandbox history restrictions
         }

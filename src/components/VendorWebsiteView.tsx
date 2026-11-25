@@ -22,6 +22,7 @@ import {
   Package,
   Plus,
   QrCode,
+  Share2,
   ShieldCheck,
   ShoppingBag,
   Sparkles,
@@ -36,6 +37,7 @@ import {
   CurrencyCode,
   Vendor,
   VendorProduct,
+  VendorProductVariant,
   VendorReview,
   buildWhatsAppUrl,
   formatMoney,
@@ -53,6 +55,7 @@ import {
   subscribeVendorReviews,
 } from '../services/firestoreService';
 import { FoodTypeBadge, FoodTypeIcon } from './FoodTypeBadge';
+import { ProductShareModal } from './ProductShareModal';
 import { PromoCardModal } from './PromoCardModal';
 import { QrPosterModal } from './QrPosterModal';
 import { VendorCustomBoxBuilder } from './VendorCustomBoxBuilder';
@@ -107,6 +110,10 @@ export function VendorWebsiteView({
   const [basketExpanded, setBasketExpanded] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
   const [promoCardOpen, setPromoCardOpen] = useState(false);
+  const [shareProductTarget, setShareProductTarget] = useState<{
+    product: VendorProduct;
+    variant: VendorProductVariant | null;
+  } | null>(null);
   const [lightboxImg, setLightboxImg] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
   const [customerName, setCustomerName] = useState('');
@@ -127,9 +134,21 @@ export function VendorWebsiteView({
 
   useEffect(() => {
     if (vendor) {
-      setSelectedProductId(vendor.products[0]?.id ?? '');
+      const itemParam =
+        typeof window !== 'undefined'
+          ? new URLSearchParams(window.location.search).get('item')
+          : null;
+      const deepLinkedProduct = itemParam
+        ? vendor.products.find((p) => p.id === itemParam)
+        : undefined;
+
+      setSelectedProductId(deepLinkedProduct?.id ?? vendor.products[0]?.id ?? '');
       setCatalogView(
-        vendor.customBuilderEnabled && vendor.products.length > 0 ? 'builder' : 'catalog'
+        deepLinkedProduct
+          ? 'catalog'
+          : vendor.customBuilderEnabled && vendor.products.length > 0
+            ? 'builder'
+            : 'catalog'
       );
       setFoodFilter('all');
       setSelectedVariants({});
@@ -137,12 +156,21 @@ export function VendorWebsiteView({
       setBasketExpanded(false);
       setQrOpen(false);
       setPromoCardOpen(false);
+      setShareProductTarget(null);
       setLightboxImg(null);
       setSubmittedRef(null);
       setCopiedLink(false);
       setNotes('');
       setReviewComment('');
       setReviewStatus(null);
+
+      if (deepLinkedProduct) {
+        const scrollTimer = window.setTimeout(() => {
+          const el = document.getElementById(`vendor-product-${deepLinkedProduct.id}`);
+          el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 220);
+        return () => window.clearTimeout(scrollTimer);
+      }
     }
   }, [vendor]);
 
@@ -163,11 +191,13 @@ export function VendorWebsiteView({
   useEffect(() => {
     if (!vendor) return;
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !qrOpen && !promoCardOpen && !lightboxImg) onClose();
+      if (e.key === 'Escape' && !qrOpen && !promoCardOpen && !shareProductTarget && !lightboxImg) {
+        onClose();
+      }
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [vendor, qrOpen, promoCardOpen, lightboxImg, onClose]);
+  }, [vendor, qrOpen, promoCardOpen, shareProductTarget, lightboxImg, onClose]);
 
   // Inject LocalBusiness JSON-LD with sameAs (Google Maps & Instagram) for SEO
   useEffect(() => {
@@ -985,7 +1015,8 @@ export function VendorWebsiteView({
                     return (
                       <div
                         key={product.id}
-                        className={`flex flex-col overflow-hidden rounded-2xl border bg-card transition-all ${
+                        id={`vendor-product-${product.id}`}
+                        className={`flex scroll-mt-24 flex-col overflow-hidden rounded-2xl border bg-card transition-all ${
                           qty > 0
                             ? 'border-[#25D366] ring-2 ring-[#25D366]/20'
                             : isSelected
@@ -1005,6 +1036,21 @@ export function VendorWebsiteView({
                               {product.tag}
                             </span>
                           )}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setShareProductTarget({
+                                product,
+                                variant: selectedVariant ?? null,
+                              })
+                            }
+                            aria-label={`Share ${waItemName} on Instagram, Facebook, X, or LinkedIn`}
+                            title="Share to Instagram Stories, Post, Facebook, X & LinkedIn"
+                            className="absolute right-3 top-3 inline-flex cursor-pointer items-center gap-1 rounded-full bg-black/75 px-2.5 py-1 text-[11px] font-semibold text-white backdrop-blur-md transition-colors hover:bg-brand"
+                          >
+                            <Share2 className="size-3" aria-hidden="true" />
+                            Share
+                          </button>
                           <span className="absolute bottom-3 right-3 rounded-full bg-black/75 px-3 py-1 font-mono text-xs font-bold tabular-nums text-white backdrop-blur-md">
                             {formatMoney(activePriceUsd, currency)}
                           </span>
@@ -1120,6 +1166,21 @@ export function VendorWebsiteView({
                           Add{selectedVariant ? ` ${selectedVariant.label}` : ' to Order'}
                         </button>
                       )}
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setShareProductTarget({
+                            product,
+                            variant: selectedVariant ?? null,
+                          })
+                        }
+                        aria-label={`Share ${waItemName}`}
+                        title="Share to Instagram Stories, Post, Facebook, X & LinkedIn"
+                        className="inline-flex cursor-pointer items-center justify-center rounded-lg border border-border bg-background px-2.5 py-2 text-xs font-semibold text-foreground transition-colors hover:border-brand hover:text-brand"
+                      >
+                        <Share2 className="size-3.5" aria-hidden="true" />
+                      </button>
 
                       <a
                         href={buildWhatsAppUrl(vendor, productWaText)}
@@ -1578,6 +1639,14 @@ export function VendorWebsiteView({
         vendor={promoCardOpen ? vendor : null}
         currency={currency}
         onClose={() => setPromoCardOpen(false)}
+        onTrackShare={onTrackShare}
+      />
+      <ProductShareModal
+        vendor={shareProductTarget ? vendor : null}
+        product={shareProductTarget?.product ?? null}
+        selectedVariant={shareProductTarget?.variant ?? null}
+        currency={currency}
+        onClose={() => setShareProductTarget(null)}
         onTrackShare={onTrackShare}
       />
 

@@ -341,6 +341,8 @@ export function AdminPanelModal({
   const [country, setCountry] = useState<Exclude<LaunchCountry, 'All'>>('India');
   const [stateName, setStateName] = useState('Maharashtra');
   const [city, setCity] = useState('Mumbai');
+  const [customCityMode, setCustomCityMode] = useState(false);
+  const [extraCities, setExtraCities] = useState('');
   const [area, setArea] = useState('');
   const [allStatesCoverage, setAllStatesCoverage] = useState(false);
   const [serviceStates, setServiceStates] = useState<string[]>([]);
@@ -443,6 +445,7 @@ export function AdminPanelModal({
     setPhoneCode(COUNTRY_PHONE_CODES[nextCountry] || '91');
     setAllStatesCoverage(false);
     setServiceStates([]);
+    setCustomCityMode(false);
     const regions = STATES_BY_COUNTRY[nextCountry] || [];
     if (regions[0]) {
       setStateName(regions[0].name);
@@ -454,6 +457,7 @@ export function AdminPanelModal({
 
   const handleStateChange = (nextState: string) => {
     setStateName(nextState);
+    setCustomCityMode(false);
     const region = statesForCountry.find((s) => s.name === nextState);
     if (region) {
       setCity(region.cities[0] || region.name);
@@ -547,6 +551,8 @@ export function AdminPanelModal({
   const resetBuilder = () => {
     setName('');
     setArea('');
+    setCustomCityMode(false);
+    setExtraCities('');
     setAllStatesCoverage(false);
     setServiceStates([]);
     setCustomBuilderEnabled(false);
@@ -699,7 +705,14 @@ export function AdminPanelModal({
       bioHandle: bioHandle.trim() || slugBase,
       ...(googleMapsUrl.trim() ? { googleMapsUrl: googleMapsUrl.trim() } : {}),
       ...(googleReviewUrl.trim() ? { googleReviewUrl: googleReviewUrl.trim() } : {}),
-      serviceAreas: [area.trim() || city, city].filter(Boolean),
+      serviceAreas: [
+        area.trim() || city.trim(),
+        city.trim(),
+        ...extraCities
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean),
+      ].filter((v, i, arr) => v && arr.indexOf(v) === i),
       allStatesCoverage,
       serviceStates: allStatesCoverage
         ? []
@@ -1248,18 +1261,57 @@ export function AdminPanelModal({
                     </div>
 
                     <div>
-                      <label className="mb-1 block text-xs font-bold text-foreground">City</label>
-                      <select
-                        value={city}
-                        onChange={(e) => setCity(e.target.value)}
-                        className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-brand focus:outline-none"
-                      >
-                        {(activeStateObj?.cities || [city]).map((ct) => (
-                          <option key={ct} value={ct}>
-                            {ct}
-                          </option>
-                        ))}
-                      </select>
+                      <div className="mb-1 flex items-center justify-between gap-1">
+                        <label className="block text-xs font-bold text-foreground">City</label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (customCityMode) {
+                              setCustomCityMode(false);
+                              if (activeStateObj?.cities[0] && !activeStateObj.cities.includes(city)) {
+                                setCity(activeStateObj.cities[0]);
+                              }
+                            } else {
+                              setCustomCityMode(true);
+                              setCity('');
+                            }
+                          }}
+                          className="cursor-pointer text-[11px] font-bold text-brand hover:underline"
+                        >
+                          {customCityMode ? 'Pick from list' : '+ Custom City'}
+                        </button>
+                      </div>
+                      {customCityMode ||
+                      (activeStateObj && !activeStateObj.cities.includes(city) && city.trim() !== '') ? (
+                        <input
+                          type="text"
+                          required
+                          value={city}
+                          onChange={(e) => setCity(e.target.value)}
+                          placeholder="Type new city name (e.g. Khammam, Secunderabad)"
+                          className="w-full rounded-xl border border-brand/60 bg-background px-3 py-2 text-sm text-foreground focus:border-brand focus:outline-none"
+                        />
+                      ) : (
+                        <select
+                          value={city}
+                          onChange={(e) => {
+                            if (e.target.value === '__custom__') {
+                              setCustomCityMode(true);
+                              setCity('');
+                            } else {
+                              setCity(e.target.value);
+                            }
+                          }}
+                          className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-brand focus:outline-none"
+                        >
+                          {(activeStateObj?.cities || [city]).map((ct) => (
+                            <option key={ct} value={ct}>
+                              {ct}
+                            </option>
+                          ))}
+                          <option value="__custom__">+ Create / Type Custom City…</option>
+                        </select>
+                      )}
                     </div>
 
                     <div>
@@ -1271,6 +1323,19 @@ export function AdminPanelModal({
                         value={area}
                         onChange={(e) => setArea(e.target.value)}
                         placeholder="e.g. Bandra West / Indiranagar"
+                        className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-brand focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="mb-1 block text-xs font-bold text-foreground">
+                        Additional Delivery Cities / Towns (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={extraCities}
+                        onChange={(e) => setExtraCities(e.target.value)}
+                        placeholder="Add extra city names (comma separated, e.g. Secunderabad, Vijayawada, Guntur)"
                         className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-brand focus:outline-none"
                       />
                     </div>

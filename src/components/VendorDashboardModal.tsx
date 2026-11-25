@@ -40,6 +40,7 @@ import {
   BookingEnquiry,
   BuilderPresetId,
   CAKE_WEIGHT_PRESETS,
+  COUNTRY_REGION_LABEL,
   CURRENCIES,
   CUSTOM_BUILDER_MODES,
   CloudVendorMetric,
@@ -52,6 +53,7 @@ import {
   ProductFoodType,
   ProductUnitType,
   SAAS_PLANS,
+  STATES_BY_COUNTRY,
   Vendor,
   VendorBioLink,
   VendorProduct,
@@ -78,6 +80,7 @@ import { compressDataUrlImage, compressImageFile } from '../utils/imageUpload';
 import { FoodTypeBadge, FoodTypeIcon } from './FoodTypeBadge';
 import { PromoCardModal } from './PromoCardModal';
 import { QrPosterModal } from './QrPosterModal';
+import { StateCoveragePicker } from './StateCoveragePicker';
 import { VendorGoogleToolkit } from './VendorGoogleToolkit';
 
 interface VendorDashboardModalProps {
@@ -249,6 +252,13 @@ export function VendorDashboardModal({
   const [editLogo, setEditLogo] = useState('');
   const [editCover, setEditCover] = useState('');
   const [editGallery, setEditGallery] = useState<string[]>([]);
+  const [editState, setEditState] = useState('');
+  const [editCity, setEditCity] = useState('');
+  const [editCustomCityMode, setEditCustomCityMode] = useState(false);
+  const [editArea, setEditArea] = useState('');
+  const [editExtraCities, setEditExtraCities] = useState('');
+  const [editAllStatesCoverage, setEditAllStatesCoverage] = useState(false);
+  const [editServiceStates, setEditServiceStates] = useState<string[]>([]);
 
   // Event Board quoting state
   const [quotingRequestId, setQuotingRequestId] = useState<string | null>(null);
@@ -361,6 +371,28 @@ export function VendorDashboardModal({
     setEditLogo(v.logo || '');
     setEditCover(v.image);
     setEditGallery(v.gallery ? [...v.gallery] : []);
+    const countryRegions = STATES_BY_COUNTRY[v.country] || [];
+    const matchedState = countryRegions.find((s) => s.name === v.state) || countryRegions[0];
+    setEditState(v.state || matchedState?.name || '');
+    setEditCity(v.city || '');
+    setEditCustomCityMode(
+      Boolean(v.city && matchedState && !matchedState.cities.includes(v.city))
+    );
+    setEditArea(v.area || '');
+    setEditExtraCities(
+      (v.serviceAreas || [])
+        .filter(
+          (a) =>
+            a &&
+            a !== v.city &&
+            a !== v.area &&
+            a !== v.state &&
+            a !== `${v.city} Metro`
+        )
+        .join(', ')
+    );
+    setEditAllStatesCoverage(Boolean(v.allStatesCoverage));
+    setEditServiceStates(Array.isArray(v.serviceStates) ? [...v.serviceStates] : []);
   };
 
   const handleToggleChristmasHighlight = async (v: Vendor) => {
@@ -465,6 +497,22 @@ export function VendorDashboardModal({
         logo: editLogo,
         image: editCover,
         gallery: editGallery,
+        state: editState.trim() || vendor.state,
+        city: editCity.trim() || vendor.city,
+        area: editArea.trim() || editCity.trim() || vendor.area,
+        serviceAreas: [
+          editArea.trim() || editCity.trim() || vendor.city,
+          editCity.trim() || vendor.city,
+          editState.trim() || vendor.state,
+          ...editExtraCities
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean),
+        ].filter((val, idx, arr) => val && arr.indexOf(val) === idx),
+        allStatesCoverage: editAllStatesCoverage,
+        serviceStates: editAllStatesCoverage
+          ? []
+          : editServiceStates.filter((s) => s && s !== (editState.trim() || vendor.state)),
       });
       setEditingVendorId(null);
       onNotify(`Saved storefront & Bio-Link updates for ${editName} to Cloud!`);
@@ -1422,6 +1470,144 @@ export function VendorDashboardModal({
                                   className="mt-1 w-full rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs text-foreground"
                                 />
                               </div>
+
+                              {/* Location, Custom City & Pan-India / Multi-State Delivery Coverage */}
+                              {(() => {
+                                const editRegions = STATES_BY_COUNTRY[v.country] || [];
+                                const editStateObj =
+                                  editRegions.find((s) => s.name === editState) || editRegions[0];
+                                return (
+                                  <div className="space-y-3 rounded-xl border border-border bg-card p-3">
+                                    <p className="flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wide text-foreground">
+                                      <MapPin className="size-3.5 text-brand" aria-hidden="true" />
+                                      Location, Custom Cities &amp; Delivery Coverage ({v.country})
+                                    </p>
+                                    <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+                                      <div>
+                                        <label className="block text-[11px] font-semibold text-foreground">
+                                          {COUNTRY_REGION_LABEL[v.country]}
+                                        </label>
+                                        <select
+                                          value={editState}
+                                          onChange={(e) => {
+                                            const nextSt = e.target.value;
+                                            setEditState(nextSt);
+                                            const stObj = editRegions.find((s) => s.name === nextSt);
+                                            if (stObj) {
+                                              setEditCity(stObj.cities[0] || stObj.name);
+                                              setEditCustomCityMode(false);
+                                            }
+                                          }}
+                                          className="mt-1 w-full rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs text-foreground"
+                                        >
+                                          {editRegions.map((st) => (
+                                            <option key={st.name} value={st.name}>
+                                              {st.name}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      </div>
+
+                                      <div>
+                                        <div className="flex items-center justify-between gap-1">
+                                          <label className="block text-[11px] font-semibold text-foreground">
+                                            City
+                                          </label>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              if (editCustomCityMode) {
+                                                setEditCustomCityMode(false);
+                                                if (
+                                                  editStateObj?.cities[0] &&
+                                                  !editStateObj.cities.includes(editCity)
+                                                ) {
+                                                  setEditCity(editStateObj.cities[0]);
+                                                }
+                                              } else {
+                                                setEditCustomCityMode(true);
+                                                setEditCity('');
+                                              }
+                                            }}
+                                            className="cursor-pointer text-[10px] font-bold text-brand hover:underline"
+                                          >
+                                            {editCustomCityMode ? 'Pick list' : '+ Custom City'}
+                                          </button>
+                                        </div>
+                                        {editCustomCityMode ||
+                                        (editStateObj &&
+                                          !editStateObj.cities.includes(editCity) &&
+                                          editCity.trim() !== '') ? (
+                                          <input
+                                            type="text"
+                                            required
+                                            value={editCity}
+                                            onChange={(e) => setEditCity(e.target.value)}
+                                            placeholder="Type custom city name"
+                                            className="mt-1 w-full rounded-lg border border-brand/60 bg-background px-2.5 py-1.5 text-xs text-foreground"
+                                          />
+                                        ) : (
+                                          <select
+                                            value={editCity}
+                                            onChange={(e) => {
+                                              if (e.target.value === '__custom__') {
+                                                setEditCustomCityMode(true);
+                                                setEditCity('');
+                                              } else {
+                                                setEditCity(e.target.value);
+                                              }
+                                            }}
+                                            className="mt-1 w-full rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs text-foreground"
+                                          >
+                                            {(editStateObj?.cities || [editCity]).map((ct) => (
+                                              <option key={ct} value={ct}>
+                                                {ct}
+                                              </option>
+                                            ))}
+                                            <option value="__custom__">+ Create Custom City…</option>
+                                          </select>
+                                        )}
+                                      </div>
+
+                                      <div>
+                                        <label className="block text-[11px] font-semibold text-foreground">
+                                          Locality / Area
+                                        </label>
+                                        <input
+                                          type="text"
+                                          value={editArea}
+                                          onChange={(e) => setEditArea(e.target.value)}
+                                          placeholder="e.g. Jubilee Hills"
+                                          className="mt-1 w-full rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs text-foreground"
+                                        />
+                                      </div>
+                                    </div>
+
+                                    <div>
+                                      <label className="block text-[11px] font-semibold text-foreground">
+                                        Additional Delivery Cities (Optional, comma separated)
+                                      </label>
+                                      <input
+                                        type="text"
+                                        value={editExtraCities}
+                                        onChange={(e) => setEditExtraCities(e.target.value)}
+                                        placeholder="e.g. Secunderabad, Vijayawada, Khammam"
+                                        className="mt-1 w-full rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs text-foreground"
+                                      />
+                                    </div>
+
+                                    <StateCoveragePicker
+                                      country={v.country}
+                                      primaryState={editState || v.state}
+                                      allStatesCoverage={editAllStatesCoverage}
+                                      serviceStates={editServiceStates}
+                                      onChangeAllStates={setEditAllStatesCoverage}
+                                      onChangeServiceStates={setEditServiceStates}
+                                      compact
+                                    />
+                                  </div>
+                                );
+                              })()}
 
                               {/* Christmas & New Year Spotlight Controls */}
                               <div className="rounded-xl border border-emerald-500/35 bg-emerald-950/85 p-3 text-white">

@@ -66,7 +66,7 @@ interface VendorRecord {
   seoKeywords?: string;
   googleMapsUrl?: string;
   instagramUrl?: string;
-  products: Array<{ name: string; description: string; priceUsd: number }>;
+  products: Array<{ id: string; name: string; description: string; priceUsd: number; image?: string }>;
 }
 
 function parseSupabaseVendor(row: Record<string, unknown>): VendorRecord | null {
@@ -79,12 +79,17 @@ function parseSupabaseVendor(row: Record<string, unknown>): VendorRecord | null 
       if (!item || typeof item !== 'object') return null;
       const p = item as Record<string, unknown>;
       return {
+        id: typeof p.id === 'string' ? p.id.trim() : '',
         name: typeof p.name === 'string' && p.name.trim() ? p.name.trim() : 'Package',
         description: typeof p.description === 'string' ? p.description.trim() : '',
         priceUsd: typeof p.priceUsd === 'number' ? p.priceUsd : 0,
+        image: typeof p.image === 'string' && p.image.trim() ? p.image.trim() : undefined,
       };
     })
-    .filter((p): p is { name: string; description: string; priceUsd: number } => Boolean(p));
+    .filter(
+      (p): p is { id: string; name: string; description: string; priceUsd: number; image: string | undefined } =>
+        p !== null
+    );
 
   const city = typeof row.city === 'string' && row.city.trim() ? row.city.trim() : 'Hyderabad';
   return {
@@ -279,17 +284,27 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
 
     const vendor = matches[0];
     if (vendor) {
-      const canonical = `${SITE_ORIGIN}/v/${encodeURIComponent(vendor.slug)}`;
-      const ogImage = safePublicImage(vendor.image);
-      const title =
-        vendor.seoTitle ||
-        `${vendor.name} – ${vendor.category} in ${vendor.city} | FindMyBites`;
-      const description =
-        vendor.seoDescription ||
-        `${vendor.tagline || vendor.description} Book ${vendor.name} in ${vendor.area}, ${vendor.city}, ${vendor.state} directly on WhatsApp via FindMyBites.`;
+      const rawItemParam = req.query?.item;
+      const itemId = (Array.isArray(rawItemParam) ? rawItemParam[0] : rawItemParam || '').trim();
+      const matchedProduct = itemId
+        ? vendor.products.find((p) => p.id === itemId)
+        : undefined;
+
+      const canonical = matchedProduct
+        ? `${SITE_ORIGIN}/v/${encodeURIComponent(vendor.slug)}?item=${encodeURIComponent(matchedProduct.id)}`
+        : `${SITE_ORIGIN}/v/${encodeURIComponent(vendor.slug)}`;
+      const ogImage = safePublicImage(matchedProduct?.image || vendor.image);
+      const title = matchedProduct
+        ? `${matchedProduct.name} by ${vendor.name} (${vendor.city}) | FindMyBites`
+        : vendor.seoTitle ||
+          `${vendor.name} – ${vendor.category} in ${vendor.city} | FindMyBites`;
+      const description = matchedProduct
+        ? `${matchedProduct.description || matchedProduct.name} — Order directly from ${vendor.name} in ${vendor.area}, ${vendor.city} on FindMyBites (0% commission).`
+        : vendor.seoDescription ||
+          `${vendor.tagline || vendor.description} Book ${vendor.name} in ${vendor.area}, ${vendor.city}, ${vendor.state} directly on WhatsApp via FindMyBites.`;
       const keywords =
         vendor.seoKeywords ||
-        `${vendor.name}, ${vendor.category} in ${vendor.city}, ${vendor.area} ${vendor.category}`;
+        `${matchedProduct ? `${matchedProduct.name}, ` : ''}${vendor.name}, ${vendor.category} in ${vendor.city}, ${vendor.area} ${vendor.category}`;
       const schemaType = vendor.category.toLowerCase().includes('baker')
         ? 'Bakery'
         : vendor.marketplace === 'food'
@@ -311,8 +326,10 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
         keywords,
         canonical,
         ogImage,
-        h1: `${vendor.name} · ${vendor.category} in ${vendor.area}, ${vendor.city}`,
-        bodyHtml: `<p>${escapeHtml(vendor.description)}</p>${productListHtml}<p><a href="${escapeHtml(canonical)}">View full storefront &amp; WhatsApp ordering</a></p>`,
+        h1: matchedProduct
+          ? `${matchedProduct.name} · ${vendor.name} (${vendor.city})`
+          : `${vendor.name} · ${vendor.category} in ${vendor.area}, ${vendor.city}`,
+        bodyHtml: `<p>${escapeHtml(matchedProduct?.description || vendor.description)}</p>${productListHtml}<p><a href="${escapeHtml(canonical)}">View full storefront &amp; WhatsApp ordering</a></p>`,
         jsonLdList: [
           {
             '@context': 'https://schema.org',
