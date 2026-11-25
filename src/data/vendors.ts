@@ -500,6 +500,16 @@ export interface Vendor {
   isCloud?: boolean;
 }
 
+export function isPaidPlanTier(planTier?: PlanTier): boolean {
+  return planTier === 'business' || planTier === 'pro';
+}
+
+export function isCustomBuilderActive(
+  vendor: Pick<Vendor, 'planTier' | 'customBuilderEnabled'>
+): boolean {
+  return Boolean(vendor.customBuilderEnabled) && isPaidPlanTier(vendor.planTier);
+}
+
 export interface VendorPromoCode {
   code: string;
   type: 'percent' | 'flat';
@@ -859,7 +869,7 @@ export const SAAS_PLANS: SaasPlan[] = [
     features: [
       'Listed in local search & Near Me directory',
       'Dedicated storefront page (/v/your-store) & Bio-Link',
-      'Up to 10 products with weight/size variants',
+      'List per-plate packages, catering offerings & up to 10 products',
       'Direct WhatsApp button, QR poster & social product sharing',
       'Verified customer reviews & Google Maps link',
     ],
@@ -880,15 +890,15 @@ export const SAAS_PLANS: SaasPlan[] = [
       USD: 60,
     },
     tagline:
-      'Turn your storefront into a full 0%-commission direct online ordering store and rank above Free listings.',
+      'Turn your storefront into a full 0%-commission direct online ordering store with interactive menu builder and top ranking.',
     billingNote: 'Monthly auto-pay · Cancel anytime · 0% commission',
     yearlyBillingNote: 'Pay for 10 months — 2 months FREE · 0% commission',
     highlighted: true,
     features: [
+      'Interactive Custom Plate, Snack Box & Meal Box Menu Builder',
       'Full Direct Online Ordering (Pickup/Delivery, Date & Time Slots, Cake Messages)',
       'Direct UPI QR & Payment Link checkout — 100% money straight to you',
-      'Live Order Management Board + 1-tap WhatsApp order status alerts',
-      'Promo/Discount codes, 1-tap Sold-Out toggle & Clean QR Menu view',
+      'Live Order Management Board, Promo Codes, Sold-Out toggle & Clean QR Menu',
       '#1 Priority ranking above Free listings + Unlimited products + Pan-India coverage',
     ],
   },

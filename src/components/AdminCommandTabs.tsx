@@ -47,6 +47,7 @@ import {
   generateTransferPasscode,
   getCustomBuilderModeConfig,
   getVendorCoverageLabel,
+  isPaidPlanTier,
   normalizePasscode,
   normalizePhoneDigits,
   suggestBuilderModeForCategory,
@@ -782,8 +783,14 @@ export function AdminApprovalsTab({
 
                       <button
                         type="button"
-                        disabled={isBusy}
+                        disabled={isBusy || !isPaidPlanTier(v.planTier)}
+                        title={
+                          isPaidPlanTier(v.planTier)
+                            ? 'Toggle Custom Menu Builder'
+                            : 'Business Plan only — upgrade store to Business to enable Custom Menu Builder'
+                        }
                         onClick={() => {
+                          if (!isPaidPlanTier(v.planTier)) return;
                           const nextEnabled = !v.customBuilderEnabled;
                           const nextMode =
                             v.customBuilderMode ?? suggestBuilderModeForCategory(v.category);
@@ -800,8 +807,8 @@ export function AdminApprovalsTab({
                               : `Disabled Custom Builder on ${v.name}.`
                           );
                         }}
-                        className={`inline-flex cursor-pointer items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition-colors disabled:opacity-50 ${
-                          v.customBuilderEnabled
+                        className={`inline-flex cursor-pointer items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                          isPaidPlanTier(v.planTier) && v.customBuilderEnabled
                             ? 'border-brand bg-brand text-brand-foreground shadow-xs hover:bg-brand-hover'
                             : 'border-border bg-background text-muted-foreground hover:border-brand hover:text-brand'
                         }`}
@@ -811,7 +818,11 @@ export function AdminApprovalsTab({
                         ) : (
                           <Package className="size-3" />
                         )}
-                        {v.customBuilderEnabled ? 'Builder ON' : 'Custom Builder'}
+                        {!isPaidPlanTier(v.planTier)
+                          ? 'Builder · Paid Only'
+                          : v.customBuilderEnabled
+                            ? 'Builder ON'
+                            : 'Custom Builder'}
                       </button>
 
                       <button

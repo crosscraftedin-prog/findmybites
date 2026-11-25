@@ -22,6 +22,7 @@ import {
   formatMoney,
   getCustomBuilderModeConfig,
   getVendorCoverageLabel,
+  isCustomBuilderActive,
   suggestBuilderModeForCategory,
 } from '../data/vendors';
 
@@ -56,7 +57,7 @@ export function VendorCard({
   const isPaid = vendor.planTier === 'business' || vendor.planTier === 'pro';
   const coverageLabel = getVendorCoverageLabel(vendor, browsingState);
   const isMultiState = Boolean(coverageLabel);
-  const hasCustomBuilder = Boolean(vendor.customBuilderEnabled);
+  const hasCustomBuilder = isCustomBuilderActive(vendor);
   const builderModeConfig = hasCustomBuilder
     ? getCustomBuilderModeConfig(
         vendor.customBuilderMode ?? suggestBuilderModeForCategory(vendor.category)

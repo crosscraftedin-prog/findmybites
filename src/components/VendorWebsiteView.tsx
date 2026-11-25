@@ -48,6 +48,7 @@ import {
   getVendorCoverageLabel,
   getVendorCoveredStatesList,
   getVendorQuickTags,
+  isCustomBuilderActive,
   sanitizeSafeHttpUrl,
   suggestBuilderModeForCategory,
 } from '../data/vendors';
@@ -153,7 +154,7 @@ export function VendorWebsiteView({
       setCatalogView(
         deepLinkedProduct || menuModeParam
           ? 'catalog'
-          : vendor.customBuilderEnabled && vendor.products.length > 0
+          : isCustomBuilderActive(vendor) && vendor.products.length > 0
             ? 'builder'
             : 'catalog'
       );
@@ -929,7 +930,7 @@ export function VendorWebsiteView({
         <section id="vendor-products">
           {(() => {
             const hasCustomBuilder = Boolean(
-              vendor.customBuilderEnabled && vendor.products.length > 0
+              isCustomBuilderActive(vendor) && vendor.products.length > 0
             );
             const builderMode =
               vendor.customBuilderMode ?? suggestBuilderModeForCategory(vendor.category);
@@ -959,7 +960,7 @@ export function VendorWebsiteView({
 
             return (
               <>
-                {vendor.customBuilderEnabled && vendor.products.length === 0 && (
+                {isCustomBuilderActive(vendor) && vendor.products.length === 0 && (
                   <div className="mb-6 rounded-2xl border border-brand-border bg-brand-soft/35 p-4 text-xs text-foreground">
                     <p className="inline-flex items-center gap-1.5 font-extrabold text-brand">
                       <Package className="size-4" aria-hidden="true" />

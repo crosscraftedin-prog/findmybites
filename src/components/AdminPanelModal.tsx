@@ -636,10 +636,10 @@ export function AdminPanelModal({
           name: p.name.trim().slice(0, 100),
           serves: resolvedServes,
           ...(p.foodType ? { foodType: p.foodType } : {}),
-          ...(customBuilderEnabled && p.builderSection?.trim()
+          ...(planTier !== 'free' && customBuilderEnabled && p.builderSection?.trim()
             ? { builderSection: p.builderSection.trim().slice(0, 60) }
             : {}),
-          ...(customBuilderEnabled && p.builderPresets && p.builderPresets.length > 0
+          ...(planTier !== 'free' && customBuilderEnabled && p.builderPresets && p.builderPresets.length > 0
             ? { builderPresets: p.builderPresets }
             : {}),
           ...(cleanedVariants.length > 0 ? { variants: cleanedVariants } : {}),
@@ -692,14 +692,15 @@ export function AdminPanelModal({
         description.trim() || `Handcrafted ${category} serving ${area.trim() || city}, ${city}.`,
       christmasSpecial,
       christmasOffer: christmasSpecial ? christmasOffer.trim() : undefined,
-      customBuilderEnabled: isFood && customBuilderEnabled,
-      customBuilderMode: isFood && customBuilderEnabled ? customBuilderMode : undefined,
+      customBuilderEnabled: isFood && planTier !== 'free' && customBuilderEnabled,
+      customBuilderMode:
+        isFood && planTier !== 'free' && customBuilderEnabled ? customBuilderMode : undefined,
       customBuilderMinQty:
-        isFood && customBuilderEnabled
+        isFood && planTier !== 'free' && customBuilderEnabled
           ? Math.max(1, Math.min(5000, Math.round(customBuilderMinQty || 10)))
           : undefined,
       customBuilderPackagingUsd:
-        isFood && customBuilderEnabled && customBuilderPackagingLocal > 0
+        isFood && planTier !== 'free' && customBuilderEnabled && customBuilderPackagingLocal > 0
           ? Math.max(0, Math.min(500, localToUsd(customBuilderPackagingLocal, formCurrency)))
           : undefined,
       bioHandle: bioHandle.trim() || slugBase,
@@ -1495,7 +1496,11 @@ export function AdminPanelModal({
                         </label>
                         <select
                           value={planTier === 'pro' ? 'business' : planTier}
-                          onChange={(e) => setPlanTier(e.target.value as PlanTier)}
+                          onChange={(e) => {
+                            const nextPlan = e.target.value as PlanTier;
+                            setPlanTier(nextPlan);
+                            if (nextPlan === 'free') setCustomBuilderEnabled(false);
+                          }}
                           className="ml-auto rounded-lg border border-border bg-background px-2 py-1 text-xs font-bold"
                         >
                           <option value="free">Free Plan (₹0)</option>
@@ -1521,35 +1526,59 @@ export function AdminPanelModal({
                     </div>
                   )}
 
-                  {/* Custom Plate / Snack Box / Meal Box Builder Setup */}
+                  {/* Custom Plate / Snack Box / Meal Box Builder Setup (Business Plan Only) */}
                   {(FOOD_CATEGORIES as readonly string[]).includes(category) && (
                     <div className="mt-3 rounded-xl border border-brand-border bg-brand-soft/25 p-3">
-                      <label className="flex cursor-pointer items-start gap-2.5 text-xs">
-                        <input
-                          type="checkbox"
-                          checked={customBuilderEnabled}
-                          onChange={(e) => setCustomBuilderEnabled(e.target.checked)}
-                          className="mt-0.5 size-4 accent-[#ef6c22]"
-                        />
-                        <div className="flex-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="inline-flex items-center gap-1.5 font-extrabold text-brand">
-                              <Package className="size-3.5" aria-hidden="true" />
-                              Enable Custom Plate / Snack Box / Meal Box Builder
-                            </span>
-                            {isBuilderSuggestedCategory(category) && (
-                              <span className="rounded bg-brand px-1.5 py-0.5 text-[10px] font-bold text-brand-foreground">
-                                Best for {category}
-                              </span>
-                            )}
+                      {planTier === 'free' ? (
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                          <div>
+                            <p className="inline-flex items-center gap-1.5 font-extrabold text-foreground">
+                              <Package className="size-3.5 text-brand" aria-hidden="true" />
+                              Custom Menu Builder · Business Plan Only
+                            </p>
+                            <p className="mt-0.5 text-[11px] text-muted-foreground">
+                              Free stores list per-plate packages &amp; catering offerings in Section 2. Switch plan above to Business to unlock the interactive builder.
+                            </p>
                           </div>
-                          <p className="mt-0.5 text-[11px] text-muted-foreground">
-                            Customers can add individual items from Section 2 below to build their own custom Snack Box, Meal Box, or Catering Plate and order on WhatsApp.
-                          </p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPlanTier('business');
+                              setCustomBuilderEnabled(true);
+                            }}
+                            className="cursor-pointer rounded-lg bg-brand px-2.5 py-1 text-[11px] font-bold text-brand-foreground hover:bg-brand-hover"
+                          >
+                            Switch to Business
+                          </button>
                         </div>
-                      </label>
+                      ) : (
+                        <label className="flex cursor-pointer items-start gap-2.5 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={customBuilderEnabled}
+                            onChange={(e) => setCustomBuilderEnabled(e.target.checked)}
+                            className="mt-0.5 size-4 accent-[#ef6c22]"
+                          />
+                          <div className="flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="inline-flex items-center gap-1.5 font-extrabold text-brand">
+                                <Package className="size-3.5" aria-hidden="true" />
+                                Enable Custom Plate / Snack Box / Meal Box Builder
+                              </span>
+                              {isBuilderSuggestedCategory(category) && (
+                                <span className="rounded bg-brand px-1.5 py-0.5 text-[10px] font-bold text-brand-foreground">
+                                  Best for {category}
+                                </span>
+                              )}
+                            </div>
+                            <p className="mt-0.5 text-[11px] text-muted-foreground">
+                              Customers can add individual items from Section 2 below to build their own custom Snack Box, Meal Box, or Catering Plate and order on WhatsApp.
+                            </p>
+                          </div>
+                        </label>
+                      )}
 
-                      {customBuilderEnabled && (
+                      {planTier !== 'free' && customBuilderEnabled && (
                         <div className="mt-3 grid grid-cols-1 gap-2.5 border-t border-brand-border/60 pt-3 sm:grid-cols-3">
                           <div>
                             <label className="block text-[11px] font-bold text-foreground">
@@ -2069,7 +2098,7 @@ export function AdminPanelModal({
                               </button>
                             </div>
 
-                            {customBuilderEnabled && (
+                            {planTier !== 'free' && customBuilderEnabled && (
                               <div className="flex flex-wrap items-center gap-2 rounded-lg border border-brand-border/60 bg-brand-soft/20 px-2.5 py-1.5 sm:col-span-4">
                                 <select
                                   aria-label="Builder Section"

@@ -965,7 +965,9 @@ function rowToVendor(row: Record<string, unknown>) {
     logo: typeof row.logo === 'string' && row.logo.trim() ? row.logo : undefined,
     gallery: Array.isArray(row.gallery) ? row.gallery : undefined,
     products: Array.isArray(row.products) ? row.products : [],
-    customBuilderEnabled: Boolean(row.custom_builder_enabled),
+    customBuilderEnabled:
+      Boolean(row.custom_builder_enabled) &&
+      (row.plan_tier === 'business' || row.plan_tier === 'pro'),
     customBuilderMode:
       row.custom_builder_mode === 'snackbox' ||
       row.custom_builder_mode === 'mealbox' ||
@@ -1335,7 +1337,9 @@ export function createSupabaseApiRouter(): MicroRouter {
         logo,
         gallery,
         products,
-        custom_builder_enabled: Boolean(vendor.customBuilderEnabled),
+        custom_builder_enabled:
+          (vendor.planTier === 'pro' || vendor.planTier === 'business') &&
+          Boolean(vendor.customBuilderEnabled),
         custom_builder_mode:
           vendor.customBuilderMode === 'snackbox' ||
           vendor.customBuilderMode === 'mealbox' ||
@@ -1391,7 +1395,7 @@ export function createSupabaseApiRouter(): MicroRouter {
 
       const { data: existing, error: fetchErr } = await supabase
         .from('vendors')
-        .select('id, owner_id, status, custom_links')
+        .select('id, owner_id, status, plan_tier, custom_links')
         .eq('id', vendorId)
         .maybeSingle();
 
@@ -1504,8 +1508,13 @@ export function createSupabaseApiRouter(): MicroRouter {
       if (Array.isArray(updates.products)) {
         patch.products = await normalizeProductsForStorage(supabase, vendorId, updates.products);
       }
+      const effectivePlanTier =
+        (typeof patch.plan_tier === 'string' ? patch.plan_tier : existing.plan_tier) || 'free';
+      const effectiveIsPaid = effectivePlanTier === 'business' || effectivePlanTier === 'pro';
       if (updates.customBuilderEnabled !== undefined) {
-        patch.custom_builder_enabled = Boolean(updates.customBuilderEnabled);
+        patch.custom_builder_enabled = effectiveIsPaid && Boolean(updates.customBuilderEnabled);
+      } else if (!effectiveIsPaid && patch.plan_tier === 'free') {
+        patch.custom_builder_enabled = false;
       }
       if (
         updates.customBuilderMode === 'snackbox' ||
@@ -2546,7 +2555,9 @@ export function createSupabaseApiRouter(): MicroRouter {
         image,
         logo,
         products,
-        custom_builder_enabled: Boolean(vendor.customBuilderEnabled),
+        custom_builder_enabled:
+          (vendor.planTier === 'pro' || vendor.planTier === 'business') &&
+          Boolean(vendor.customBuilderEnabled),
         custom_builder_mode:
           vendor.customBuilderMode === 'snackbox' ||
           vendor.customBuilderMode === 'mealbox' ||

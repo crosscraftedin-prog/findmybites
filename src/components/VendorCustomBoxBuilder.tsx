@@ -446,7 +446,7 @@ export function VendorCustomBoxBuilder({
                     Veg ({vegCount})
                   </button>
                 )}
-                {nonVegCount > 0 && (
+                {(nonVegCount > 0 || availablePresets.some((p) => p.id === 'non-veg')) && (
                   <button
                     type="button"
                     onClick={() => setFoodFilter('non-veg')}
@@ -521,7 +521,16 @@ export function VendorCustomBoxBuilder({
           {/* Product Grid */}
           {filteredProducts.length === 0 ? (
             <div className="mt-6 rounded-xl border border-dashed border-border p-8 text-center">
-              <p className="text-sm font-semibold text-foreground">No items match this filter.</p>
+              <p className="text-sm font-semibold text-foreground">
+                {foodFilter === 'non-veg' && nonVegCount === 0
+                  ? 'No dishes are tagged as Non-Veg yet.'
+                  : 'No items match this filter.'}
+              </p>
+              {foodFilter === 'non-veg' && nonVegCount === 0 && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Open Edit Storefront and mark your chicken, mutton, egg or seafood dishes with the red Non-Veg food type to list them here.
+                </p>
+              )}
               <button
                 type="button"
                 onClick={() => {

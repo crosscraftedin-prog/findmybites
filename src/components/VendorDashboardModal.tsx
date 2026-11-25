@@ -73,6 +73,7 @@ import {
   getBusinessPlan,
   getCustomBuilderModeConfig,
   getVendorBioHandle,
+  isPaidPlanTier,
   localToUsd,
   parseProductUnitFromServes,
   suggestBuilderModeForCategory,
@@ -508,6 +509,13 @@ export function VendorDashboardModal({
   };
 
   const handleToggleCustomBuilder = async (v: Vendor) => {
+    if (!isPaidPlanTier(v.planTier)) {
+      onNotify(
+        'Custom Plate / Box Menu Builder is a Business Plan feature. Free stores can add per-plate packages & catering offerings under Products & Packages.'
+      );
+      if (editingVendorId !== v.id) startEditingVendor(v);
+      return;
+    }
     setBusyId(v.id);
     try {
       const next = !v.customBuilderEnabled;
@@ -626,7 +634,7 @@ export function VendorDashboardModal({
         promoBanner: editPromoBanner,
         christmasSpecial: editChristmasSpecial,
         christmasOffer: editChristmasOffer,
-        customBuilderEnabled: editCustomBuilderEnabled,
+        customBuilderEnabled: isPaidPlanTier(editPlanTier) && editCustomBuilderEnabled,
         customBuilderMode: editCustomBuilderMode,
         customBuilderMinQty: Math.max(1, Math.min(5000, Math.round(editCustomBuilderMinQty || 10))),
         customBuilderPackagingUsd:
@@ -1515,14 +1523,29 @@ export function VendorDashboardModal({
                                 type="button"
                                 disabled={isBusy}
                                 onClick={() => void handleToggleCustomBuilder(v)}
+                                title={
+                                  isPaidPlanTier(v.planTier)
+                                    ? 'Toggle Custom Plate / Box Menu Builder'
+                                    : 'Business Plan feature — Free stores list per-plate packages & catering offerings'
+                                }
                                 className={`inline-flex cursor-pointer items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-bold transition-colors disabled:opacity-50 ${
-                                  v.customBuilderEnabled
-                                    ? 'border-brand bg-brand text-brand-foreground hover:bg-brand-hover'
-                                    : 'border-brand-border bg-brand-soft/45 text-brand hover:bg-brand-soft'
+                                  !isPaidPlanTier(v.planTier)
+                                    ? 'border-border bg-muted/60 text-muted-foreground hover:border-brand/50 hover:text-foreground'
+                                    : v.customBuilderEnabled
+                                      ? 'border-brand bg-brand text-brand-foreground hover:bg-brand-hover'
+                                      : 'border-brand-border bg-brand-soft/45 text-brand hover:bg-brand-soft'
                                 }`}
                               >
-                                <Package className="size-3.5" aria-hidden="true" />
-                                {v.customBuilderEnabled ? 'Builder ON' : 'Custom Builder'}
+                                {isPaidPlanTier(v.planTier) ? (
+                                  <Package className="size-3.5" aria-hidden="true" />
+                                ) : (
+                                  <Crown className="size-3.5 text-brand" aria-hidden="true" />
+                                )}
+                                {!isPaidPlanTier(v.planTier)
+                                  ? 'Menu Builder · Business'
+                                  : v.customBuilderEnabled
+                                    ? 'Builder ON'
+                                    : 'Custom Builder'}
                               </button>
                               <button
                                 type="button"
@@ -1844,27 +1867,57 @@ export function VendorDashboardModal({
                                 )}
                               </div>
 
-                              {/* Custom Plate / Snack Box / Meal Box Builder Controls */}
+                              {/* Custom Plate / Snack Box / Meal Box Builder Controls (Business Plan Only) */}
                               <div className="rounded-xl border border-brand-border bg-card p-3">
-                                <label className="flex cursor-pointer items-start gap-2 text-xs font-bold text-foreground">
-                                  <input
-                                    type="checkbox"
-                                    checked={editCustomBuilderEnabled}
-                                    onChange={(e) => setEditCustomBuilderEnabled(e.target.checked)}
-                                    className="mt-0.5 size-4 accent-[#ef6c22]"
-                                  />
-                                  <div className="flex-1">
-                                    <span className="inline-flex items-center gap-1.5 text-brand">
-                                      <Package className="size-3.5" aria-hidden="true" />
-                                      Enable Custom Plate / Snack Box / Meal Box Builder
-                                    </span>
-                                    <p className="mt-0.5 text-[11px] font-normal text-muted-foreground">
-                                      Let customers pick individual items from your catalog to build their own custom box or catering plate &amp; order directly on WhatsApp.
-                                    </p>
+                                {!isPaidPlanTier(editPlanTier) ? (
+                                  <div className="flex flex-wrap items-start justify-between gap-2.5">
+                                    <div className="flex-1">
+                                      <div className="flex flex-wrap items-center gap-1.5">
+                                        <span className="inline-flex items-center gap-1.5 text-xs font-bold text-foreground">
+                                          <Package className="size-3.5 text-brand" aria-hidden="true" />
+                                          Custom Plate / Snack Box / Meal Box Menu Builder
+                                        </span>
+                                        <span className="inline-flex items-center gap-1 rounded-full bg-brand px-2 py-0.5 text-[10px] font-bold text-brand-foreground">
+                                          <Crown className="size-2.5" aria-hidden="true" />
+                                          Business Plan Only
+                                        </span>
+                                      </div>
+                                      <p className="mt-1 text-[11px] text-muted-foreground">
+                                        Free stores can add per-plate packages &amp; list what you offer in catering under <strong>Products &amp; Packages</strong> below. Upgrade to the Business Plan above to unlock the interactive Build Your Own Plate / Box Menu Builder.
+                                      </p>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => setEditPlanTier('business')}
+                                      className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-brand px-2.5 py-1.5 text-[11px] font-bold text-brand-foreground hover:bg-brand-hover"
+                                    >
+                                      <Crown className="size-3" aria-hidden="true" />
+                                      Switch to Business
+                                    </button>
                                   </div>
-                                </label>
+                                ) : (
+                                  <>
+                                    <label className="flex cursor-pointer items-start gap-2 text-xs font-bold text-foreground">
+                                      <input
+                                        type="checkbox"
+                                        checked={editCustomBuilderEnabled}
+                                        onChange={(e) => setEditCustomBuilderEnabled(e.target.checked)}
+                                        className="mt-0.5 size-4 accent-[#ef6c22]"
+                                      />
+                                      <div className="flex-1">
+                                        <span className="inline-flex items-center gap-1.5 text-brand">
+                                          <Package className="size-3.5" aria-hidden="true" />
+                                          Enable Custom Plate / Snack Box / Meal Box Builder
+                                        </span>
+                                        <p className="mt-0.5 text-[11px] font-normal text-muted-foreground">
+                                          Let customers pick individual items from your catalog to build their own custom box or catering plate &amp; order directly on WhatsApp.
+                                        </p>
+                                      </div>
+                                    </label>
+                                  </>
+                                )}
 
-                                {editCustomBuilderEnabled && (
+                                {isPaidPlanTier(editPlanTier) && editCustomBuilderEnabled && (
                                   <div className="mt-3 grid grid-cols-1 gap-2.5 border-t border-border pt-3 sm:grid-cols-3">
                                     <div>
                                       <label className="block text-[11px] font-semibold text-foreground">
@@ -2972,10 +3025,11 @@ export function VendorDashboardModal({
                                   </div>
                                 </div>
 
-                                {/* Custom Builder Section & Quick-Start Presets */}
-                                {(v.customBuilderEnabled ||
-                                  prodBuilderSection ||
-                                  prodBuilderPresets.length > 0) && (() => {
+                                {/* Custom Builder Section & Quick-Start Presets (Business Plan Only) */}
+                                {isPaidPlanTier(v.planTier) &&
+                                  (v.customBuilderEnabled ||
+                                    prodBuilderSection ||
+                                    prodBuilderPresets.length > 0) && (() => {
                                   const modeCfg = getCustomBuilderModeConfig(
                                     v.customBuilderMode ?? suggestBuilderModeForCategory(v.category)
                                   );

@@ -590,10 +590,10 @@ export function ListBusinessModal({
         unitType: p.unitType,
         ...(p.foodType ? { foodType: p.foodType } : {}),
         ...(p.dietaryTags.length > 0 ? { dietaryTags: p.dietaryTags } : {}),
-        ...(customBuilderEnabled && p.builderSection.trim()
+        ...(isPaidPlan && customBuilderEnabled && p.builderSection.trim()
           ? { builderSection: p.builderSection.trim().slice(0, 60) }
           : {}),
-        ...(customBuilderEnabled && p.builderPresets.length > 0
+        ...(isPaidPlan && customBuilderEnabled && p.builderPresets.length > 0
           ? { builderPresets: p.builderPresets }
           : {}),
         priceUsd,
@@ -644,15 +644,15 @@ export function ListBusinessModal({
       description: `${tagline.trim()} Published directly on FindMyBites × PimpMyParty with a dedicated one-page storefront and direct WhatsApp ordering across ${area.trim() || city.trim()}, ${city.trim()}, ${stateName}.`,
       christmasSpecial,
       christmasOffer: christmasOffer.trim() || undefined,
-      customBuilderEnabled: marketplace === 'food' && customBuilderEnabled,
+      customBuilderEnabled: isPaidPlan && marketplace === 'food' && customBuilderEnabled,
       customBuilderMode:
-        marketplace === 'food' && customBuilderEnabled ? customBuilderMode : undefined,
+        isPaidPlan && marketplace === 'food' && customBuilderEnabled ? customBuilderMode : undefined,
       customBuilderMinQty:
-        marketplace === 'food' && customBuilderEnabled
+        isPaidPlan && marketplace === 'food' && customBuilderEnabled
           ? Math.max(1, Math.min(5000, Math.round(customBuilderMinQty || 10)))
           : undefined,
       customBuilderPackagingUsd:
-        marketplace === 'food' && customBuilderEnabled && customBuilderPackagingLocal > 0
+        isPaidPlan && marketplace === 'food' && customBuilderEnabled && customBuilderPackagingLocal > 0
           ? Math.max(0, Math.min(500, localToUsd(customBuilderPackagingLocal, formCurrency)))
           : undefined,
       serviceAreas: [
@@ -785,7 +785,10 @@ export function ListBusinessModal({
                   <button
                     key={p.id}
                     type="button"
-                    onClick={() => setPlanTier(p.id)}
+                    onClick={() => {
+                      setPlanTier(p.id);
+                      if (p.id === 'free') setCustomBuilderEnabled(false);
+                    }}
                     className={`cursor-pointer rounded-xl border p-4 text-left transition-all ${
                       active
                         ? 'border-brand bg-brand-soft/60 ring-2 ring-brand/20'
@@ -1303,32 +1306,63 @@ export function ListBusinessModal({
           <div className="space-y-3 border-t border-border pt-5">
             {marketplace === 'food' && (
               <div className="rounded-xl border border-brand-border bg-brand-soft/30 p-3.5">
-                <label className="flex cursor-pointer items-start gap-2.5 text-xs">
-                  <input
-                    type="checkbox"
-                    checked={customBuilderEnabled}
-                    onChange={(e) => setCustomBuilderEnabled(e.target.checked)}
-                    className="mt-0.5 size-4 accent-[#ef6c22]"
-                  />
-                  <div className="flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="inline-flex items-center gap-1.5 font-extrabold text-brand">
-                        <Package className="size-3.5" aria-hidden="true" />
-                        Enable Custom Plate / Snack Box / Meal Box Builder
-                      </span>
-                      {isBuilderSuggestedCategory(category) && (
-                        <span className="rounded bg-brand px-1.5 py-0.5 text-[10px] font-bold text-brand-foreground">
-                          Recommended for {category}
+                {!isPaidPlan ? (
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="inline-flex items-center gap-1.5 text-xs font-extrabold text-foreground">
+                          <Package className="size-3.5 text-brand" aria-hidden="true" />
+                          Custom Plate / Snack Box / Meal Box Menu Builder
                         </span>
-                      )}
+                        <span className="inline-flex items-center gap-1 rounded-full bg-brand px-2 py-0.5 text-[10px] font-bold text-brand-foreground">
+                          <Crown className="size-2.5" aria-hidden="true" />
+                          Business Plan Only
+                        </span>
+                      </div>
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        On the <strong>Free Plan</strong>, simply add your per-plate catering packages &amp; list what you offer below (e.g. Veg Wedding Plate · ₹450/plate). Upgrade to the <strong>Business Plan</strong> to unlock the interactive Build Your Own Plate / Box Menu Builder.
+                      </p>
                     </div>
-                    <p className="mt-0.5 text-[11px] text-muted-foreground">
-                      Let customers pick individual items below to assemble their own custom Snack Box, Meal Box, or Catering Plate with automatic per-box pricing &amp; WhatsApp ordering.
-                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPlanTier('business');
+                        setCustomBuilderEnabled(true);
+                      }}
+                      className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-brand px-3 py-1.5 text-xs font-bold text-brand-foreground hover:bg-brand-hover"
+                    >
+                      <Crown className="size-3.5" aria-hidden="true" />
+                      Switch to Business
+                    </button>
                   </div>
-                </label>
+                ) : (
+                  <label className="flex cursor-pointer items-start gap-2.5 text-xs">
+                    <input
+                      type="checkbox"
+                      checked={customBuilderEnabled}
+                      onChange={(e) => setCustomBuilderEnabled(e.target.checked)}
+                      className="mt-0.5 size-4 accent-[#ef6c22]"
+                    />
+                    <div className="flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="inline-flex items-center gap-1.5 font-extrabold text-brand">
+                          <Package className="size-3.5" aria-hidden="true" />
+                          Enable Custom Plate / Snack Box / Meal Box Builder
+                        </span>
+                        {isBuilderSuggestedCategory(category) && (
+                          <span className="rounded bg-brand px-1.5 py-0.5 text-[10px] font-bold text-brand-foreground">
+                            Recommended for {category}
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-0.5 text-[11px] text-muted-foreground">
+                        Let customers pick individual items below to assemble their own custom Snack Box, Meal Box, or Catering Plate with automatic per-box pricing &amp; WhatsApp ordering.
+                      </p>
+                    </div>
+                  </label>
+                )}
 
-                {customBuilderEnabled && (
+                {isPaidPlan && customBuilderEnabled && (
                   <div className="mt-3 grid grid-cols-1 gap-3 border-t border-brand-border/60 pt-3 sm:grid-cols-3">
                     <div>
                       <label className="block text-[11px] font-semibold text-foreground">
@@ -1399,9 +1433,11 @@ export function ListBusinessModal({
                   {products.length}/150
                 </p>
                 <p className="text-[11px] text-muted-foreground">
-                  {customBuilderEnabled
+                  {isPaidPlan && customBuilderEnabled
                     ? `Add individual ${getCustomBuilderModeConfig(customBuilderMode).label.toLowerCase()} items with per-item prices so customers can mix & match`
-                    : 'Add your cakes, counters, snack boxes or decor packages with photos & local prices'}
+                    : marketplace === 'food' && !isPaidPlan
+                      ? 'Add your per-plate catering packages & what you offer (or cakes/dishes) with photos & local prices'
+                      : 'Add your cakes, counters, snack boxes or decor packages with photos & local prices'}
                 </p>
               </div>
               <button
@@ -1595,7 +1631,7 @@ export function ListBusinessModal({
                         })}
                       </div>
 
-                      {marketplace === 'food' && customBuilderEnabled && (
+                      {marketplace === 'food' && isPaidPlan && customBuilderEnabled && (
                         <div className="flex flex-wrap items-center gap-2 rounded-lg border border-brand-border/60 bg-brand-soft/20 px-2.5 py-1.5">
                           <select
                             aria-label="Builder Section"

@@ -25,6 +25,7 @@ import {
   formatMoney,
   getCustomBuilderModeConfig,
   isChristmasVendor,
+  isCustomBuilderActive,
   planRankWeight,
   suggestBuilderModeForCategory,
 } from '../data/vendors';
@@ -266,7 +267,7 @@ export function ChristmasSpotlightSection({
           <div className="mt-7 grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
             {festiveVendors.map((vendor) => {
               const editable = canEditVendor(vendor);
-              const builderModeConfig = vendor.customBuilderEnabled
+              const builderModeConfig = isCustomBuilderActive(vendor)
                 ? getCustomBuilderModeConfig(
                     vendor.customBuilderMode ?? suggestBuilderModeForCategory(vendor.category)
                   )
