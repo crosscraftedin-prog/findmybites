@@ -61,17 +61,8 @@ export function VendorCustomBoxBuilder({
   const [searchQuery, setSearchQuery] = useState('');
   const [activePresetId, setActivePresetId] = useState<BuilderPresetId | null>(null);
 
-  // Selected items map: productId -> quantity inside EACH box/plate (e.g., 1x or 2x samosa per box)
-  const [itemQtys, setItemQtys] = useState<Record<string, number>>(() => {
-    const initial: Record<string, number> = {};
-    const firstVegPreset = vendor.products.filter((p) => p.builderPresets?.includes('veg'));
-    const seedList =
-      firstVegPreset.length > 0 ? firstVegPreset : vendor.products.slice(0, Math.min(3, vendor.products.length));
-    for (const p of seedList) {
-      initial[p.id] = 1;
-    }
-    return initial;
-  });
+  // Selected items map: productId -> quantity inside EACH box/plate (starts empty so customers pick their own items)
+  const [itemQtys, setItemQtys] = useState<Record<string, number>>({});
 
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
