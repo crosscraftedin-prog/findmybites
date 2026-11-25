@@ -6,6 +6,8 @@ import {
   Calculator,
   Calendar,
   CheckCircle2,
+  ChefHat,
+  Copy,
   Crown,
   Edit3,
   ExternalLink,
@@ -27,15 +29,19 @@ import {
   QrCode,
   Send,
   Share2,
+  ShoppingBag,
   Snowflake,
   Sparkles,
   Store,
+  Tag,
   Trash2,
+  Truck,
   Users,
   X,
 } from 'lucide-react';
 import {
   BUILDER_PRESET_OPTIONS,
+  BillingCycle,
   BioTheme,
   BookingEnquiry,
   BuilderPresetId,
@@ -46,6 +52,7 @@ import {
   CloudVendorMetric,
   CurrencyCode,
   CustomBuilderMode,
+  DEFAULT_ORDERING_TIME_SLOTS,
   EventRequest,
   PRODUCT_DIETARY_OPTIONS,
   PRODUCT_UNIT_OPTIONS,
@@ -56,11 +63,14 @@ import {
   STATES_BY_COUNTRY,
   Vendor,
   VendorBioLink,
+  VendorOrderingConfig,
   VendorProduct,
   VendorProductVariant,
+  VendorPromoCode,
   formatMoney,
   formatPlanPrice,
   formatProductServesLabel,
+  getBusinessPlan,
   getCustomBuilderModeConfig,
   getVendorBioHandle,
   localToUsd,
@@ -127,7 +137,7 @@ function StorefrontAnalyticsStrip({
 
   const conversion =
     metric.views > 0 ? Math.min(100, Math.round((metric.whatsappClicks / metric.views) * 100)) : 0;
-  const proPlan = SAAS_PLANS.find((p) => p.id === 'pro') ?? SAAS_PLANS[1];
+  const businessPlan = getBusinessPlan();
 
   return (
     <div className="mt-4 space-y-2.5">
@@ -168,15 +178,16 @@ function StorefrontAnalyticsStrip({
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-brand-border bg-brand-soft/45 px-3 py-2 text-xs">
           <span className="text-foreground">
             <Crown className="mr-1 inline size-3.5 text-brand" aria-hidden="true" />
-            Rank above all Free listings in <strong>{vendor.city}</strong> with Pro Partner (
-            <strong>{formatPlanPrice(proPlan, currency)}/mo</strong>).
+            Unlock Direct Online Ordering &amp; rank above Free listings in <strong>{vendor.city}</strong> —{' '}
+            <strong>{formatPlanPrice(businessPlan, currency, 'monthly')}/mo</strong> or{' '}
+            <strong>{formatPlanPrice(businessPlan, currency, 'annual')}/yr</strong> (2 mo free).
           </span>
           <button
             type="button"
-            onClick={() => onUpgradePlan(vendor, 'pro')}
+            onClick={() => onUpgradePlan(vendor, 'business')}
             className="cursor-pointer rounded-lg bg-brand px-3 py-1 text-[11px] font-bold text-brand-foreground hover:bg-brand-hover"
           >
-            Boost to Pro
+            Upgrade to Business
           </button>
         </div>
       )}
@@ -221,6 +232,8 @@ export function VendorDashboardModal({
   const [prodPriceLocal, setProdPriceLocal] = useState(usdToLocal(40, currency));
   const [prodDesc, setProdDesc] = useState('');
   const [prodImage, setProdImage] = useState('');
+  const [prodMenuSection, setProdMenuSection] = useState('');
+  const [prodAdvanceHours, setProdAdvanceHours] = useState('');
   const [prodBuilderSection, setProdBuilderSection] = useState('');
   const [prodBuilderPresets, setProdBuilderPresets] = useState<BuilderPresetId[]>([]);
   const [prodVariants, setProdVariants] = useState<
@@ -249,6 +262,7 @@ export function VendorDashboardModal({
   const [newLinkUrl, setNewLinkUrl] = useState('');
   const [newLinkBadge, setNewLinkBadge] = useState('');
   const [editPlanTier, setEditPlanTier] = useState<PlanTier>('free');
+  const [editBillingCycle, setEditBillingCycle] = useState<BillingCycle>('monthly');
   const [editLogo, setEditLogo] = useState('');
   const [editCover, setEditCover] = useState('');
   const [editGallery, setEditGallery] = useState<string[]>([]);
@@ -259,6 +273,29 @@ export function VendorDashboardModal({
   const [editExtraCities, setEditExtraCities] = useState('');
   const [editAllStatesCoverage, setEditAllStatesCoverage] = useState(false);
   const [editServiceStates, setEditServiceStates] = useState<string[]>([]);
+
+  // Direct Online Ordering & UPI editor state
+  const [editOrderAccepting, setEditOrderAccepting] = useState(true);
+  const [editOrderDelivery, setEditOrderDelivery] = useState(true);
+  const [editOrderPickup, setEditOrderPickup] = useState(true);
+  const [editOrderCod, setEditOrderCod] = useState(true);
+  const [editOrderDeliveryFeeLocal, setEditOrderDeliveryFeeLocal] = useState(0);
+  const [editOrderFreeDeliveryLocal, setEditOrderFreeDeliveryLocal] = useState(0);
+  const [editOrderMinAdvanceHours, setEditOrderMinAdvanceHours] = useState(2);
+  const [editOrderTimeSlots, setEditOrderTimeSlots] = useState(
+    DEFAULT_ORDERING_TIME_SLOTS.join(', ')
+  );
+  const [editOrderUpiId, setEditOrderUpiId] = useState('');
+  const [editOrderUpiName, setEditOrderUpiName] = useState('');
+  const [editOrderPaymentLink, setEditOrderPaymentLink] = useState('');
+  const [editOrderPromoCodes, setEditOrderPromoCodes] = useState<VendorPromoCode[]>([]);
+  const [newPromoCode, setNewPromoCode] = useState('');
+  const [newPromoType, setNewPromoType] = useState<'percent' | 'flat'>('percent');
+  const [newPromoValue, setNewPromoValue] = useState('10');
+  const [newPromoMinLocal, setNewPromoMinLocal] = useState('0');
+
+  // Order Board filter state
+  const [orderStatusFilter, setOrderStatusFilter] = useState<string>('all');
 
   // Event Board quoting state
   const [quotingRequestId, setQuotingRequestId] = useState<string | null>(null);
@@ -314,12 +351,36 @@ export function VendorDashboardModal({
     setNewLinkTitle('');
     setNewLinkUrl('');
     setNewLinkBadge('');
-    setEditPlanTier(target.planTier);
+    setEditPlanTier(target.planTier === 'pro' ? 'business' : target.planTier);
+    setEditBillingCycle(target.orderingConfig?.billingCycle ?? 'monthly');
     setEditLogo(target.logo || '');
     setEditCover(target.image);
     setEditGallery(target.gallery ? [...target.gallery] : []);
+    const oc = target.orderingConfig;
+    setEditOrderAccepting(oc?.acceptingOrders !== false);
+    setEditOrderDelivery(oc?.deliveryEnabled !== false);
+    setEditOrderPickup(oc?.pickupEnabled !== false);
+    setEditOrderCod(oc?.codEnabled !== false);
+    setEditOrderDeliveryFeeLocal(
+      oc?.deliveryFeeUsd && oc.deliveryFeeUsd > 0 ? usdToLocal(oc.deliveryFeeUsd, currency) : 0
+    );
+    setEditOrderFreeDeliveryLocal(
+      oc?.freeDeliveryAboveUsd && oc.freeDeliveryAboveUsd > 0
+        ? usdToLocal(oc.freeDeliveryAboveUsd, currency)
+        : 0
+    );
+    setEditOrderMinAdvanceHours(oc?.minAdvanceHours ?? 2);
+    setEditOrderTimeSlots(
+      oc?.timeSlots && oc.timeSlots.length > 0
+        ? oc.timeSlots.join(', ')
+        : DEFAULT_ORDERING_TIME_SLOTS.join(', ')
+    );
+    setEditOrderUpiId(oc?.upiId || '');
+    setEditOrderUpiName(oc?.upiPayeeName || target.name);
+    setEditOrderPaymentLink(oc?.paymentLinkUrl || '');
+    setEditOrderPromoCodes(oc?.promoCodes ? [...oc.promoCodes] : []);
     onClearInitialEdit?.();
-  }, [isOpen, initialEditVendorId, myVendors, onClearInitialEdit]);
+  }, [isOpen, initialEditVendorId, myVendors, currency, onClearInitialEdit]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -367,7 +428,8 @@ export function VendorDashboardModal({
     setNewLinkTitle('');
     setNewLinkUrl('');
     setNewLinkBadge('');
-    setEditPlanTier(v.planTier);
+    setEditPlanTier(v.planTier === 'pro' ? 'business' : v.planTier);
+    setEditBillingCycle(v.orderingConfig?.billingCycle ?? 'monthly');
     setEditLogo(v.logo || '');
     setEditCover(v.image);
     setEditGallery(v.gallery ? [...v.gallery] : []);
@@ -393,6 +455,34 @@ export function VendorDashboardModal({
     );
     setEditAllStatesCoverage(Boolean(v.allStatesCoverage));
     setEditServiceStates(Array.isArray(v.serviceStates) ? [...v.serviceStates] : []);
+
+    const oc = v.orderingConfig;
+    setEditOrderAccepting(oc?.acceptingOrders !== false);
+    setEditOrderDelivery(oc?.deliveryEnabled !== false);
+    setEditOrderPickup(oc?.pickupEnabled !== false);
+    setEditOrderCod(oc?.codEnabled !== false);
+    setEditOrderDeliveryFeeLocal(
+      oc?.deliveryFeeUsd && oc.deliveryFeeUsd > 0 ? usdToLocal(oc.deliveryFeeUsd, currency) : 0
+    );
+    setEditOrderFreeDeliveryLocal(
+      oc?.freeDeliveryAboveUsd && oc.freeDeliveryAboveUsd > 0
+        ? usdToLocal(oc.freeDeliveryAboveUsd, currency)
+        : 0
+    );
+    setEditOrderMinAdvanceHours(oc?.minAdvanceHours ?? 2);
+    setEditOrderTimeSlots(
+      oc?.timeSlots && oc.timeSlots.length > 0
+        ? oc.timeSlots.join(', ')
+        : DEFAULT_ORDERING_TIME_SLOTS.join(', ')
+    );
+    setEditOrderUpiId(oc?.upiId || '');
+    setEditOrderUpiName(oc?.upiPayeeName || v.name);
+    setEditOrderPaymentLink(oc?.paymentLinkUrl || '');
+    setEditOrderPromoCodes(oc?.promoCodes ? [...oc.promoCodes] : []);
+    setNewPromoCode('');
+    setNewPromoType('percent');
+    setNewPromoValue('10');
+    setNewPromoMinLocal('0');
   };
 
   const handleToggleChristmasHighlight = async (v: Vendor) => {
@@ -467,10 +557,67 @@ export function VendorDashboardModal({
     setNewLinkBadge('');
   };
 
+  const handleAddPromoCode = () => {
+    const code = newPromoCode.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 20);
+    const valNum = Number(newPromoValue);
+    if (!code || !Number.isFinite(valNum) || valNum <= 0 || editOrderPromoCodes.length >= 10) {
+      return;
+    }
+    const minLocal = Math.max(0, Number(newPromoMinLocal) || 0);
+    const nextPromo: VendorPromoCode = {
+      code,
+      type: newPromoType,
+      value:
+        newPromoType === 'percent'
+          ? Math.min(90, Math.round(valNum))
+          : Math.max(0.5, Number(localToUsd(valNum, currency).toFixed(2))),
+      ...(minLocal > 0 ? { minOrderUsd: Number(localToUsd(minLocal, currency).toFixed(2)) } : {}),
+      active: true,
+    };
+    setEditOrderPromoCodes((prev) => [
+      ...prev.filter((p) => p.code !== code),
+      nextPromo,
+    ]);
+    setNewPromoCode('');
+    setNewPromoValue('10');
+    setNewPromoMinLocal('0');
+  };
+
   const handleSaveVendorEdit = async (e: FormEvent, vendor: Vendor) => {
     e.preventDefault();
     setBusyId(vendor.id);
     try {
+      const parsedSlots = editOrderTimeSlots
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .slice(0, 12);
+
+      const orderingConfig: VendorOrderingConfig = {
+        enabled: true,
+        acceptingOrders: editOrderAccepting,
+        deliveryEnabled: editOrderDelivery,
+        pickupEnabled: editOrderPickup,
+        codEnabled: editOrderCod,
+        deliveryFeeUsd:
+          editOrderDeliveryFeeLocal > 0
+            ? Number(localToUsd(editOrderDeliveryFeeLocal, currency).toFixed(2))
+            : 0,
+        freeDeliveryAboveUsd:
+          editOrderFreeDeliveryLocal > 0
+            ? Number(localToUsd(editOrderFreeDeliveryLocal, currency).toFixed(2))
+            : 0,
+        minAdvanceHours: Math.max(0, Math.min(168, Math.round(editOrderMinAdvanceHours || 0))),
+        timeSlots: parsedSlots.length > 0 ? parsedSlots : [...DEFAULT_ORDERING_TIME_SLOTS],
+        ...(editOrderUpiId.trim() ? { upiId: editOrderUpiId.trim().slice(0, 80) } : {}),
+        ...(editOrderUpiName.trim() ? { upiPayeeName: editOrderUpiName.trim().slice(0, 80) } : {}),
+        ...(editOrderPaymentLink.trim()
+          ? { paymentLinkUrl: editOrderPaymentLink.trim().slice(0, 300) }
+          : {}),
+        promoCodes: editOrderPromoCodes,
+        billingCycle: editBillingCycle,
+      };
+
       await updateVendorInCloud(vendor.id, {
         name: editName,
         tagline: editTagline,
@@ -492,8 +639,9 @@ export function VendorDashboardModal({
         googleMapsUrl: editGoogleMapsUrl.trim(),
         googleReviewUrl: editGoogleReviewUrl.trim(),
         customLinks: editCustomLinks,
+        orderingConfig,
         planTier: editPlanTier,
-        monthlyAutoPay: editPlanTier !== 'free',
+        monthlyAutoPay: editPlanTier !== 'free' && editBillingCycle === 'monthly',
         logo: editLogo,
         image: editCover,
         gallery: editGallery,
@@ -515,7 +663,7 @@ export function VendorDashboardModal({
           : editServiceStates.filter((s) => s && s !== (editState.trim() || vendor.state)),
       });
       setEditingVendorId(null);
-      onNotify(`Saved storefront & Bio-Link updates for ${editName} to Cloud!`);
+      onNotify(`Saved storefront, UPI & Direct Ordering updates for ${editName}!`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : '';
       onNotify(
@@ -614,7 +762,29 @@ export function VendorDashboardModal({
         planTier: nextPlan,
         monthlyAutoPay: nextPlan !== 'free',
       });
-      onNotify(`${vendor.name} upgraded to ${nextPlan === 'business' ? 'Business Spotlight' : 'Pro Partner'}!`);
+      onNotify(
+        `${vendor.name} upgraded to ${nextPlan === 'free' ? 'Free Plan' : 'Business Plan (Direct Online Ordering unlocked)'}!`
+      );
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleToggleProductStock = async (vendor: Vendor, productId: string) => {
+    setBusyId(vendor.id);
+    try {
+      const target = vendor.products.find((p) => p.id === productId);
+      if (!target) return;
+      const nextInStock = target.inStock === false;
+      const updatedProducts = vendor.products.map((p) =>
+        p.id === productId ? { ...p, inStock: nextInStock } : p
+      );
+      await updateVendorInCloud(vendor.id, { products: updatedProducts });
+      onNotify(
+        nextInStock
+          ? `"${target.name}" is back In Stock.`
+          : `"${target.name}" marked as Sold Out on your storefront.`
+      );
     } finally {
       setBusyId(null);
     }
@@ -630,6 +800,8 @@ export function VendorDashboardModal({
     setProdPriceLocal(usdToLocal(40, currency));
     setProdDesc('');
     setProdImage('');
+    setProdMenuSection('');
+    setProdAdvanceHours('');
     setProdBuilderSection('');
     setProdBuilderPresets([]);
     setProdVariants([]);
@@ -665,6 +837,10 @@ export function VendorDashboardModal({
     setProdPriceLocal(Math.max(1, usdToLocal(product.priceUsd, currency)));
     setProdDesc(product.description || '');
     setProdImage(product.image || '');
+    setProdMenuSection(product.menuSection || '');
+    setProdAdvanceHours(
+      product.advanceHours && product.advanceHours > 0 ? String(product.advanceHours) : ''
+    );
     setProdBuilderSection(product.builderSection || '');
     setProdBuilderPresets(product.builderPresets ? [...product.builderPresets] : []);
     setProdVariants(
@@ -805,6 +981,11 @@ export function VendorDashboardModal({
         }
       }
 
+      const parsedAdvanceHours = Math.max(0, Math.min(168, Math.round(Number(prodAdvanceHours) || 0)));
+      const existingProduct = editingProductId
+        ? vendor.products.find((p) => p.id === editingProductId)
+        : undefined;
+
       const nextProd: VendorProduct = {
         id: editingProductId || `prod-${Date.now()}`,
         name: prodName.trim().slice(0, 100),
@@ -813,6 +994,9 @@ export function VendorDashboardModal({
         unitType: prodUnitType,
         ...(prodFoodType ? { foodType: prodFoodType } : {}),
         ...(prodDietaryTags.length > 0 ? { dietaryTags: prodDietaryTags } : {}),
+        ...(prodMenuSection.trim() ? { menuSection: prodMenuSection.trim().slice(0, 48) } : {}),
+        ...(parsedAdvanceHours > 0 ? { advanceHours: parsedAdvanceHours } : {}),
+        ...(existingProduct?.inStock === false ? { inStock: false } : {}),
         ...(prodBuilderSection.trim() ? { builderSection: prodBuilderSection.trim().slice(0, 60) } : {}),
         ...(prodBuilderPresets.length > 0 ? { builderPresets: prodBuilderPresets } : {}),
         ...(cleanedVariants.length > 0 ? { variants: cleanedVariants } : {}),
@@ -981,14 +1165,40 @@ export function VendorDashboardModal({
     }
   };
 
-  const handleLeadStatus = async (leadId: string, status: 'Completed' | 'Cancelled') => {
+  const handleLeadStatus = async (
+    leadId: string,
+    status:
+      | 'New Order'
+      | 'Accepted'
+      | 'Preparing'
+      | 'Out for Delivery'
+      | 'Confirmed Enquiry'
+      | 'Completed'
+      | 'Cancelled'
+  ) => {
     setBusyId(leadId);
     try {
       await updateBookingStatusInCloud(leadId, status);
-      onNotify(`Enquiry marked as ${status}.`);
+      onNotify(`Order status updated to "${status}".`);
     } finally {
       setBusyId(null);
     }
+  };
+
+  const buildOrderStatusWhatsAppHref = (lead: BookingEnquiry) => {
+    const rawDigits = (lead.customerEmail || '').replace(/[^\d]/g, '');
+    const hasPhone = rawDigits.length >= 10 && rawDigits.length <= 15;
+    const msg = [
+      `Hi ${lead.customerName}!`,
+      `Update on your order ${lead.reference} with ${lead.vendorName}:`,
+      `Status: ${lead.status}`,
+      `Order: ${lead.packageName}`,
+      `Date: ${lead.eventDate}`,
+      `Thank you for ordering directly with us!`,
+    ].join('\n');
+    return hasPhone
+      ? `https://wa.me/${rawDigits}?text=${encodeURIComponent(msg)}`
+      : `https://wa.me/?text=${encodeURIComponent(msg)}`;
   };
 
   return (
@@ -1133,13 +1343,14 @@ export function VendorDashboardModal({
                 <button
                   type="button"
                   onClick={() => setTab('leads')}
-                  className={`cursor-pointer rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+                  className={`inline-flex cursor-pointer items-center gap-1 rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
                     tab === 'leads'
                       ? 'bg-background text-foreground shadow-xs'
                       : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
-                  Direct Leads ({vendorLeads.length})
+                  <ShoppingBag className="size-3.5 text-brand" aria-hidden="true" />
+                  Orders &amp; Leads ({vendorLeads.length})
                 </button>
               </div>
 
@@ -1164,8 +1375,8 @@ export function VendorDashboardModal({
                       You haven&apos;t published a cloud storefront yet
                     </p>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      Launch your Free Listing (₹0) or Pro Partner (₹299/mo) storefront in 2
-                      minutes — visible immediately across all devices.
+                      Start on our Free Plan (₹0 forever) or Business Plan (₹499/mo Auto-Pay or
+                      ₹4,990/yr · 2 months free) with Direct Online Ordering &amp; 0% commission.
                     </p>
                     <button
                       type="button"
@@ -1208,7 +1419,7 @@ export function VendorDashboardModal({
                                 {v.planTier !== 'free' && (
                                   <span className="inline-flex items-center gap-1 rounded-full bg-brand-soft px-2 py-0.5 text-[10px] font-bold text-brand">
                                     <Crown className="size-3" aria-hidden="true" />
-                                    {v.planTier === 'business' ? 'Business Spotlight' : 'Pro Partner'}
+                                    Business Partner
                                   </span>
                                 )}
                                 {v.customBuilderEnabled && (
@@ -1717,7 +1928,266 @@ export function VendorDashboardModal({
                                 )}
                               </div>
 
-                              {/* Branding + Plan */}
+                              {/* Direct Online Ordering, UPI, Time Slots & Promo Codes */}
+                              <div className="space-y-3 rounded-xl border border-emerald-500/35 bg-card p-3.5">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <div>
+                                    <p className="flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+                                      <ShoppingBag className="size-3.5" aria-hidden="true" />
+                                      Direct Online Ordering &amp; Direct UPI Checkout (0% Commission)
+                                    </p>
+                                    <p className="text-[11px] text-muted-foreground">
+                                      Accept Pickup/Delivery orders with date/time slots, cake message, promo codes &amp; direct UPI QR.
+                                    </p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const url = `https://www.findmybites.com/v/${v.slug}?menu=1`;
+                                      navigator.clipboard?.writeText(url).catch(() => {});
+                                      onNotify(`Copied Clean QR Menu link: ${url}`);
+                                    }}
+                                    className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-border bg-background px-2.5 py-1 text-[11px] font-bold text-foreground hover:border-brand hover:text-brand"
+                                  >
+                                    <Copy className="size-3" aria-hidden="true" />
+                                    Copy QR Menu Link
+                                  </button>
+                                </div>
+
+                                <div className="flex flex-wrap items-center gap-4 border-b border-border pb-2.5 text-xs">
+                                  <label className="inline-flex cursor-pointer items-center gap-1.5 font-bold text-foreground">
+                                    <input
+                                      type="checkbox"
+                                      checked={editOrderAccepting}
+                                      onChange={(e) => setEditOrderAccepting(e.target.checked)}
+                                      className="size-4 accent-emerald-600"
+                                    />
+                                    Store Open (Accepting Online Orders)
+                                  </label>
+                                  <label className="inline-flex cursor-pointer items-center gap-1.5 font-semibold text-foreground">
+                                    <input
+                                      type="checkbox"
+                                      checked={editOrderDelivery}
+                                      onChange={(e) => setEditOrderDelivery(e.target.checked)}
+                                      className="size-3.5 accent-[#ef6c22]"
+                                    />
+                                    Delivery
+                                  </label>
+                                  <label className="inline-flex cursor-pointer items-center gap-1.5 font-semibold text-foreground">
+                                    <input
+                                      type="checkbox"
+                                      checked={editOrderPickup}
+                                      onChange={(e) => setEditOrderPickup(e.target.checked)}
+                                      className="size-3.5 accent-[#ef6c22]"
+                                    />
+                                    Self Pickup
+                                  </label>
+                                  <label className="inline-flex cursor-pointer items-center gap-1.5 font-semibold text-foreground">
+                                    <input
+                                      type="checkbox"
+                                      checked={editOrderCod}
+                                      onChange={(e) => setEditOrderCod(e.target.checked)}
+                                      className="size-3.5 accent-[#ef6c22]"
+                                    />
+                                    Pay on Delivery/Pickup
+                                  </label>
+                                </div>
+
+                                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+                                  <div>
+                                    <label className="block text-[11px] font-semibold text-foreground">
+                                      Delivery Fee ({currencyMeta.symbol.trim()})
+                                    </label>
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      max={50000}
+                                      value={editOrderDeliveryFeeLocal}
+                                      onChange={(e) =>
+                                        setEditOrderDeliveryFeeLocal(
+                                          Math.max(0, Number(e.target.value) || 0)
+                                        )
+                                      }
+                                      className="mt-1 w-full rounded-lg border border-border bg-background px-2.5 py-1.5 font-mono text-xs text-foreground"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[11px] font-semibold text-foreground">
+                                      Free Delivery Above ({currencyMeta.symbol.trim()})
+                                    </label>
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      max={500000}
+                                      value={editOrderFreeDeliveryLocal}
+                                      onChange={(e) =>
+                                        setEditOrderFreeDeliveryLocal(
+                                          Math.max(0, Number(e.target.value) || 0)
+                                        )
+                                      }
+                                      placeholder="0 = disabled"
+                                      className="mt-1 w-full rounded-lg border border-border bg-background px-2.5 py-1.5 font-mono text-xs text-foreground"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[11px] font-semibold text-foreground">
+                                      Min Pre-Order Notice (Hours)
+                                    </label>
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      max={168}
+                                      value={editOrderMinAdvanceHours}
+                                      onChange={(e) =>
+                                        setEditOrderMinAdvanceHours(
+                                          Math.max(0, Math.min(168, Number(e.target.value) || 0))
+                                        )
+                                      }
+                                      className="mt-1 w-full rounded-lg border border-border bg-background px-2.5 py-1.5 font-mono text-xs text-foreground"
+                                    />
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <label className="block text-[11px] font-semibold text-foreground">
+                                    Delivery / Pickup Time Slots (comma separated)
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={editOrderTimeSlots}
+                                    onChange={(e) => setEditOrderTimeSlots(e.target.value)}
+                                    placeholder="10:00 AM – 12:00 PM, 12:00 PM – 3:00 PM, 3:00 PM – 6:00 PM, 6:00 PM – 9:00 PM"
+                                    className="mt-1 w-full rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs text-foreground"
+                                  />
+                                </div>
+
+                                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+                                  <div>
+                                    <label className="block text-[11px] font-semibold text-foreground">
+                                      Direct UPI ID (0% fee QR)
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={editOrderUpiId}
+                                      onChange={(e) => setEditOrderUpiId(e.target.value)}
+                                      placeholder="yourbakery@okicici"
+                                      className="mt-1 w-full rounded-lg border border-border bg-background px-2.5 py-1.5 font-mono text-xs text-foreground"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[11px] font-semibold text-foreground">
+                                      UPI Account / Business Name
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={editOrderUpiName}
+                                      onChange={(e) => setEditOrderUpiName(e.target.value)}
+                                      placeholder={v.name}
+                                      className="mt-1 w-full rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs text-foreground"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[11px] font-semibold text-foreground">
+                                      Razorpay / Stripe Link (Optional)
+                                    </label>
+                                    <input
+                                      type="url"
+                                      value={editOrderPaymentLink}
+                                      onChange={(e) => setEditOrderPaymentLink(e.target.value)}
+                                      placeholder="https://rzp.io/l/..."
+                                      className="mt-1 w-full rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs text-foreground"
+                                    />
+                                  </div>
+                                </div>
+
+                                {/* Promo Codes Builder */}
+                                <div className="border-t border-border pt-2.5">
+                                  <p className="flex items-center gap-1 text-[11px] font-bold text-foreground">
+                                    <Tag className="size-3 text-brand" aria-hidden="true" />
+                                    Promo / Discount Codes ({editOrderPromoCodes.length}/10)
+                                  </p>
+                                  {editOrderPromoCodes.length > 0 && (
+                                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                                      {editOrderPromoCodes.map((pc) => (
+                                        <span
+                                          key={pc.code}
+                                          className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/35 bg-emerald-500/10 px-2 py-1 font-mono text-[11px] font-bold text-emerald-800 dark:text-emerald-200"
+                                        >
+                                          {pc.code} ·{' '}
+                                          {pc.type === 'percent'
+                                            ? `${pc.value}% OFF`
+                                            : `${formatMoney(pc.value, currency)} OFF`}
+                                          {pc.minOrderUsd
+                                            ? ` (min ${formatMoney(pc.minOrderUsd, currency)})`
+                                            : ''}
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              setEditOrderPromoCodes((prev) =>
+                                                prev.filter((item) => item.code !== pc.code)
+                                              )
+                                            }
+                                            className="cursor-pointer text-muted-foreground hover:text-rose-600"
+                                            aria-label={`Remove promo ${pc.code}`}
+                                          >
+                                            <X className="size-3" />
+                                          </button>
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+                                  {editOrderPromoCodes.length < 10 && (
+                                    <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-12">
+                                      <input
+                                        type="text"
+                                        value={newPromoCode}
+                                        onChange={(e) =>
+                                          setNewPromoCode(e.target.value.toUpperCase())
+                                        }
+                                        placeholder="Code (e.g. FEST10)"
+                                        className="rounded-lg border border-border bg-background px-2 py-1.5 font-mono text-xs uppercase text-foreground sm:col-span-3"
+                                      />
+                                      <select
+                                        value={newPromoType}
+                                        onChange={(e) =>
+                                          setNewPromoType(e.target.value as 'percent' | 'flat')
+                                        }
+                                        className="rounded-lg border border-border bg-background px-2 py-1.5 text-xs font-semibold text-foreground sm:col-span-3"
+                                      >
+                                        <option value="percent">% Discount</option>
+                                        <option value="flat">
+                                          Flat {currencyMeta.symbol.trim()} Off
+                                        </option>
+                                      </select>
+                                      <input
+                                        type="number"
+                                        min={1}
+                                        value={newPromoValue}
+                                        onChange={(e) => setNewPromoValue(e.target.value)}
+                                        placeholder="Value"
+                                        className="rounded-lg border border-border bg-background px-2 py-1.5 font-mono text-xs text-foreground sm:col-span-2"
+                                      />
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        value={newPromoMinLocal}
+                                        onChange={(e) => setNewPromoMinLocal(e.target.value)}
+                                        placeholder={`Min ${currencyMeta.symbol.trim()}`}
+                                        className="rounded-lg border border-border bg-background px-2 py-1.5 font-mono text-xs text-foreground sm:col-span-2"
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={handleAddPromoCode}
+                                        className="col-span-2 cursor-pointer rounded-lg bg-foreground px-2.5 py-1.5 text-xs font-bold text-background hover:opacity-90 sm:col-span-2"
+                                      >
+                                        + Add
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Branding + Plan (Free vs Business · Monthly Auto-Pay or Yearly 2 Months Free) */}
                               <div className="flex flex-wrap items-center gap-2">
                                 <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-semibold text-foreground hover:border-brand hover:text-brand">
                                   <ImagePlus className="size-3.5" aria-hidden="true" />
@@ -1747,10 +2217,42 @@ export function VendorDashboardModal({
                                 >
                                   {SAAS_PLANS.map((plan) => (
                                     <option key={plan.id} value={plan.id}>
-                                      {plan.name} ({formatPlanPrice(plan, currency)}/mo)
+                                      {plan.name} (
+                                      {plan.id === 'free'
+                                        ? `${formatPlanPrice(plan, currency)} forever`
+                                        : editBillingCycle === 'annual'
+                                          ? `${formatPlanPrice(plan, currency, 'annual')}/yr · 2 mo free`
+                                          : `${formatPlanPrice(plan, currency, 'monthly')}/mo Auto-Pay`}
+                                      )
                                     </option>
                                   ))}
                                 </select>
+                                {editPlanTier !== 'free' && (
+                                  <div className="inline-flex rounded-lg border border-border bg-background p-0.5 text-[11px] font-bold">
+                                    <button
+                                      type="button"
+                                      onClick={() => setEditBillingCycle('monthly')}
+                                      className={`cursor-pointer rounded-md px-2 py-1 transition-colors ${
+                                        editBillingCycle === 'monthly'
+                                          ? 'bg-brand text-brand-foreground'
+                                          : 'text-muted-foreground hover:text-foreground'
+                                      }`}
+                                    >
+                                      Monthly Auto-Pay
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setEditBillingCycle('annual')}
+                                      className={`cursor-pointer rounded-md px-2 py-1 transition-colors ${
+                                        editBillingCycle === 'annual'
+                                          ? 'bg-emerald-600 text-white'
+                                          : 'text-muted-foreground hover:text-foreground'
+                                      }`}
+                                    >
+                                      Yearly (2 Mo Free)
+                                    </button>
+                                  </div>
+                                )}
                               </div>
 
                               {/* Portfolio Gallery (up to 6) */}
@@ -2095,7 +2597,24 @@ export function VendorDashboardModal({
                                         </div>
                                       </div>
 
-                                      <div className="flex shrink-0 items-center gap-1">
+                                      <div className="flex shrink-0 flex-wrap items-center gap-1">
+                                        <button
+                                          type="button"
+                                          disabled={isBusy}
+                                          onClick={() => void handleToggleProductStock(v, p.id)}
+                                          title={
+                                            p.inStock === false
+                                              ? 'Mark back In Stock'
+                                              : 'Mark Sold Out on menu'
+                                          }
+                                          className={`cursor-pointer rounded-md border px-2 py-1 text-[11px] font-bold transition-colors disabled:opacity-50 ${
+                                            p.inStock === false
+                                              ? 'border-rose-500/40 bg-rose-500/10 text-rose-700 hover:bg-rose-500/20 dark:text-rose-300'
+                                              : 'border-emerald-500/35 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300'
+                                          }`}
+                                        >
+                                          {p.inStock === false ? 'Sold Out' : 'In Stock'}
+                                        </button>
                                         <button
                                           type="button"
                                           disabled={isBusy}
@@ -2507,6 +3026,26 @@ export function VendorDashboardModal({
                                   );
                                 })()}
 
+                                {/* Menu Section & Advance Pre-Order Hours */}
+                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                  <input
+                                    type="text"
+                                    value={prodMenuSection}
+                                    onChange={(e) => setProdMenuSection(e.target.value)}
+                                    placeholder="Menu Section (e.g. Cakes, Brownies, Hampers)"
+                                    className="rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs text-foreground focus:border-brand focus:outline-none"
+                                  />
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    max={168}
+                                    value={prodAdvanceHours}
+                                    onChange={(e) => setProdAdvanceHours(e.target.value)}
+                                    placeholder="Advance Pre-Order Notice in hours (e.g. 24)"
+                                    className="rounded-lg border border-border bg-background px-2.5 py-1.5 font-mono text-xs text-foreground focus:border-brand focus:outline-none"
+                                  />
+                                </div>
+
                                 <div className="flex flex-wrap items-center gap-2">
                                   <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-semibold text-foreground hover:border-brand hover:text-brand">
                                     <ImagePlus className="size-3.5" aria-hidden="true" />
@@ -2705,71 +3244,190 @@ export function VendorDashboardModal({
                 )
               ) : vendorLeads.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-border p-10 text-center">
-                  <p className="text-base font-bold text-foreground">No direct leads yet</p>
+                  <ShoppingBag className="mx-auto size-8 text-muted-foreground" aria-hidden="true" />
+                  <p className="mt-3 text-base font-bold text-foreground">
+                    No online orders or enquiries yet
+                  </p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    When customers submit booking enquiries on your published one-page storefronts,
-                    they appear here in real time.
+                    When customers place direct online orders or booking enquiries on your storefront or
+                    QR menu, they appear here live so you can accept, prepare, and update them on WhatsApp.
                   </p>
                 </div>
               ) : (
-                <div className="space-y-3">
-                  {vendorLeads.map((lead) => {
-                    const isTerminal =
-                      lead.status === 'Completed' || lead.status === 'Cancelled';
-                    return (
-                      <div
-                        key={lead.id}
-                        className="rounded-2xl border border-border bg-background p-4"
-                      >
-                        <div className="flex flex-wrap items-start justify-between gap-2">
-                          <div>
-                            <p className="font-mono text-[11px] text-muted-foreground">
-                              {lead.reference} · {lead.status}
-                            </p>
-                            <h4 className="text-sm font-bold text-foreground">
-                              {lead.customerName} — {lead.packageName}
-                            </h4>
-                            <p className="text-xs text-muted-foreground">
-                              {lead.eventDate} · {lead.guests} guests ·{' '}
-                              <span className="font-mono font-semibold text-foreground">
-                                {formatMoney(lead.estimatedUsd, currency)}
-                              </span>
-                            </p>
-                            <p className="mt-1 text-xs text-muted-foreground">
-                              Contact: <strong className="text-foreground">{lead.customerEmail}</strong>
-                            </p>
-                            {lead.notes && (
-                              <p className="mt-1 text-xs italic text-muted-foreground">
-                                “{lead.notes}”
-                              </p>
-                            )}
-                          </div>
+                <div className="space-y-4">
+                  {/* Live Order Stage Filter Bar */}
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {(
+                      [
+                        { id: 'all', label: 'All' },
+                        { id: 'New Order', label: 'New Orders' },
+                        { id: 'Accepted', label: 'Accepted' },
+                        { id: 'Preparing', label: 'Preparing' },
+                        { id: 'Out for Delivery', label: 'Out for Delivery' },
+                        { id: 'Completed', label: 'Completed' },
+                        { id: 'Cancelled', label: 'Cancelled' },
+                      ] as const
+                    ).map((st) => {
+                      const count =
+                        st.id === 'all'
+                          ? vendorLeads.length
+                          : vendorLeads.filter((l) => l.status === st.id).length;
+                      return (
+                        <button
+                          key={st.id}
+                          type="button"
+                          onClick={() => setOrderStatusFilter(st.id)}
+                          className={`cursor-pointer rounded-lg border px-2.5 py-1 text-xs font-bold transition-colors ${
+                            orderStatusFilter === st.id
+                              ? 'border-brand bg-brand text-brand-foreground'
+                              : 'border-border bg-background text-muted-foreground hover:text-foreground'
+                          }`}
+                        >
+                          {st.label} ({count})
+                        </button>
+                      );
+                    })}
+                  </div>
 
-                          {!isTerminal && (
-                            <div className="flex items-center gap-2">
-                              <button
-                                type="button"
-                                disabled={busyId === lead.id}
-                                onClick={() => void handleLeadStatus(lead.id, 'Completed')}
-                                className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
-                              >
-                                <CheckCircle2 className="size-3.5" aria-hidden="true" />
-                                Complete
-                              </button>
-                              <button
-                                type="button"
-                                disabled={busyId === lead.id}
-                                onClick={() => void handleLeadStatus(lead.id, 'Cancelled')}
-                                className="cursor-pointer rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
-                              >
-                                Cancel
-                              </button>
+                  <div className="space-y-3">
+                    {vendorLeads
+                      .filter(
+                        (lead) =>
+                          orderStatusFilter === 'all' || lead.status === orderStatusFilter
+                      )
+                      .map((lead) => {
+                        const isTerminal =
+                          lead.status === 'Completed' || lead.status === 'Cancelled';
+                        const statusStyle =
+                          lead.status === 'New Order'
+                            ? 'bg-brand/15 text-brand'
+                            : lead.status === 'Accepted'
+                              ? 'bg-blue-500/15 text-blue-700 dark:text-blue-300'
+                              : lead.status === 'Preparing'
+                                ? 'bg-amber-500/15 text-amber-800 dark:text-amber-300'
+                                : lead.status === 'Out for Delivery'
+                                  ? 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300'
+                                  : lead.status === 'Completed'
+                                    ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+                                    : lead.status === 'Cancelled'
+                                      ? 'bg-rose-500/15 text-rose-700 dark:text-rose-300'
+                                      : 'bg-muted text-foreground';
+                        return (
+                          <div
+                            key={lead.id}
+                            className="rounded-2xl border border-border bg-background p-4"
+                          >
+                            <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="font-mono text-xs font-extrabold text-foreground">
+                                    {lead.reference}
+                                  </span>
+                                  <span
+                                    className={`rounded-md px-2 py-0.5 text-[11px] font-bold ${statusStyle}`}
+                                  >
+                                    {lead.status}
+                                  </span>
+                                  <span className="text-[11px] text-muted-foreground">
+                                    {lead.vendorName}
+                                  </span>
+                                </div>
+                                <h4 className="mt-1 text-sm font-bold text-foreground">
+                                  {lead.customerName} — {lead.packageName}
+                                </h4>
+                                <p className="mt-0.5 text-xs text-muted-foreground">
+                                  Date: <strong className="text-foreground">{lead.eventDate}</strong> ·{' '}
+                                  Total:{' '}
+                                  <span className="font-mono font-bold text-foreground">
+                                    {formatMoney(lead.estimatedUsd, currency)}
+                                  </span>
+                                </p>
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                  Customer Contact:{' '}
+                                  <strong className="text-foreground">{lead.customerEmail}</strong>
+                                </p>
+                                {lead.notes && (
+                                  <p className="mt-1.5 rounded-lg border border-border/70 bg-muted/40 px-2.5 py-1.5 text-xs text-foreground/90">
+                                    {lead.notes}
+                                  </p>
+                                )}
+                              </div>
+
+                              <div className="flex flex-wrap items-center gap-1.5 sm:max-w-[260px] sm:justify-end">
+                                {!isTerminal &&
+                                  (lead.status === 'New Order' ||
+                                    lead.status === 'Confirmed Enquiry' ||
+                                    lead.status === 'Awaiting Vendor Reply') && (
+                                    <button
+                                      type="button"
+                                      disabled={busyId === lead.id}
+                                      onClick={() => void handleLeadStatus(lead.id, 'Accepted')}
+                                      className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-700 disabled:opacity-50"
+                                    >
+                                      <CheckCircle2 className="size-3.5" aria-hidden="true" />
+                                      Accept Order
+                                    </button>
+                                  )}
+                                {!isTerminal && lead.status === 'Accepted' && (
+                                  <button
+                                    type="button"
+                                    disabled={busyId === lead.id}
+                                    onClick={() => void handleLeadStatus(lead.id, 'Preparing')}
+                                    className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-700 disabled:opacity-50"
+                                  >
+                                    <ChefHat className="size-3.5" aria-hidden="true" />
+                                    Start Preparing
+                                  </button>
+                                )}
+                                {!isTerminal && lead.status === 'Preparing' && (
+                                  <button
+                                    type="button"
+                                    disabled={busyId === lead.id}
+                                    onClick={() =>
+                                      void handleLeadStatus(lead.id, 'Out for Delivery')
+                                    }
+                                    className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-700 disabled:opacity-50"
+                                  >
+                                    <Truck className="size-3.5" aria-hidden="true" />
+                                    Out for Delivery
+                                  </button>
+                                )}
+                                {!isTerminal && (
+                                  <button
+                                    type="button"
+                                    disabled={busyId === lead.id}
+                                    onClick={() => void handleLeadStatus(lead.id, 'Completed')}
+                                    className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
+                                  >
+                                    <CheckCircle2 className="size-3.5" aria-hidden="true" />
+                                    Complete
+                                  </button>
+                                )}
+                                <a
+                                  href={buildOrderStatusWhatsAppHref(lead)}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 rounded-lg bg-[#25D366] px-2.5 py-1.5 text-xs font-bold text-white hover:bg-[#1ebe5d]"
+                                >
+                                  <MessageCircle className="size-3.5" aria-hidden="true" />
+                                  Notify WA
+                                </a>
+                                {!isTerminal && (
+                                  <button
+                                    type="button"
+                                    disabled={busyId === lead.id}
+                                    onClick={() => void handleLeadStatus(lead.id, 'Cancelled')}
+                                    className="cursor-pointer rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold text-muted-foreground hover:border-rose-500/50 hover:text-rose-600 disabled:opacity-50"
+                                  >
+                                    Cancel
+                                  </button>
+                                )}
+                              </div>
                             </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
+                          </div>
+                        );
+                      })}
+                  </div>
                 </div>
               )}
             </div>

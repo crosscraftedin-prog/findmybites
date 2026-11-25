@@ -10,10 +10,16 @@ interface QrPosterModalProps {
 
 export function QrPosterModal({ vendor, onClose }: QrPosterModalProps) {
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
+  const [targetMode, setTargetMode] = useState<'menu' | 'storefront'>('menu');
   const [copied, setCopied] = useState(false);
   const [downloading, setDownloading] = useState(false);
 
-  const publicUrl = vendor ? `https://www.findmybites.com/v/${vendor.slug}` : '';
+  const displayShortUrl = vendor
+    ? targetMode === 'menu'
+      ? `findmybites.com/v/${vendor.slug}?menu=1`
+      : `findmybites.com/v/${vendor.slug}`
+    : '';
+  const publicUrl = displayShortUrl ? `https://www.${displayShortUrl}` : '';
 
   useEffect(() => {
     if (!vendor) return;
@@ -130,8 +136,8 @@ export function QrPosterModal({ vendor, onClose }: QrPosterModalProps) {
 
       // URL & footer
       ctx.fillStyle = '#18181b';
-      ctx.font = '600 24px monospace';
-      ctx.fillText(`findmybites.com/v/${vendor.slug}`, canvas.width / 2, 1054);
+      ctx.font = '600 22px monospace';
+      ctx.fillText(displayShortUrl, canvas.width / 2, 1054);
 
       ctx.fillStyle = '#71717a';
       ctx.font = '500 20px "Plus Jakarta Sans", system-ui, sans-serif';
@@ -142,7 +148,7 @@ export function QrPosterModal({ vendor, onClose }: QrPosterModalProps) {
       );
 
       const link = document.createElement('a');
-      link.download = `${vendor.slug}-qr-poster.png`;
+      link.download = `${vendor.slug}-${targetMode === 'menu' ? 'qr-menu' : 'qr-poster'}.png`;
       link.href = canvas.toDataURL('image/png');
       link.click();
     } finally {
@@ -187,6 +193,32 @@ export function QrPosterModal({ vendor, onClose }: QrPosterModalProps) {
 
         {/* Printable Poster Card Preview */}
         <div className="p-5">
+          {/* QR Target Mode Switcher */}
+          <div className="mb-3 grid grid-cols-2 gap-1.5 rounded-xl bg-muted p-1">
+            <button
+              type="button"
+              onClick={() => setTargetMode('menu')}
+              className={`cursor-pointer rounded-lg px-2.5 py-1.5 text-xs font-bold transition-colors ${
+                targetMode === 'menu'
+                  ? 'bg-background text-foreground shadow-xs'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              Clean QR Menu
+            </button>
+            <button
+              type="button"
+              onClick={() => setTargetMode('storefront')}
+              className={`cursor-pointer rounded-lg px-2.5 py-1.5 text-xs font-bold transition-colors ${
+                targetMode === 'storefront'
+                  ? 'bg-background text-foreground shadow-xs'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              Full Storefront
+            </button>
+          </div>
+
           <div className="overflow-hidden rounded-2xl border border-border bg-white text-neutral-950 shadow-sm">
             <div
               className={`px-5 py-4 text-center text-white ${
@@ -206,7 +238,9 @@ export function QrPosterModal({ vendor, onClose }: QrPosterModalProps) {
 
             <div className="flex flex-col items-center px-5 py-5 text-center">
               <p className="text-xs font-bold text-neutral-900">
-                Scan to see full menu &amp; order on WhatsApp
+                {targetMode === 'menu'
+                  ? 'Scan for Instant Digital Menu & Direct Online Order'
+                  : 'Scan to see full menu & order on WhatsApp'}
               </p>
 
               <div className="mt-3 rounded-2xl border border-neutral-200 bg-white p-3 shadow-xs">
@@ -229,7 +263,7 @@ export function QrPosterModal({ vendor, onClose }: QrPosterModalProps) {
               </div>
 
               <p className="mt-2 font-mono text-[11px] text-neutral-600">
-                findmybites.com/v/{vendor.slug}
+                {displayShortUrl}
               </p>
             </div>
           </div>
@@ -261,7 +295,7 @@ export function QrPosterModal({ vendor, onClose }: QrPosterModalProps) {
             className="mt-2.5 flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-border bg-muted/50 px-4 py-2 text-xs font-semibold text-foreground transition-colors hover:bg-accent"
           >
             {copied ? <Check className="size-3.5 text-[#25D366]" /> : <Copy className="size-3.5" />}
-            {copied ? 'Mini-website link copied!' : `Copy link: findmybites.com/v/${vendor.slug}`}
+            {copied ? 'Link copied!' : `Copy: ${displayShortUrl}`}
           </button>
         </div>
       </div>

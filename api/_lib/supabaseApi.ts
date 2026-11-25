@@ -661,6 +661,15 @@ async function normalizeProductsForStorage(
       if (typeof p.tag === 'string' && p.tag.trim()) {
         out.tag = p.tag.trim().slice(0, 40);
       }
+      if (p.inStock === false) {
+        out.inStock = false;
+      }
+      if (typeof p.menuSection === 'string' && p.menuSection.trim()) {
+        out.menuSection = p.menuSection.trim().slice(0, 50);
+      }
+      if (typeof p.advanceHours === 'number' && Number.isFinite(p.advanceHours) && p.advanceHours > 0) {
+        out.advanceHours = Math.min(336, Math.round(p.advanceHours));
+      }
       return out;
     })
   );
@@ -668,15 +677,112 @@ async function normalizeProductsForStorage(
 
 const GBP_MAPS_LINK_ID = '__gbp_maps__';
 const GBP_REVIEW_LINK_ID = '__gbp_review__';
+const ORDERING_CONFIG_LINK_ID = '__fmb_ordering_config__';
+
+interface StoredOrderingConfig {
+  enabled: boolean;
+  acceptingOrders?: boolean;
+  pickupEnabled?: boolean;
+  deliveryEnabled?: boolean;
+  deliveryFeeUsd?: number;
+  freeDeliveryAboveUsd?: number;
+  minAdvanceHours?: number;
+  timeSlots?: string[];
+  upiId?: string;
+  upiPayeeName?: string;
+  paymentLinkUrl?: string;
+  codEnabled?: boolean;
+  promoCodes?: Array<{
+    code: string;
+    type: 'percent' | 'flat';
+    value: number;
+    minOrderUsd?: number;
+    active?: boolean;
+  }>;
+  billingCycle?: 'monthly' | 'annual';
+}
+
+function sanitizeOrderingConfig(raw: unknown): StoredOrderingConfig | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const o = raw as Record<string, unknown>;
+  const upiId =
+    typeof o.upiId === 'string' ? o.upiId.trim().replace(/\s+/g, '').slice(0, 80) : undefined;
+  const upiPayeeName =
+    typeof o.upiPayeeName === 'string' && o.upiPayeeName.trim()
+      ? o.upiPayeeName.trim().slice(0, 60)
+      : undefined;
+  const paymentLinkUrl = sanitizeSafeHttpUrl(o.paymentLinkUrl);
+  const timeSlots = Array.isArray(o.timeSlots)
+    ? o.timeSlots
+        .map((s) => (typeof s === 'string' ? s.trim().slice(0, 40) : ''))
+        .filter(Boolean)
+        .slice(0, 8)
+    : undefined;
+  const promoCodes = Array.isArray(o.promoCodes)
+    ? o.promoCodes
+        .slice(0, 12)
+        .map((item) => {
+          if (!item || typeof item !== 'object') return null;
+          const p = item as Record<string, unknown>;
+          const code =
+            typeof p.code === 'string'
+              ? p.code.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 24)
+              : '';
+          if (!code) return null;
+          const type: 'percent' | 'flat' = p.type === 'flat' ? 'flat' : 'percent';
+          const value = Math.max(0, Math.min(type === 'percent' ? 80 : 10000, Number(p.value) || 0));
+          if (value <= 0) return null;
+          const minOrderUsd =
+            typeof p.minOrderUsd === 'number' && p.minOrderUsd > 0
+              ? Math.min(10000, Number(p.minOrderUsd))
+              : undefined;
+          return {
+            code,
+            type,
+            value,
+            ...(minOrderUsd ? { minOrderUsd } : {}),
+            active: p.active !== false,
+          };
+        })
+        .filter((x): x is NonNullable<typeof x> => Boolean(x))
+    : undefined;
+
+  return {
+    enabled: o.enabled !== false,
+    acceptingOrders: o.acceptingOrders !== false,
+    pickupEnabled: o.pickupEnabled !== false,
+    deliveryEnabled: o.deliveryEnabled !== false,
+    ...(typeof o.deliveryFeeUsd === 'number' && o.deliveryFeeUsd >= 0
+      ? { deliveryFeeUsd: Math.min(500, Number(o.deliveryFeeUsd)) }
+      : {}),
+    ...(typeof o.freeDeliveryAboveUsd === 'number' && o.freeDeliveryAboveUsd > 0
+      ? { freeDeliveryAboveUsd: Math.min(5000, Number(o.freeDeliveryAboveUsd)) }
+      : {}),
+    ...(typeof o.minAdvanceHours === 'number' && o.minAdvanceHours >= 0
+      ? { minAdvanceHours: Math.min(336, Math.round(o.minAdvanceHours)) }
+      : {}),
+    ...(timeSlots && timeSlots.length > 0 ? { timeSlots } : {}),
+    ...(upiId ? { upiId } : {}),
+    ...(upiPayeeName ? { upiPayeeName } : {}),
+    ...(paymentLinkUrl ? { paymentLinkUrl: paymentLinkUrl.slice(0, 350) } : {}),
+    codEnabled: o.codEnabled !== false,
+    ...(promoCodes && promoCodes.length > 0 ? { promoCodes } : {}),
+    ...(o.billingCycle === 'annual' || o.billingCycle === 'monthly'
+      ? { billingCycle: o.billingCycle }
+      : {}),
+  };
+}
 
 function extractGbpAndCustomLinks(raw: unknown): {
   customLinks?: Array<{ id: string; title: string; url: string; badge?: string }>;
   googleMapsUrl?: string;
   googleReviewUrl?: string;
+  orderingConfig?: StoredOrderingConfig;
 } {
   if (!Array.isArray(raw)) return {};
   let googleMapsUrl: string | undefined;
   let googleReviewUrl: string | undefined;
+  let orderingConfig: StoredOrderingConfig | undefined;
   const regular: Array<{ id: string; title: string; url: string; badge?: string }> = [];
   for (const item of raw) {
     if (!item || typeof item !== 'object') continue;
@@ -689,6 +795,10 @@ function extractGbpAndCustomLinks(raw: unknown): {
     }
     if (id === GBP_REVIEW_LINK_ID) {
       if (url) googleReviewUrl = url;
+      continue;
+    }
+    if (id === ORDERING_CONFIG_LINK_ID) {
+      orderingConfig = sanitizeOrderingConfig(obj.config);
       continue;
     }
     if (url && typeof obj.title === 'string' && obj.title.trim()) {
@@ -704,6 +814,7 @@ function extractGbpAndCustomLinks(raw: unknown): {
     customLinks: regular.length > 0 ? regular : undefined,
     googleMapsUrl,
     googleReviewUrl,
+    orderingConfig,
   };
 }
 
@@ -711,31 +822,33 @@ function buildStoredCustomLinks(
   existingRaw: unknown,
   nextCustomLinks: unknown,
   nextGoogleMapsUrl: unknown,
-  nextGoogleReviewUrl: unknown
-): Array<{ id: string; title: string; url: string; badge?: string }> {
+  nextGoogleReviewUrl: unknown,
+  nextOrderingConfig?: unknown
+): Array<Record<string, unknown>> {
   const existing = extractGbpAndCustomLinks(existingRaw);
   const regularSource = Array.isArray(nextCustomLinks)
     ? nextCustomLinks
     : existing.customLinks || [];
-  const regular = regularSource
-    .slice(0, 8)
-    .map((item, idx) => {
-      const l = (item && typeof item === 'object' ? item : {}) as Record<string, unknown>;
-      const id = sanitizeId(l.id || `link-${idx + 1}`, 'link');
-      if (id === GBP_MAPS_LINK_ID || id === GBP_REVIEW_LINK_ID) return null;
-      const safeUrl = sanitizeSafeHttpUrl(l.url);
-      const title = typeof l.title === 'string' ? l.title.trim().slice(0, 60) : '';
-      if (!safeUrl || !title) return null;
-      return {
-        id,
-        title,
-        url: safeUrl.slice(0, 300),
-        ...(typeof l.badge === 'string' && l.badge.trim()
-          ? { badge: l.badge.trim().slice(0, 24) }
-          : {}),
-      };
-    })
-    .filter((x): x is { id: string; title: string; url: string; badge?: string } => Boolean(x));
+  const regular: Array<Record<string, unknown>> = [];
+  for (let idx = 0; idx < Math.min(8, regularSource.length); idx += 1) {
+    const item = regularSource[idx];
+    const l = (item && typeof item === 'object' ? item : {}) as Record<string, unknown>;
+    const id = sanitizeId(l.id || `link-${idx + 1}`, 'link');
+    if (id === GBP_MAPS_LINK_ID || id === GBP_REVIEW_LINK_ID || id === ORDERING_CONFIG_LINK_ID) {
+      continue;
+    }
+    const safeUrl = sanitizeSafeHttpUrl(l.url);
+    const title = typeof l.title === 'string' ? l.title.trim().slice(0, 60) : '';
+    if (!safeUrl || !title) continue;
+    regular.push({
+      id,
+      title,
+      url: safeUrl.slice(0, 300),
+      ...(typeof l.badge === 'string' && l.badge.trim()
+        ? { badge: l.badge.trim().slice(0, 24) }
+        : {}),
+    });
+  }
 
   const resolvedMaps =
     nextGoogleMapsUrl !== undefined
@@ -745,6 +858,10 @@ function buildStoredCustomLinks(
     nextGoogleReviewUrl !== undefined
       ? sanitizeSafeHttpUrl(nextGoogleReviewUrl)
       : existing.googleReviewUrl;
+  const resolvedOrdering =
+    nextOrderingConfig !== undefined
+      ? sanitizeOrderingConfig(nextOrderingConfig)
+      : existing.orderingConfig;
 
   if (resolvedMaps) {
     regular.push({
@@ -760,11 +877,21 @@ function buildStoredCustomLinks(
       url: resolvedReview.slice(0, 400),
     });
   }
+  if (resolvedOrdering) {
+    regular.push({
+      id: ORDERING_CONFIG_LINK_ID,
+      title: 'Ordering Config',
+      url: '',
+      config: resolvedOrdering,
+    });
+  }
   return regular;
 }
 
 function rowToVendor(row: Record<string, unknown>) {
-  const { customLinks, googleMapsUrl, googleReviewUrl } = extractGbpAndCustomLinks(row.custom_links);
+  const { customLinks, googleMapsUrl, googleReviewUrl, orderingConfig } = extractGbpAndCustomLinks(
+    row.custom_links
+  );
   return {
     id: String(row.id || ''),
     ownerId: typeof row.owner_id === 'string' ? row.owner_id : undefined,
@@ -824,6 +951,7 @@ function rowToVendor(row: Record<string, unknown>) {
     googleMapsUrl,
     googleReviewUrl,
     customLinks,
+    ...(orderingConfig ? { orderingConfig } : {}),
     serviceAreas: Array.isArray(row.service_areas) ? row.service_areas : [],
     allStatesCoverage: Boolean(row.all_states_coverage),
     serviceStates: Array.isArray(row.service_states) ? row.service_states : undefined,
@@ -1238,7 +1366,8 @@ export function createSupabaseApiRouter(): MicroRouter {
           [],
           vendor.customLinks,
           vendor.googleMapsUrl,
-          vendor.googleReviewUrl
+          vendor.googleReviewUrl,
+          vendor.orderingConfig
         ),
         claim_status: 'none',
         created_at: nowIso,
@@ -1313,13 +1442,15 @@ export function createSupabaseApiRouter(): MicroRouter {
       if (
         Array.isArray(updates.customLinks) ||
         updates.googleMapsUrl !== undefined ||
-        updates.googleReviewUrl !== undefined
+        updates.googleReviewUrl !== undefined ||
+        updates.orderingConfig !== undefined
       ) {
         patch.custom_links = buildStoredCustomLinks(
           existing.custom_links,
           updates.customLinks,
           updates.googleMapsUrl,
-          updates.googleReviewUrl
+          updates.googleReviewUrl,
+          updates.orderingConfig
         );
       }
       if (updates.whatsappNumber !== undefined)
@@ -1637,6 +1768,72 @@ export function createSupabaseApiRouter(): MicroRouter {
     }
   });
 
+  // Public guest-friendly Direct Online Ordering checkout endpoint
+  router.post('/orders/direct', async (req: AuthedRequest, res) => {
+    try {
+      const supabase = getSupabase();
+      // Optional auth if logged in
+      let customerId = 'guest';
+      let customerEmailFallback = '';
+      try {
+        const authHeader = String(req.headers?.authorization || '');
+        if (authHeader.startsWith('Bearer ')) {
+          const decoded = await verifyFirebaseIdToken(authHeader.slice(7).trim());
+          if (decoded?.uid) {
+            customerId = decoded.uid;
+            customerEmailFallback = decoded.email || '';
+          }
+        }
+      } catch {
+        // guest checkout stays allowed
+      }
+
+      const b = (req.body?.order || req.body || {}) as Record<string, unknown>;
+      const vendorId = sanitizeId(b.vendorId || 'vendor');
+      const { data: vendorRow } = await supabase
+        .from('vendors')
+        .select('id, owner_id, name, city, category')
+        .eq('id', vendorId)
+        .maybeSingle();
+
+      const randomCode = Math.floor(1000 + Math.random() * 9000);
+      const orderRef = sanitizeId(b.reference || `ORD-${randomCode}`, 'ORD');
+      const orderId = sanitizeId(b.id || `ord-${Date.now()}-${randomCode}`, 'ord');
+      const nowIso = new Date().toISOString();
+
+      const row = {
+        id: orderId,
+        reference: orderRef,
+        customer_id: customerId,
+        vendor_id: vendorRow?.id || vendorId,
+        vendor_owner_id: String(vendorRow?.owner_id || b.vendorOwnerId || 'platform'),
+        vendor_name: clampStr(vendorRow?.name || b.vendorName, 1, 120, 'Vendor'),
+        vendor_city: clampStr(vendorRow?.city || b.vendorCity, 1, 120, 'City'),
+        vendor_category: clampStr(vendorRow?.category || b.vendorCategory, 1, 80, 'Online Order'),
+        package_name: clampStr(b.packageName, 1, 240, 'Online Order'),
+        estimated_usd: Math.max(0, Math.min(500000, Number(b.estimatedUsd) || 0)),
+        event_date: clampStr(b.eventDate, 6, 30, new Date().toISOString().split('T')[0]),
+        guests: Math.max(1, Math.min(10000, Math.round(Number(b.guests) || 1))),
+        customer_name: clampStr(b.customerName, 1, 100, 'Customer'),
+        customer_email: clampStr(
+          b.customerEmail || b.customerPhone || customerEmailFallback,
+          3,
+          160,
+          'guest-order'
+        ),
+        notes: typeof b.notes === 'string' ? b.notes.trim().slice(0, 1200) : '',
+        status: 'New Order',
+        created_at: nowIso,
+        updated_at: nowIso,
+      };
+      const { data, error } = await supabase.from('bookings').insert(row).select('*').single();
+      if (error) throw new Error(error.message);
+      res.status(201).json({ booking: rowToBooking(data as Record<string, unknown>) });
+    } catch (err) {
+      handleApiError(res, err, 'Failed to place direct online order.');
+    }
+  });
+
   router.patch('/bookings/:bookingId', requireAuth, async (req: AuthedRequest, res) => {
     try {
       const supabase = getSupabase();
@@ -1644,12 +1841,17 @@ export function createSupabaseApiRouter(): MicroRouter {
       const admin = isRootAdmin(user);
       const bookingId = sanitizeId(req.params.bookingId);
       const nextStatus = req.body?.status;
-      if (
-        nextStatus !== 'Confirmed Enquiry' &&
-        nextStatus !== 'Completed' &&
-        nextStatus !== 'Cancelled'
-      ) {
-        return res.status(400).json({ error: 'Invalid booking status.' });
+      const validStatuses = new Set([
+        'New Order',
+        'Accepted',
+        'Preparing',
+        'Out for Delivery',
+        'Confirmed Enquiry',
+        'Completed',
+        'Cancelled',
+      ]);
+      if (typeof nextStatus !== 'string' || !validStatuses.has(nextStatus)) {
+        return res.status(400).json({ error: 'Invalid booking or order status.' });
       }
 
       const { data: existing } = await supabase
@@ -1665,10 +1867,10 @@ export function createSupabaseApiRouter(): MicroRouter {
         return res.status(403).json({ error: 'Permission denied.' });
       }
       if (!admin && (existing.status === 'Completed' || existing.status === 'Cancelled')) {
-        return res.status(400).json({ error: 'Booking is already finalized.' });
+        return res.status(400).json({ error: 'Order is already finalized.' });
       }
       if (!admin && isCustomer && !isVendorOwner && nextStatus !== 'Cancelled') {
-        return res.status(403).json({ error: 'Customers can only cancel an enquiry.' });
+        return res.status(403).json({ error: 'Customers can only cancel an order.' });
       }
 
       const { error } = await supabase

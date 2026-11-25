@@ -506,15 +506,16 @@ export function PWAHeaderInstallButton({ onInstalledToast }: PWAInstallBannerPro
       <button
         type="button"
         onClick={() => void handleClick()}
+        aria-label={isIOS ? 'Install iOS App' : 'Get FindMyBites App'}
         title={isIOS ? 'How to install FindMyBites on iPhone' : 'Install FindMyBites App'}
-        className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border border-brand-border bg-brand-soft/70 px-2.5 text-xs font-bold text-brand transition-colors hover:bg-brand hover:text-brand-foreground whitespace-nowrap shrink-0"
+        className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-brand-border bg-brand-soft/70 px-2 text-xs font-bold text-brand transition-colors hover:bg-brand hover:text-brand-foreground sm:h-9 sm:px-2.5 whitespace-nowrap shrink-0"
       >
         {isIOS ? (
           <Smartphone className="size-3.5 shrink-0" aria-hidden="true" />
         ) : (
           <Download className="size-3.5 shrink-0" aria-hidden="true" />
         )}
-        <span className="hidden xl:inline">{isIOS ? 'iOS App' : 'Get App'}</span>
+        <span className="hidden 2xl:inline">{isIOS ? 'iOS App' : 'Get App'}</span>
       </button>
 
       <InstallGuideModal

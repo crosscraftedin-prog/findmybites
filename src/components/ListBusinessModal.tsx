@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import {
   BUILDER_PRESET_OPTIONS,
+  BillingCycle,
   BuilderPresetId,
   COUNTRY_DEFAULT_CURRENCY,
   COUNTRY_REGION_LABEL,
@@ -71,6 +72,7 @@ import { StateCoveragePicker } from './StateCoveragePicker';
 interface ListBusinessModalProps {
   isOpen: boolean;
   initialPlanTier?: PlanTier;
+  initialBillingCycle?: BillingCycle;
   initialChristmasSpecial?: boolean;
   defaultCountry?: Exclude<LaunchCountry, 'All'>;
   existingSlugs?: string[];
@@ -140,6 +142,7 @@ const DEFAULT_IMAGE_BY_CATEGORY: Record<string, string> = {
 export function ListBusinessModal({
   isOpen,
   initialPlanTier = 'free',
+  initialBillingCycle = 'monthly',
   initialChristmasSpecial = false,
   defaultCountry = 'India',
   existingSlugs = [],
@@ -179,7 +182,10 @@ export function ListBusinessModal({
   const [customBuilderMode, setCustomBuilderMode] = useState<CustomBuilderMode>('snackbox');
   const [customBuilderMinQty, setCustomBuilderMinQty] = useState(10);
   const [customBuilderPackagingLocal, setCustomBuilderPackagingLocal] = useState(0);
-  const [planTier, setPlanTier] = useState<PlanTier>(initialPlanTier);
+  const [planTier, setPlanTier] = useState<PlanTier>(
+    initialPlanTier === 'pro' ? 'business' : initialPlanTier
+  );
+  const [billingCycle, setBillingCycle] = useState<BillingCycle>(initialBillingCycle);
   const [autoPayAccepted, setAutoPayAccepted] = useState(true);
 
   // Branding uploads
@@ -205,8 +211,9 @@ export function ListBusinessModal({
   ]);
 
   useEffect(() => {
-    setPlanTier(initialPlanTier);
-  }, [initialPlanTier, isOpen]);
+    setPlanTier(initialPlanTier === 'pro' ? 'business' : initialPlanTier);
+    setBillingCycle(initialBillingCycle);
+  }, [initialPlanTier, initialBillingCycle, isOpen]);
 
   useEffect(() => {
     if (isOpen) {
@@ -501,7 +508,7 @@ export function ListBusinessModal({
       setSubmitError('Please enter a valid WhatsApp number with country code (e.g. 919876543210).');
       return;
     }
-    if (isPaidPlan && !autoPayAccepted) return;
+    if (isPaidPlan && billingCycle === 'monthly' && !autoPayAccepted) return;
     if (!user) {
       await onSignIn();
       return;
@@ -615,8 +622,16 @@ export function ListBusinessModal({
       lat,
       lng,
       whatsappNumber: digits,
-      planTier,
-      monthlyAutoPay: isPaidPlan && autoPayAccepted,
+      planTier: isPaidPlan ? 'business' : 'free',
+      monthlyAutoPay: isPaidPlan && billingCycle === 'monthly' && autoPayAccepted,
+      orderingConfig: {
+        enabled: true,
+        acceptingOrders: true,
+        deliveryEnabled: true,
+        pickupEnabled: true,
+        codEnabled: true,
+        billingCycle,
+      },
       priceTier: computeTier(minPriceUsd),
       startingPriceUsd: minPriceUsd,
       rating: 5.0,
@@ -762,41 +777,83 @@ export function ListBusinessModal({
               </div>
             </div>
 
-            <div className="mt-2.5 grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+            <div className="mt-2.5 grid grid-cols-1 gap-3 sm:grid-cols-2">
               {SAAS_PLANS.map((p) => {
-                const active = planTier === p.id;
+                const active = (planTier === 'pro' ? 'business' : planTier) === p.id;
+                const isBiz = p.id === 'business';
                 return (
                   <button
                     key={p.id}
                     type="button"
                     onClick={() => setPlanTier(p.id)}
-                    className={`cursor-pointer rounded-xl border p-3.5 text-left transition-all ${
+                    className={`cursor-pointer rounded-xl border p-4 text-left transition-all ${
                       active
                         ? 'border-brand bg-brand-soft/60 ring-2 ring-brand/20'
                         : 'border-border bg-background hover:border-brand/50'
                     }`}
                   >
                     <div className="flex items-center justify-between gap-1">
-                      <span className="text-xs font-bold text-foreground">{p.name}</span>
-                      {p.id !== 'free' && (
-                        <Crown className="size-3.5 text-brand" aria-hidden="true" />
+                      <span className="text-sm font-extrabold text-foreground">{p.name}</span>
+                      {isBiz ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-brand px-2 py-0.5 text-[10px] font-bold text-brand-foreground">
+                          <Crown className="size-3" aria-hidden="true" />
+                          {billingCycle === 'annual' ? '2 Months Free' : 'Direct Ordering'}
+                        </span>
+                      ) : (
+                        <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
+                          ₹0 Forever
+                        </span>
                       )}
                     </div>
-                    <p className="mt-1 font-mono text-base font-extrabold text-foreground">
-                      {formatPlanPrice(p, formCurrency)}
-                      <span className="text-[11px] font-normal text-muted-foreground">/mo</span>
+                    <p className="mt-1.5 font-mono text-xl font-extrabold text-foreground">
+                      {formatPlanPrice(p, formCurrency, isBiz ? billingCycle : 'monthly')}
+                      <span className="text-xs font-normal text-muted-foreground">
+                        {p.id === 'free'
+                          ? ' / forever'
+                          : billingCycle === 'annual'
+                            ? ' / year (10 mo)'
+                            : ' / month'}
+                      </span>
                     </p>
                     <p className="mt-1 text-[11px] text-muted-foreground">
                       {p.id === 'free'
-                        ? 'Basic listing + WhatsApp button'
-                        : p.id === 'pro'
-                          ? 'Ranks above all Free listings'
-                          : '#1 Pinned top slot + AI priority'}
+                        ? 'Storefront + Bio-Link + WhatsApp + QR Poster'
+                        : 'Direct Online Ordering, UPI Checkout, Order Board, Promo Codes & Top Ranking'}
                     </p>
                   </button>
                 );
               })}
             </div>
+
+            {isPaidPlan && (
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-muted/40 px-3.5 py-2.5">
+                <span className="text-xs font-bold text-foreground">Billing Cycle:</span>
+                <div className="inline-flex rounded-lg border border-border bg-background p-0.5 text-xs font-bold">
+                  <button
+                    type="button"
+                    onClick={() => setBillingCycle('monthly')}
+                    className={`cursor-pointer rounded-md px-3 py-1 transition-colors ${
+                      billingCycle === 'monthly'
+                        ? 'bg-brand text-brand-foreground'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    Monthly ({formatPlanPrice(selectedPlanMeta, formCurrency, 'monthly')}/mo Auto-Pay)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBillingCycle('annual')}
+                    className={`cursor-pointer rounded-md px-3 py-1 transition-colors ${
+                      billingCycle === 'annual'
+                        ? 'bg-emerald-600 text-white'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    1 Year ({formatPlanPrice(selectedPlanMeta, formCurrency, 'annual')}/yr · 2 Mo Free)
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* 2. Marketplace & Core Info */}
@@ -1641,23 +1698,42 @@ export function ListBusinessModal({
               <div className="flex items-start gap-2.5">
                 <RefreshCw className="mt-0.5 size-4 shrink-0 text-brand" aria-hidden="true" />
                 <div className="flex-1 text-xs">
-                  <p className="font-bold text-foreground">
-                    {selectedPlanMeta.name} — {formatPlanPrice(selectedPlanMeta, formCurrency)}/month
-                    auto-pay
-                  </p>
-                  <p className="mt-0.5 text-muted-foreground">
-                    Your listing immediately ranks above Free listings in {city} &amp; Near Me
-                    results. Auto-renews monthly; cancel anytime with zero booking commission.
-                  </p>
-                  <label className="mt-2.5 inline-flex cursor-pointer items-center gap-2 font-semibold text-foreground">
-                    <input
-                      type="checkbox"
-                      checked={autoPayAccepted}
-                      onChange={(e) => setAutoPayAccepted(e.target.checked)}
-                      className="size-4 accent-[#ef6c22]"
-                    />
-                    <span>Enable monthly SaaS auto-pay for top search placement</span>
-                  </label>
+                  {billingCycle === 'annual' ? (
+                    <>
+                      <p className="font-bold text-foreground">
+                        {selectedPlanMeta.name} —{' '}
+                        {formatPlanPrice(selectedPlanMeta, formCurrency, 'annual')}/year (Pay for 10
+                        months · 2 Months FREE)
+                      </p>
+                      <p className="mt-0.5 text-muted-foreground">
+                        Includes full Direct Online Ordering, Direct UPI checkout, Live Order
+                        Board, Promo Codes &amp; priority ranking in {city} with 0% commission.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="font-bold text-foreground">
+                        {selectedPlanMeta.name} —{' '}
+                        {formatPlanPrice(selectedPlanMeta, formCurrency, 'monthly')}/month auto-pay
+                      </p>
+                      <p className="mt-0.5 text-muted-foreground">
+                        Unlocks Direct Online Ordering, Direct UPI checkout &amp; priority ranking
+                        in {city}. Auto-renews monthly; cancel anytime with 0% commission.
+                      </p>
+                      <label className="mt-2.5 inline-flex cursor-pointer items-center gap-2 font-semibold text-foreground">
+                        <input
+                          type="checkbox"
+                          checked={autoPayAccepted}
+                          onChange={(e) => setAutoPayAccepted(e.target.checked)}
+                          className="size-4 accent-[#ef6c22]"
+                        />
+                        <span>
+                          Enable {formatPlanPrice(selectedPlanMeta, formCurrency, 'monthly')}/mo
+                          auto-pay (or switch to Yearly above for 2 months free)
+                        </span>
+                      </label>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
@@ -1713,7 +1789,7 @@ export function ListBusinessModal({
               </button>
               <button
                 type="submit"
-                disabled={submitting || (isPaidPlan && !autoPayAccepted)}
+                disabled={submitting || (isPaidPlan && billingCycle === 'monthly' && !autoPayAccepted)}
                 className="cursor-pointer rounded-lg bg-brand px-5 py-2 text-sm font-bold text-brand-foreground hover:bg-brand-hover disabled:opacity-50 whitespace-nowrap"
               >
                 {submitting

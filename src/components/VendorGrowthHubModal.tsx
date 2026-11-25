@@ -719,31 +719,31 @@ export function VendorGrowthHubModal({
           </div>
         </section>
 
-        {/* 06. Upgrading to Pro Partner & Business Plus */}
+        {/* 06. Upgrading to the Business Plan */}
         <section id="chapter-plans" className="scroll-mt-32 py-12 pb-20">
           <div className="max-w-2xl">
             <p className="font-mono text-xs font-bold text-brand">06.</p>
             <h2 className="mt-1 flex items-center gap-2 text-2xl font-extrabold tracking-tight text-foreground">
               <Crown className="size-5 text-brand" aria-hidden="true" />
-              Grow Faster with Pro Partner &amp; Business Spotlight (Plus)
+              Grow Faster with the Business Plan (0% Commission)
             </h2>
             <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-              Every vendor keeps 100% of every order with zero commission. Start free forever, and
-              upgrade when you want priority placement above free listings, unlimited menu items,
-              and multi-city reach.
+              Keep 100% of every order with zero commission. Start Free forever, and upgrade to
+              Business whenever you want Direct Online Ordering, UPI Checkout, Live Order Board,
+              Promo Codes, and top placement above Free listings.
             </p>
           </div>
 
-          <div className="mt-8 grid grid-cols-1 gap-5 lg:grid-cols-3">
+          <div className="mt-8 grid max-w-4xl grid-cols-1 gap-5 md:grid-cols-2">
             {SAAS_PLANS.map((plan) => {
-              const isPro = plan.id === 'pro';
               const isBusiness = plan.id === 'business';
-              const priceLabel = formatPlanPrice(plan, currency);
+              const priceLabel = formatPlanPrice(plan, currency, 'monthly');
+              const yearlyLabel = isBusiness ? formatPlanPrice(plan, currency, 'annual') : null;
               return (
                 <div
                   key={plan.id}
                   className={`flex flex-col justify-between rounded-2xl border p-6 ${
-                    isPro
+                    isBusiness
                       ? 'border-brand bg-brand-soft/25 ring-1 ring-brand/30'
                       : 'border-border bg-card'
                   }`}
@@ -752,14 +752,20 @@ export function VendorGrowthHubModal({
                     <div className="flex items-baseline justify-between gap-2">
                       <h3 className="text-lg font-extrabold text-foreground">{plan.name}</h3>
                       <span className="text-[11px] font-bold uppercase tracking-wide text-brand">
-                        {isBusiness ? 'Plus / #1 Pinned' : isPro ? 'Most Popular' : 'Starter'}
+                        {isBusiness ? 'Direct Ordering + Top Rank' : '₹0 Forever'}
                       </span>
                     </div>
                     <p className="mt-3 font-mono text-3xl font-black tabular-nums text-foreground">
                       {priceLabel}
-                      <span className="text-xs font-medium text-muted-foreground">/mo</span>
+                      <span className="text-xs font-medium text-muted-foreground">
+                        {isBusiness ? '/mo Auto-Pay' : '/forever'}
+                      </span>
                     </p>
-                    <p className="mt-1 text-[11px] text-muted-foreground">{plan.billingNote}</p>
+                    <p className="mt-1 text-[11px] font-semibold text-brand">
+                      {isBusiness && yearlyLabel
+                        ? `Or ${yearlyLabel}/year (pay 10 months · 2 months free)`
+                        : plan.billingNote}
+                    </p>
                     <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
                       {plan.tagline}
                     </p>
@@ -785,11 +791,9 @@ export function VendorGrowthHubModal({
                       }
                     }}
                     className={`mt-6 inline-flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-xl px-4 py-2.5 text-xs font-bold transition-colors ${
-                      isPro
+                      isBusiness
                         ? 'bg-brand text-brand-foreground hover:bg-brand-hover'
-                        : isBusiness
-                          ? 'bg-foreground text-background hover:opacity-90'
-                          : 'border border-border bg-background text-foreground hover:border-brand hover:text-brand'
+                        : 'border border-border bg-background text-foreground hover:border-brand hover:text-brand'
                     }`}
                   >
                     <Sparkles className="size-3.5" aria-hidden="true" />
@@ -797,13 +801,9 @@ export function VendorGrowthHubModal({
                       ? primaryVendor
                         ? 'Manage Free Storefront'
                         : 'Start Free Listing'
-                      : plan.id === 'pro'
-                        ? primaryVendor
-                          ? 'Upgrade to Pro Partner'
-                          : 'Launch with Pro Partner'
-                        : primaryVendor
-                          ? 'Upgrade to Business Plus'
-                          : 'Launch with Business Plus'}
+                      : primaryVendor
+                        ? 'Upgrade to Business Plan'
+                        : 'Launch with Business Plan'}
                   </button>
                 </div>
               );

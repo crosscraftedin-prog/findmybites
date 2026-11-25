@@ -70,11 +70,9 @@ export function VendorCard({
   return (
     <article
       className={`group flex flex-col overflow-hidden rounded-2xl border bg-card text-card-foreground shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl ${
-        vendor.planTier === 'business'
+        isPaid
           ? 'border-brand/60 ring-1 ring-brand/15'
-          : isPaid
-            ? 'border-brand-border hover:border-brand'
-            : 'border-border hover:border-brand-border'
+          : 'border-border hover:border-brand-border'
       }`}
     >
       <div className="relative aspect-[16/10] w-full overflow-hidden bg-muted">
@@ -107,7 +105,7 @@ export function VendorCard({
             {isPaid && (
               <div className="inline-flex items-center gap-1 rounded-full bg-brand px-2.5 py-1 text-[11px] font-bold text-brand-foreground shadow-md">
                 <Crown className="size-3" aria-hidden="true" />
-                {vendor.planTier === 'business' ? 'Top Listed' : 'Featured Pro'}
+                Business Partner
               </div>
             )}
             {builderModeConfig && (

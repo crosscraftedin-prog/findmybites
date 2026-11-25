@@ -14,6 +14,7 @@ import {
   StoreClaim,
   Vendor,
   VendorBioLink,
+  VendorOrderingConfig,
   VendorProduct,
   VendorReview,
   computeClaimId,
@@ -281,6 +282,7 @@ export async function updateVendorInCloud(
     customBuilderMode: CustomBuilderMode;
     customBuilderMinQty: number;
     customBuilderPackagingUsd: number;
+    orderingConfig: VendorOrderingConfig;
   }>
 ): Promise<void> {
   await apiFetch(`/vendors/${encodeURIComponent(sanitizeId(vendorId))}`, {
@@ -381,9 +383,29 @@ export function subscribeVendorLeads(
   );
 }
 
+export async function createDirectOrderInCloud(
+  order: BookingEnquiry,
+  vendorOwnerId?: string
+): Promise<BookingEnquiry> {
+  const res = await apiFetch<{ booking: BookingEnquiry }>('/orders/direct', {
+    method: 'POST',
+    requireAuth: false,
+    body: { order: { ...order, vendorOwnerId } },
+  });
+  emitTopics('bookings');
+  return res.booking;
+}
+
 export async function updateBookingStatusInCloud(
   bookingId: string,
-  status: 'Confirmed Enquiry' | 'Completed' | 'Cancelled'
+  status:
+    | 'New Order'
+    | 'Accepted'
+    | 'Preparing'
+    | 'Out for Delivery'
+    | 'Confirmed Enquiry'
+    | 'Completed'
+    | 'Cancelled'
 ): Promise<void> {
   await apiFetch(`/bookings/${encodeURIComponent(sanitizeId(bookingId))}`, {
     method: 'PATCH',

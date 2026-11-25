@@ -102,6 +102,7 @@ import {
   CURRENCIES,
   CloudVendorMetric,
   CurrencyCode,
+  BillingCycle,
   DEFAULT_SITE_SETTINGS,
   EventRequest,
   FOOD_CATEGORIES,
@@ -122,6 +123,7 @@ import {
   StoreClaim,
   Vendor,
   formatPlanPrice,
+  getBusinessPlan,
   getVendorBioHandle,
   getVendorQuickTags,
   haversineKm,
@@ -309,7 +311,7 @@ const SEO_FAQS = [
   {
     question: 'How much does it cost for bakers and event vendors to list their business?',
     answer:
-      'Vendors can start with a Free Listing (₹0/month) including a one-page website and WhatsApp button. Paid monthly auto-pay plans start at ₹299/month (Pro Partner) and ₹499/month (Business Spotlight) to rank above Free listings at the top of search and Near Me results.',
+      'Start free forever on our Free Plan (₹0) with your one-page storefront, bio-link, QR poster, and direct WhatsApp chat. Upgrade anytime to the Business Plan at ₹499/month (monthly auto-pay) or ₹4,990/year (pay for 10 months, get 2 months free) for Direct Online Ordering, UPI checkout, Live Order Board, Promo Codes, and top search ranking — always with 0% commission.',
   },
   {
     question: 'Which countries does FindMyBites × PimpMyParty serve?',
@@ -449,6 +451,7 @@ const COUNTRY_COVERAGE_STATS = [
 export default function App() {
   const [ecosystem, setEcosystem] = useState<Ecosystem>('FINDMYBITES');
   const [darkMode, setDarkMode] = useState(false);
+  const [pricingBillingCycle, setPricingBillingCycle] = useState<BillingCycle>('monthly');
 
   const [customVendors, setCustomVendors] = useState<Vendor[]>(() => {
     try {
@@ -1718,7 +1721,7 @@ export default function App() {
         ? `"${savedVendor.name}" submitted for Admin Review! Your link (${liveUrl}) will go live once approved.`
         : savedVendor.planTier === 'free'
           ? `${savedVendor.name} is LIVE at ${liveUrl} — opening your storefront!`
-          : `${savedVendor.name} is LIVE at ${liveUrl} on ${savedVendor.planTier === 'business' ? 'Business Spotlight' : 'Pro'}!`
+          : `${savedVendor.name} is LIVE at ${liveUrl} on the Business Plan!`
     );
     setActiveVendor(savedVendor);
   };
@@ -2392,8 +2395,8 @@ export default function App() {
                       : 'Spotlight decor & event partners'}
                   </h2>
                   <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-                    Monthly SaaS Pro &amp; Business Spotlight vendors rank at the top — open their
-                    one-page website or talk directly on WhatsApp.
+                    Business Plan partners rank above Free listings with Direct Online Ordering,
+                    UPI checkout &amp; 0% commission — open their storefront or chat on WhatsApp.
                   </p>
                 </div>
                 <button
@@ -2401,7 +2404,7 @@ export default function App() {
                   onClick={() => handleOpenListModal('business')}
                   className="cursor-pointer self-start text-xs font-bold text-brand hover:underline sm:self-auto whitespace-nowrap"
                 >
-                  Want the #1 pinned spot? Upgrade to Business Spotlight →
+                  Want top placement + online ordering? Upgrade to Business →
                 </button>
               </div>
 
@@ -2980,78 +2983,128 @@ export default function App() {
           </div>
         </section>
 
-        {/* 7. SAAS MONTHLY AUTO-PAY PRICING & VENDOR GROWTH SECTION */}
+        {/* 7. SIMPLE 2-PLAN PRICING (FREE + BUSINESS · MONTHLY AUTO-PAY OR YEARLY 2 MONTHS FREE) */}
         <section id="pricing" className="border-b border-border bg-background">
           <div className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8 lg:py-20">
             <div className="mx-auto max-w-2xl text-center">
               <p className="inline-flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide text-brand">
-                <RefreshCw className="size-4" aria-hidden="true" /> Early Launch Vendor Pricing
+                <RefreshCw className="size-4" aria-hidden="true" /> Simple 2-Plan Pricing · 0% Commission
               </p>
               <h2 className="mt-1 text-3xl font-extrabold tracking-tight sm:text-4xl">
-                List free today. Boost to the top from {formatPlanPrice(SAAS_PLANS[1], currency)}/mo.
+                Start Free forever. Unlock Direct Online Ordering for{' '}
+                {formatPlanPrice(getBusinessPlan(), currency, 'monthly')}/mo.
               </h2>
               <p className="mt-2 text-muted-foreground">
-                Built to get every baker, caterer &amp; event vendor online first — start free with
-                your one-page website and WhatsApp button, or unlock top placement with simple
-                monthly auto-pay and zero commission.
+                No confusing tiers, no order commissions. Pay monthly with simple auto-pay or pay
+                yearly for 10 months and get 2 months free.
               </p>
-            </div>
 
-            <div className="mt-10 grid grid-cols-1 gap-6 lg:grid-cols-3">
-              {SAAS_PLANS.map((plan) => (
-                <div
-                  key={plan.id}
-                  className={`flex flex-col rounded-2xl border p-6 transition-all ${
-                    plan.highlighted
-                      ? 'border-brand bg-brand-soft/35 shadow-xl ring-2 ring-brand/20'
-                      : 'border-border bg-card shadow-sm'
+              {/* Monthly Auto-Pay vs Yearly (2 Months Free) Toggle */}
+              <div className="mt-6 inline-flex items-center rounded-xl border border-border bg-muted/60 p-1">
+                <button
+                  type="button"
+                  onClick={() => setPricingBillingCycle('monthly')}
+                  className={`cursor-pointer rounded-lg px-4 py-2 text-xs font-bold transition-colors ${
+                    pricingBillingCycle === 'monthly'
+                      ? 'bg-background text-foreground shadow-xs'
+                      : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <h3 className="text-lg font-extrabold text-foreground">{plan.name}</h3>
-                    <span
-                      className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ${
-                        plan.id === 'free'
-                          ? 'bg-muted text-muted-foreground'
-                          : 'bg-brand text-brand-foreground'
-                      }`}
-                    >
-                      {plan.badge}
-                    </span>
-                  </div>
+                  Monthly · Auto-Pay
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPricingBillingCycle('annual')}
+                  className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-bold transition-colors ${
+                    pricingBillingCycle === 'annual'
+                      ? 'bg-brand text-brand-foreground shadow-xs'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  Yearly · 2 Months Free
+                </button>
+              </div>
+            </div>
 
-                  <div className="mt-4 flex items-baseline gap-1">
-                    <span className="font-mono text-3xl font-extrabold tracking-tight text-foreground">
-                      {formatPlanPrice(plan, currency)}
-                    </span>
-                    <span className="text-xs text-muted-foreground">/ month</span>
-                  </div>
-                  <p className="mt-1 text-xs font-medium text-brand">{plan.billingNote}</p>
-                  <p className="mt-3 text-sm text-muted-foreground">{plan.tagline}</p>
-
-                  <ul className="mt-5 flex-1 space-y-2.5 border-t border-border pt-5 text-sm">
-                    {plan.features.map((feat) => (
-                      <li key={feat} className="flex items-start gap-2 text-foreground">
-                        <Check className="mt-0.5 size-4 shrink-0 text-brand" aria-hidden="true" />
-                        <span>{feat}</span>
-                      </li>
-                    ))}
-                  </ul>
-
-                  <button
-                    type="button"
-                    onClick={() => handleOpenListModal(plan.id)}
-                    className={`mt-6 inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-bold transition-colors ${
-                      plan.highlighted || plan.id === 'business'
-                        ? 'bg-brand text-brand-foreground hover:bg-brand-hover'
-                        : 'border border-border bg-background text-foreground hover:border-brand hover:text-brand'
+            <div className="mx-auto mt-10 grid max-w-4xl grid-cols-1 gap-6 md:grid-cols-2">
+              {SAAS_PLANS.map((plan) => {
+                const isBusiness = plan.id === 'business';
+                const displayPrice = formatPlanPrice(
+                  plan,
+                  currency,
+                  isBusiness ? pricingBillingCycle : 'monthly'
+                );
+                return (
+                  <div
+                    key={plan.id}
+                    className={`flex flex-col rounded-2xl border p-6 transition-all sm:p-7 ${
+                      plan.highlighted
+                        ? 'border-brand bg-brand-soft/35 shadow-xl ring-2 ring-brand/20'
+                        : 'border-border bg-card shadow-sm'
                     }`}
                   >
-                    {plan.id === 'free' ? 'Create Free Storefront' : `Start ${plan.name}`}
-                    <ArrowRight className="size-4" aria-hidden="true" />
-                  </button>
-                </div>
-              ))}
+                    <div className="flex items-center justify-between gap-2">
+                      <h3 className="text-xl font-extrabold text-foreground">{plan.name}</h3>
+                      <span
+                        className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ${
+                          plan.id === 'free'
+                            ? 'bg-muted text-muted-foreground'
+                            : 'bg-brand text-brand-foreground'
+                        }`}
+                      >
+                        {isBusiness && pricingBillingCycle === 'annual'
+                          ? '2 Months Free'
+                          : plan.badge}
+                      </span>
+                    </div>
+
+                    <div className="mt-4 flex items-baseline gap-1.5">
+                      <span className="font-mono text-4xl font-extrabold tracking-tight text-foreground">
+                        {displayPrice}
+                      </span>
+                      <span className="text-xs font-medium text-muted-foreground">
+                        {plan.id === 'free'
+                          ? '/ forever'
+                          : pricingBillingCycle === 'annual'
+                            ? '/ year (10 months)'
+                            : '/ month'}
+                      </span>
+                    </div>
+                    <p className="mt-1.5 text-xs font-semibold text-brand">
+                      {isBusiness && pricingBillingCycle === 'annual'
+                        ? plan.yearlyBillingNote
+                        : plan.billingNote}
+                    </p>
+                    <p className="mt-3 text-sm text-muted-foreground">{plan.tagline}</p>
+
+                    <ul className="mt-5 flex-1 space-y-2.5 border-t border-border pt-5 text-sm">
+                      {plan.features.map((feat) => (
+                        <li key={feat} className="flex items-start gap-2 text-foreground">
+                          <Check className="mt-0.5 size-4 shrink-0 text-brand" aria-hidden="true" />
+                          <span>{feat}</span>
+                        </li>
+                      ))}
+                    </ul>
+
+                    <button
+                      type="button"
+                      onClick={() => handleOpenListModal(plan.id)}
+                      className={`mt-6 inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-bold transition-colors ${
+                        plan.highlighted || isBusiness
+                          ? 'bg-brand text-brand-foreground hover:bg-brand-hover'
+                          : 'border border-border bg-background text-foreground hover:border-brand hover:text-brand'
+                      }`}
+                    >
+                      {plan.id === 'free'
+                        ? 'Create Free Storefront'
+                        : pricingBillingCycle === 'annual'
+                          ? `Start Business Yearly (${displayPrice}/yr)`
+                          : `Start Business (${displayPrice}/mo Auto-Pay)`}
+                      <ArrowRight className="size-4" aria-hidden="true" />
+                    </button>
+                  </div>
+                );
+              })}
             </div>
 
             {/* Vendor CTA Grid */}
@@ -3063,17 +3116,17 @@ export default function App() {
                     Built for Bakers, Caterers &amp; Event Pros
                   </span>
                   <h3 className="mt-4 text-2xl font-extrabold tracking-tight text-foreground sm:text-3xl">
-                    Your website, catalog &amp; WhatsApp leads in one place.
+                    Your website, online ordering &amp; WhatsApp leads in one place.
                   </h3>
                   <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-                    No need to build a separate website. Publish your one-page storefront in 2
-                    minutes, list every cake, live counter, snack box, hamper or decor setup, and
-                    talk to local customers directly on WhatsApp.
+                    No need to build a separate website or pay aggregator commissions. Publish your
+                    storefront in 2 minutes, accept direct UPI &amp; WhatsApp orders, and manage
+                    every order live.
                   </p>
                   <div className="mt-6 flex flex-wrap gap-3">
                     <button
                       type="button"
-                      onClick={() => handleOpenListModal('pro')}
+                      onClick={() => handleOpenListModal('business')}
                       className="inline-flex cursor-pointer items-center gap-2 rounded-full bg-brand px-6 py-3 text-sm font-semibold text-brand-foreground shadow-lg transition-transform hover:scale-105 hover:bg-brand-hover"
                     >
                       <Sparkles className="size-4" aria-hidden="true" />
@@ -3597,6 +3650,7 @@ export default function App() {
           <ListBusinessModal
             isOpen={listModalOpen}
             initialPlanTier={listModalPlan}
+            initialBillingCycle={pricingBillingCycle}
             initialChristmasSpecial={listModalChristmas}
             defaultCountry={detectDefaultCountry()}
             existingSlugs={allVendors.flatMap((v) => [v.slug, getVendorBioHandle(v)])}
@@ -3776,7 +3830,7 @@ export default function App() {
             }
             isAdmin={isAdminUser}
             myVendors={dashboardVendors}
-            onUpgradePlan={() => handleOpenListModal('pro')}
+            onUpgradePlan={() => handleOpenListModal('business')}
             onSignIn={() => {
               setPricingKitOpen(false);
               setClaimHintSlug(null);

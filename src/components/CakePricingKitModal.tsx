@@ -861,7 +861,7 @@ export function CakePricingKitModal({
                         Full Pro Bakery Pricing Suite — Live Preview Mode
                       </p>
                       <p className="mt-0.5 text-xs text-muted-foreground">
-                        Explore the 4 starter cake templates below. Unlock custom ingredient editing, saved recipes, and 1-click Storefront publishing with FindMyBites Pro ({formatPlanPrice(SAAS_PLANS[1], currency)}/mo) or Business ({formatPlanPrice(SAAS_PLANS[2], currency)}/mo).
+                        Explore the 4 starter cake templates below. Unlock custom ingredient editing, saved recipes, Direct Online Ordering, and 1-click Storefront publishing with the FindMyBites Business Plan ({formatPlanPrice(SAAS_PLANS[1], currency, 'monthly')}/mo Auto-Pay or {formatPlanPrice(SAAS_PLANS[1], currency, 'annual')}/yr · 2 months free).
                       </p>
                     </div>
                   </div>

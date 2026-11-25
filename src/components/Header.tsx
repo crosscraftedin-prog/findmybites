@@ -60,8 +60,8 @@ export function Header({
   onNotice,
 }: HeaderProps) {
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-border bg-background/90 backdrop-blur-xl supports-[backdrop-filter]:bg-background/80">
-      <div className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-2 px-3 sm:h-16 sm:gap-3 sm:px-5 lg:px-8">
+    <header className="sticky top-0 z-50 w-full overflow-x-clip border-b border-border bg-background/90 backdrop-blur-xl supports-[backdrop-filter]:bg-background/80">
+      <div className="mx-auto flex h-14 max-w-[1440px] items-center justify-between gap-1.5 px-3 sm:h-16 sm:gap-2 sm:px-4 lg:px-6">
         {/* Exact FindMyBites × PimpMyParty dual-badge brand mark */}
         <a
           href="#top"
@@ -75,9 +75,9 @@ export function Header({
               <PartyPopper className="size-3.5 sm:size-4" aria-hidden="true" />
             </span>
           </span>
-          <span className="hidden text-sm leading-none sm:block xl:text-[15px]">
+          <span className="hidden text-sm leading-none sm:block 2xl:text-[15px]">
             <span className="text-foreground">FindMyBites</span>
-            <span className="hidden xl:inline">
+            <span className="hidden 2xl:inline">
               <span className="mx-1 text-muted-foreground">×</span>
               <span className="text-foreground">PimpMyParty</span>
             </span>
@@ -87,44 +87,44 @@ export function Header({
         {/* Desktop & iPad Landscape navigation links */}
         <nav
           aria-label="Primary navigation"
-          className="hidden items-center gap-0.5 lg:flex xl:gap-1"
+          className="hidden min-w-0 items-center gap-0.5 lg:flex xl:gap-1"
         >
           <a
             href="#explore"
-            className="rounded-md px-2.5 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground xl:px-3 xl:text-sm whitespace-nowrap shrink-0"
+            className="rounded-md px-2 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground xl:px-2.5 2xl:px-3 2xl:text-sm whitespace-nowrap shrink-0"
           >
             Explore
           </a>
           <a
             href="#categories"
-            className="rounded-md px-2.5 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground xl:px-3 xl:text-sm whitespace-nowrap shrink-0"
+            className="hidden rounded-md px-2 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground xl:inline-block xl:px-2.5 2xl:px-3 2xl:text-sm whitespace-nowrap shrink-0"
           >
             Categories
           </a>
           <a
             href="#christmas-special"
-            className="inline-flex items-center gap-1 rounded-md bg-emerald-600/10 px-2.5 py-2 text-xs font-bold text-emerald-700 transition-colors hover:bg-emerald-600/20 dark:bg-emerald-500/15 dark:text-emerald-300 xl:px-3 xl:text-sm whitespace-nowrap shrink-0"
+            className="inline-flex items-center gap-1 rounded-md bg-emerald-600/10 px-2 py-1.5 text-xs font-bold text-emerald-700 transition-colors hover:bg-emerald-600/20 dark:bg-emerald-500/15 dark:text-emerald-300 xl:px-2.5 2xl:px-3 2xl:text-sm whitespace-nowrap shrink-0"
           >
             <Snowflake className="size-3.5" aria-hidden="true" />
             Christmas
           </a>
           <a
             href="#featured"
-            className="hidden rounded-md px-2.5 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground xl:inline-block xl:px-3 xl:text-sm whitespace-nowrap shrink-0"
+            className="hidden rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground 2xl:inline-block 2xl:px-3 2xl:text-sm whitespace-nowrap shrink-0"
           >
             Featured
           </a>
           <button
             type="button"
             onClick={onOpenSaved}
-            className="cursor-pointer rounded-md px-2.5 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground xl:px-3 xl:text-sm whitespace-nowrap shrink-0"
+            className="cursor-pointer rounded-md px-2 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground xl:px-2.5 2xl:px-3 2xl:text-sm whitespace-nowrap shrink-0"
           >
             Saved{savedCount > 0 ? ` (${savedCount})` : ''}
           </button>
           <button
             type="button"
             onClick={onOpenBookings}
-            className="cursor-pointer rounded-md px-2.5 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground xl:px-3 xl:text-sm whitespace-nowrap shrink-0"
+            className="cursor-pointer rounded-md px-2 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground xl:px-2.5 2xl:px-3 2xl:text-sm whitespace-nowrap shrink-0"
           >
             Bookings{bookingsCount > 0 ? ` (${bookingsCount})` : ''}
           </button>
@@ -132,7 +132,7 @@ export function Header({
             <button
               type="button"
               onClick={onOpenBoxAndBite}
-              className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-[#C58B55]/45 bg-[#38231E] px-2.5 py-1.5 text-xs font-semibold tracking-wide text-[#FFF8EF] transition-colors hover:bg-[#2A1915] whitespace-nowrap shrink-0"
+              className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-[#C58B55]/45 bg-[#38231E] px-2 py-1.5 text-xs font-semibold tracking-wide text-[#FFF8EF] transition-colors hover:bg-[#2A1915] xl:px-2.5 whitespace-nowrap shrink-0"
               title="Open BOX & BITE Corporate Gifting"
             >
               <Briefcase className="size-3.5 text-[#C58B55]" aria-hidden="true" />
@@ -142,7 +142,7 @@ export function Header({
         </nav>
 
         {/* Right controls: EcosystemToggle + Dark mode + Auth/Portal + List your business */}
-        <div className="flex min-w-0 items-center gap-1.5 sm:gap-2 shrink-0">
+        <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
           <div
             role="tablist"
             aria-label="Switch marketplace ecosystem"
@@ -153,30 +153,30 @@ export function Header({
               role="tab"
               aria-selected={ecosystem === 'FINDMYBITES'}
               onClick={() => onChangeEcosystem('FINDMYBITES')}
-              className={`inline-flex cursor-pointer items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold transition-all sm:gap-1.5 sm:px-3 sm:py-1.5 sm:text-xs whitespace-nowrap shrink-0 ${
+              className={`inline-flex cursor-pointer items-center gap-1 rounded-full px-2 py-1 text-[11px] font-semibold transition-all sm:gap-1.5 sm:px-2.5 sm:py-1.5 sm:text-xs whitespace-nowrap shrink-0 ${
                 ecosystem === 'FINDMYBITES'
                   ? 'bg-brand text-brand-foreground shadow-sm'
                   : 'text-muted-foreground hover:text-foreground'
               }`}
             >
               <UtensilsCrossed className="size-3 sm:size-3.5" aria-hidden="true" />
-              <span className="hidden xl:inline">FindMyBites</span>
-              <span className="xl:hidden">Food</span>
+              <span className="hidden 2xl:inline">FindMyBites</span>
+              <span className="2xl:hidden">Food</span>
             </button>
             <button
               type="button"
               role="tab"
               aria-selected={ecosystem === 'PIMPMYPARTY'}
               onClick={() => onChangeEcosystem('PIMPMYPARTY')}
-              className={`inline-flex cursor-pointer items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold transition-all sm:gap-1.5 sm:px-3 sm:py-1.5 sm:text-xs whitespace-nowrap shrink-0 ${
+              className={`inline-flex cursor-pointer items-center gap-1 rounded-full px-2 py-1 text-[11px] font-semibold transition-all sm:gap-1.5 sm:px-2.5 sm:py-1.5 sm:text-xs whitespace-nowrap shrink-0 ${
                 ecosystem === 'PIMPMYPARTY'
                   ? 'bg-brand text-brand-foreground shadow-sm'
                   : 'text-muted-foreground hover:text-foreground'
               }`}
             >
               <PartyPopper className="size-3 sm:size-3.5" aria-hidden="true" />
-              <span className="hidden xl:inline">PimpMyParty</span>
-              <span className="xl:hidden">Events</span>
+              <span className="hidden 2xl:inline">PimpMyParty</span>
+              <span className="2xl:hidden">Events</span>
             </button>
           </div>
 
@@ -261,11 +261,11 @@ export function Header({
           <button
             type="button"
             onClick={onOpenListBusiness}
-            className="hidden h-9 cursor-pointer items-center gap-1.5 rounded-lg bg-brand px-3 text-xs font-semibold text-brand-foreground shadow-sm transition-colors hover:bg-brand-hover sm:inline-flex xl:px-3.5 whitespace-nowrap shrink-0"
+            className="hidden h-9 cursor-pointer items-center gap-1.5 rounded-lg bg-brand px-2.5 text-xs font-semibold text-brand-foreground shadow-sm transition-colors hover:bg-brand-hover sm:inline-flex xl:px-3 whitespace-nowrap shrink-0"
           >
             <Sparkles className="size-3.5" aria-hidden="true" />
-            <span className="hidden xl:inline">List your business</span>
-            <span className="xl:hidden">List Store</span>
+            <span className="hidden 2xl:inline">List Business</span>
+            <span className="2xl:hidden">List Store</span>
           </button>
         </div>
       </div>

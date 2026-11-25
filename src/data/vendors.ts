@@ -10,6 +10,7 @@ export type LaunchCountry =
   | 'Nepal';
 
 export type PlanTier = 'business' | 'pro' | 'free';
+export type BillingCycle = 'monthly' | 'annual';
 
 export type PriceTier = '$' | '$$' | '$$$' | '$$$$';
 
@@ -418,6 +419,9 @@ export interface VendorProduct {
   description: string;
   image: string;
   tag?: string;
+  inStock?: boolean;
+  menuSection?: string;
+  advanceHours?: number;
 }
 
 export interface VendorReview {
@@ -492,8 +496,41 @@ export interface Vendor {
   seoTitle?: string;
   seoDescription?: string;
   seoKeywords?: string;
+  orderingConfig?: VendorOrderingConfig;
   isCloud?: boolean;
 }
+
+export interface VendorPromoCode {
+  code: string;
+  type: 'percent' | 'flat';
+  value: number; // percent (1–80) OR flat USD value (auto-converted to local currency)
+  minOrderUsd?: number;
+  active?: boolean;
+}
+
+export interface VendorOrderingConfig {
+  enabled: boolean;
+  acceptingOrders?: boolean;
+  pickupEnabled?: boolean;
+  deliveryEnabled?: boolean;
+  deliveryFeeUsd?: number;
+  freeDeliveryAboveUsd?: number;
+  minAdvanceHours?: number;
+  timeSlots?: string[];
+  upiId?: string;
+  upiPayeeName?: string;
+  paymentLinkUrl?: string;
+  codEnabled?: boolean;
+  promoCodes?: VendorPromoCode[];
+  billingCycle?: BillingCycle;
+}
+
+export const DEFAULT_ORDERING_TIME_SLOTS: string[] = [
+  '10:00 AM – 1:00 PM',
+  '1:00 PM – 4:00 PM',
+  '4:00 PM – 7:00 PM',
+  '7:00 PM – 10:00 PM',
+];
 
 export function getVendorCoveredStatesList(vendor: Vendor): string[] {
   if (vendor.allStatesCoverage) {
@@ -744,7 +781,15 @@ export interface BookingEnquiry {
   customerEmail: string;
   notes: string;
   createdAt: string;
-  status: 'Confirmed Enquiry' | 'Awaiting Vendor Reply' | 'Completed' | 'Cancelled';
+  status:
+    | 'New Order'
+    | 'Accepted'
+    | 'Preparing'
+    | 'Out for Delivery'
+    | 'Confirmed Enquiry'
+    | 'Awaiting Vendor Reply'
+    | 'Completed'
+    | 'Cancelled';
 }
 
 export interface EventRequest {
@@ -791,8 +836,10 @@ export interface SaasPlan {
   badge: string;
   priceUsdMonthly: number;
   pricesByCurrency: Record<CurrencyCode, number>;
+  yearlyPricesByCurrency: Record<CurrencyCode, number>;
   tagline: string;
   billingNote: string;
+  yearlyBillingNote: string;
   features: string[];
   highlighted?: boolean;
 }
@@ -800,53 +847,56 @@ export interface SaasPlan {
 export const SAAS_PLANS: SaasPlan[] = [
   {
     id: 'free',
-    name: 'Free Listing',
-    badge: 'Start Free',
+    name: 'Free Plan',
+    badge: 'Free Forever',
     priceUsdMonthly: 0,
     pricesByCurrency: { INR: 0, AED: 0, LKR: 0, PKR: 0, BDT: 0, NPR: 0, USD: 0 },
-    tagline: 'List your business free today with a one-page website and direct WhatsApp button.',
+    yearlyPricesByCurrency: { INR: 0, AED: 0, LKR: 0, PKR: 0, BDT: 0, NPR: 0, USD: 0 },
+    tagline:
+      'Launch your bakery, kitchen, or event storefront free with a Bio-Link and direct WhatsApp chat.',
     billingNote: 'Free forever · Zero commission',
+    yearlyBillingNote: 'Free forever · Zero commission',
     features: [
-      'Listed in search & Near Me directory',
-      'One-page vendor website with up to 5 products',
-      'Direct WhatsApp customer button',
-      'Verified customer reviews',
-    ],
-  },
-  {
-    id: 'pro',
-    name: 'Pro Partner',
-    badge: 'Launch Offer · Auto-Pay',
-    priceUsdMonthly: 4,
-    pricesByCurrency: { INR: 299, AED: 15, LKR: 990, PKR: 999, BDT: 399, NPR: 499, USD: 4 },
-    tagline: 'Rank above free listings across your city and convert leads straight on WhatsApp.',
-    billingNote: 'Early launch price · Monthly auto-pay · Cancel anytime',
-    highlighted: true,
-    features: [
-      'Priority placement ABOVE all Free listings',
-      'Full one-page website with unlimited products & menus',
-      'Featured Partner badge on cards & Near Me results',
-      'Direct WhatsApp product order buttons',
-      'AI Event Planner priority matching',
+      'Listed in local search & Near Me directory',
+      'Dedicated storefront page (/v/your-store) & Bio-Link',
+      'Up to 10 products with weight/size variants',
+      'Direct WhatsApp button, QR poster & social product sharing',
+      'Verified customer reviews & Google Maps link',
     ],
   },
   {
     id: 'business',
-    name: 'Business Spotlight',
-    badge: '#1 Top Pinned · Auto-Pay',
+    name: 'Business Plan',
+    badge: '0% Commission · Direct Ordering',
     priceUsdMonthly: 6,
     pricesByCurrency: { INR: 499, AED: 25, LKR: 1690, PKR: 1599, BDT: 699, NPR: 799, USD: 6 },
-    tagline: 'Pin your brand #1 at the top across multiple areas for caterers, bakers & decor studios.',
-    billingNote: 'Early launch price · Monthly auto-pay · Cancel anytime',
+    yearlyPricesByCurrency: {
+      INR: 4990,
+      AED: 250,
+      LKR: 16900,
+      PKR: 15990,
+      BDT: 6990,
+      NPR: 7990,
+      USD: 60,
+    },
+    tagline:
+      'Turn your storefront into a full 0%-commission direct online ordering store and rank above Free listings.',
+    billingNote: 'Monthly auto-pay · Cancel anytime · 0% commission',
+    yearlyBillingNote: 'Pay for 10 months — 2 months FREE · 0% commission',
+    highlighted: true,
     features: [
-      '#1 Pinned Top Listing in your category & city',
-      'Multi-city & multi-area Near Me coverage',
-      'Top recommendation slot in Josh AI Event Planner',
-      'Custom shareable link + analytics dashboard',
-      'Dedicated WhatsApp lead alerts & zero commission',
+      'Full Direct Online Ordering (Pickup/Delivery, Date & Time Slots, Cake Messages)',
+      'Direct UPI QR & Payment Link checkout — 100% money straight to you',
+      'Live Order Management Board + 1-tap WhatsApp order status alerts',
+      'Promo/Discount codes, 1-tap Sold-Out toggle & Clean QR Menu view',
+      '#1 Priority ranking above Free listings + Unlimited products + Pan-India coverage',
     ],
   },
 ];
+
+export function getBusinessPlan(): SaasPlan {
+  return SAAS_PLANS.find((p) => p.id === 'business') ?? SAAS_PLANS[SAAS_PLANS.length - 1];
+}
 
 export const HERO_FOOD_IMAGE = '/src/assets/images/hero-findmybites.png';
 export const HERO_PARTY_IMAGE = '/src/assets/images/hero-pimpmpyparty.png';
@@ -2077,7 +2127,7 @@ export const PLATFORM_TESTIMONIALS = [
 
 export function planRankWeight(plan: PlanTier): number {
   if (plan === 'business') return 3;
-  if (plan === 'pro') return 2;
+  if (plan === 'pro') return 3;
   return 1;
 }
 
@@ -2095,9 +2145,16 @@ export function formatMoney(usdAmount: number, currency: CurrencyCode): string {
   return `${cfg.symbol}${converted.toLocaleString('en-US')}`;
 }
 
-export function formatPlanPrice(plan: SaasPlan, currency: CurrencyCode): string {
+export function formatPlanPrice(
+  plan: SaasPlan,
+  currency: CurrencyCode,
+  billingCycle: BillingCycle = 'monthly'
+): string {
   const cfg = CURRENCIES[currency];
-  const amount = plan.pricesByCurrency[currency];
+  const amount =
+    billingCycle === 'annual'
+      ? plan.yearlyPricesByCurrency[currency]
+      : plan.pricesByCurrency[currency];
   return `${cfg.symbol}${amount.toLocaleString('en-US')}`;
 }
 

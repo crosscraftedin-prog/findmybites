@@ -166,8 +166,45 @@ app.post('/api/ai/event-planner', async (req, res) => {
   }
 });
 
+function resolveServerBind(): { port: number; host: string } {
+  const args = process.argv.slice(2);
+  let cliPort: number | undefined;
+  let cliHost: string | undefined;
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--port' || arg === '-p') {
+      const next = Number(args[i + 1]);
+      if (Number.isInteger(next) && next > 0 && next <= 65535) {
+        cliPort = next;
+      }
+      i += 1;
+    } else if (arg.startsWith('--port=')) {
+      const next = Number(arg.slice('--port='.length));
+      if (Number.isInteger(next) && next > 0 && next <= 65535) {
+        cliPort = next;
+      }
+    } else if (arg === '--host') {
+      if (args[i + 1] && !args[i + 1].startsWith('-')) {
+        cliHost = args[i + 1];
+        i += 1;
+      }
+    } else if (arg.startsWith('--host=')) {
+      cliHost = arg.slice('--host='.length) || undefined;
+    }
+  }
+
+  const isProd = process.env.NODE_ENV === 'production';
+  const envPort = Number(process.env.PORT);
+  const port =
+    cliPort ??
+    (isProd && Number.isInteger(envPort) && envPort > 0 && envPort <= 65535 ? envPort : 3000);
+  const host = cliHost || '0.0.0.0';
+  return { port, host };
+}
+
 async function startServer() {
-  const port = Number(process.env.PORT) || 3000;
+  const { port, host } = resolveServerBind();
   const distDir = path.resolve(__dirname, 'dist');
   const httpServer = http.createServer(app);
 
@@ -210,8 +247,8 @@ async function startServer() {
     app.use(vite.middlewares);
   }
 
-  httpServer.listen(port, '0.0.0.0', () => {
-    console.log(`FindMyBites × PimpMyParty server listening on http://0.0.0.0:${port}`);
+  httpServer.listen(port, host, () => {
+    console.log(`FindMyBites × PimpMyParty server listening on http://${host}:${port}`);
   });
 }
 

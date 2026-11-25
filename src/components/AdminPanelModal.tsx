@@ -1494,13 +1494,12 @@ export function AdminPanelModal({
                           Feature in Christmas 2026
                         </label>
                         <select
-                          value={planTier}
+                          value={planTier === 'pro' ? 'business' : planTier}
                           onChange={(e) => setPlanTier(e.target.value as PlanTier)}
                           className="ml-auto rounded-lg border border-border bg-background px-2 py-1 text-xs font-bold"
                         >
-                          <option value="free">Free Plan</option>
-                          <option value="pro">Pro Plan</option>
-                          <option value="business">Business Plan</option>
+                          <option value="free">Free Plan (₹0)</option>
+                          <option value="business">Business Plan (₹499/mo · Direct Ordering)</option>
                         </select>
                       </div>
                     </div>

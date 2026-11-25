@@ -3,7 +3,9 @@ import type { User } from 'firebase/auth';
 import {
   ArrowLeft,
   BadgeCheck,
+  BookOpen,
   Check,
+  Clock,
   Copy,
   Crown,
   Edit3,
@@ -20,6 +22,7 @@ import {
   Minus,
   Navigation,
   Package,
+  PauseCircle,
   Plus,
   QrCode,
   Share2,
@@ -54,6 +57,7 @@ import {
   subscribeVendorMetric,
   subscribeVendorReviews,
 } from '../services/firestoreService';
+import { DirectOrderCheckoutModal } from './DirectOrderCheckoutModal';
 import { FoodTypeBadge, FoodTypeIcon } from './FoodTypeBadge';
 import { ProductShareModal } from './ProductShareModal';
 import { PromoCardModal } from './PromoCardModal';
@@ -106,6 +110,9 @@ export function VendorWebsiteView({
   const [selectedVariants, setSelectedVariants] = useState<Record<string, string>>({});
   const [catalogView, setCatalogView] = useState<'builder' | 'catalog'>('catalog');
   const [foodFilter, setFoodFilter] = useState<'all' | 'veg' | 'non-veg'>('all');
+  const [selectedSection, setSelectedSection] = useState<string>('all');
+  const [qrMenuMode, setQrMenuMode] = useState<boolean>(false);
+  const [checkoutOpen, setCheckoutOpen] = useState<boolean>(false);
   const [basket, setBasket] = useState<Record<string, number>>({});
   const [basketExpanded, setBasketExpanded] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
@@ -134,23 +141,26 @@ export function VendorWebsiteView({
 
   useEffect(() => {
     if (vendor) {
-      const itemParam =
-        typeof window !== 'undefined'
-          ? new URLSearchParams(window.location.search).get('item')
-          : null;
+      const params =
+        typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+      const itemParam = params?.get('item') ?? null;
+      const menuModeParam = params?.get('menu') === '1' || params?.get('mode') === 'menu';
       const deepLinkedProduct = itemParam
         ? vendor.products.find((p) => p.id === itemParam)
         : undefined;
 
       setSelectedProductId(deepLinkedProduct?.id ?? vendor.products[0]?.id ?? '');
       setCatalogView(
-        deepLinkedProduct
+        deepLinkedProduct || menuModeParam
           ? 'catalog'
           : vendor.customBuilderEnabled && vendor.products.length > 0
             ? 'builder'
             : 'catalog'
       );
       setFoodFilter('all');
+      setSelectedSection('all');
+      setQrMenuMode(menuModeParam);
+      setCheckoutOpen(false);
       setSelectedVariants({});
       setBasket({});
       setBasketExpanded(false);
@@ -191,13 +201,20 @@ export function VendorWebsiteView({
   useEffect(() => {
     if (!vendor) return;
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !qrOpen && !promoCardOpen && !shareProductTarget && !lightboxImg) {
+      if (
+        e.key === 'Escape' &&
+        !qrOpen &&
+        !promoCardOpen &&
+        !shareProductTarget &&
+        !lightboxImg &&
+        !checkoutOpen
+      ) {
         onClose();
       }
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [vendor, qrOpen, promoCardOpen, shareProductTarget, lightboxImg, onClose]);
+  }, [vendor, qrOpen, promoCardOpen, shareProductTarget, lightboxImg, checkoutOpen, onClose]);
 
   // Inject LocalBusiness JSON-LD with sameAs (Google Maps & Instagram) for SEO
   useEffect(() => {
@@ -449,6 +466,7 @@ export function VendorWebsiteView({
   const displayWaClicks = Math.max(metrics?.whatsappClicks ?? 0, cloudMetric?.whatsappClicks ?? 0);
 
   const isPaid = vendor.planTier === 'business' || vendor.planTier === 'pro';
+  const isOrderingPaused = vendor.orderingConfig?.acceptingOrders === false;
   const safeGoogleMapsUrl = vendor.googleMapsUrl
     ? sanitizeSafeHttpUrl(vendor.googleMapsUrl)
     : null;
@@ -513,6 +531,22 @@ export function VendorWebsiteView({
             )}
             <button
               type="button"
+              onClick={() => {
+                setQrMenuMode((prev) => !prev);
+                setCatalogView('catalog');
+              }}
+              className={`inline-flex h-10 cursor-pointer items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition-colors whitespace-nowrap ${
+                qrMenuMode
+                  ? 'border-brand bg-brand text-brand-foreground'
+                  : 'border-border bg-card text-foreground hover:border-brand hover:text-brand'
+              }`}
+              title="Switch between Full Storefront and Clean QR Menu view"
+            >
+              <BookOpen className="size-4" aria-hidden="true" />
+              <span className="hidden md:inline">{qrMenuMode ? 'Full Page' : 'QR Menu'}</span>
+            </button>
+            <button
+              type="button"
               onClick={() => setPromoCardOpen(true)}
               className="inline-flex h-10 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-card px-3 text-xs font-semibold text-foreground hover:border-brand hover:text-brand whitespace-nowrap"
             >
@@ -556,7 +590,7 @@ export function VendorWebsiteView({
         <div className="border-b border-brand-border bg-brand-soft/80">
           <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-2.5 text-xs sm:px-6 lg:px-8">
             <span className="font-semibold text-foreground">
-              You manage this storefront — update cover, logo, gallery photos, promo banner, products, WhatsApp or GPS pin anytime.
+              You manage this storefront — update cover, logo, online ordering &amp; UPI, promo codes, products or GPS pin anytime.
             </span>
             <button
               type="button"
@@ -570,7 +604,56 @@ export function VendorWebsiteView({
         </div>
       )}
 
-      {/* One-Page Vendor Website Hero */}
+      {/* Clean Distraction-Free QR Menu Header OR Full Storefront Hero */}
+      {qrMenuMode ? (
+        <section className="border-b border-border bg-card">
+          <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-4 py-5 sm:px-6 lg:px-8">
+            <div className="flex items-center gap-3">
+              {vendor.logo ? (
+                <img
+                  src={vendor.logo}
+                  alt={`${vendor.name} logo`}
+                  className="size-12 shrink-0 rounded-xl border border-border object-cover"
+                />
+              ) : (
+                <img
+                  src={vendor.image}
+                  alt={vendor.name}
+                  className="size-12 shrink-0 rounded-xl border border-border object-cover"
+                />
+              )}
+              <div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <h1 className="text-lg font-extrabold text-foreground sm:text-xl">
+                    {vendor.name}
+                  </h1>
+                  {vendor.verified && (
+                    <BadgeCheck className="size-4 text-[#25D366]" aria-label="Verified" />
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {vendor.category} · {vendor.city} · Digital QR Menu &amp; Direct Online Ordering (0% commission)
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {vendor.orderingConfig?.minAdvanceHours ? (
+                <span className="inline-flex items-center gap-1 text-xs font-semibold text-muted-foreground">
+                  <Clock className="size-3.5 text-brand" aria-hidden="true" />
+                  {vendor.orderingConfig.minAdvanceHours}h advance notice
+                </span>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => setQrMenuMode(false)}
+                className="cursor-pointer rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-semibold text-foreground hover:border-brand hover:text-brand"
+              >
+                View Full Storefront
+              </button>
+            </div>
+          </div>
+        </section>
+      ) : (
       <section className="relative overflow-hidden border-b border-border bg-[#0A0A0A]">
         <img
           src={vendor.image}
@@ -586,7 +669,7 @@ export function VendorWebsiteView({
               {isPaid && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-brand px-2.5 py-1 font-bold text-brand-foreground">
                   <Crown className="size-3" aria-hidden="true" />
-                  {vendor.planTier === 'business' ? 'Top Spotlight Partner' : 'Featured Pro Partner'}
+                  Business Partner
                 </span>
               )}
               <span className="font-semibold">{vendor.category}</span>
@@ -713,10 +796,23 @@ export function VendorWebsiteView({
           </div>
         </div>
       </section>
+      )}
 
       {/* Main One-Page Storefront Content */}
-      <main className="mx-auto max-w-6xl space-y-14 px-4 py-12 pb-36 sm:px-6 lg:px-8">
+      <main className={`mx-auto max-w-6xl px-4 pb-36 sm:px-6 lg:px-8 ${qrMenuMode ? 'space-y-8 py-6' : 'space-y-14 py-12'}`}>
+        {isOrderingPaused && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-xs text-amber-900 dark:text-amber-200">
+            <div className="flex items-center gap-2">
+              <PauseCircle className="size-4 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+              <span>
+                <strong>Online orders are currently paused</strong> — {vendor.name} is temporarily not accepting new online checkout orders. You can still browse the menu or message on WhatsApp for future dates.
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* About + Service Areas */}
+        {!qrMenuMode && (
         <section className="grid grid-cols-1 gap-8 border-b border-border pb-10 lg:grid-cols-12">
           <div className="lg:col-span-8">
             <h2 className="text-xl font-extrabold text-foreground">About {vendor.name}</h2>
@@ -792,9 +888,10 @@ export function VendorWebsiteView({
             </div>
           </div>
         </section>
+        )}
 
         {/* Portfolio Photo Gallery (shown when vendor uploaded gallery photos) */}
-        {vendor.gallery && vendor.gallery.length > 0 && (
+        {!qrMenuMode && vendor.gallery && vendor.gallery.length > 0 && (
           <section className="border-b border-border pb-10">
             <div className="flex items-center justify-between gap-2">
               <div>
@@ -842,10 +939,23 @@ export function VendorWebsiteView({
             const vegCount = vendor.products.filter((p) => p.foodType === 'veg').length;
             const nonVegCount = vendor.products.filter((p) => p.foodType === 'non-veg').length;
             const hasFoodTypeTags = vegCount > 0 || nonVegCount > 0;
-            const displayedProducts =
-              foodFilter === 'all'
-                ? vendor.products
-                : vendor.products.filter((p) => p.foodType === foodFilter);
+            const menuSections = Array.from(
+              new Set(
+                vendor.products
+                  .map((p) => p.menuSection?.trim())
+                  .filter((s): s is string => Boolean(s))
+              )
+            );
+            const displayedProducts = vendor.products.filter((p) => {
+              if (foodFilter !== 'all' && p.foodType !== foodFilter) return false;
+              if (
+                selectedSection !== 'all' &&
+                (p.menuSection?.trim() || '') !== selectedSection
+              ) {
+                return false;
+              }
+              return true;
+            });
 
             return (
               <>
@@ -969,10 +1079,49 @@ export function VendorWebsiteView({
                     </div>
                   ) : (
                     <p className="text-xs text-muted-foreground">
-                      Add multiple items to your WhatsApp Order Basket or enquire on any single item.
+                      Add items to order online with UPI/Pickup/Delivery or chat on WhatsApp.
                     </p>
                   )}
                 </div>
+
+                {menuSections.length > 0 && (
+                  <div
+                    className="mt-4 flex flex-wrap items-center gap-1.5"
+                    role="tablist"
+                    aria-label="Filter menu by section"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setSelectedSection('all')}
+                      className={`cursor-pointer rounded-lg border px-3 py-1.5 text-xs font-bold transition-colors ${
+                        selectedSection === 'all'
+                          ? 'border-brand bg-brand text-brand-foreground'
+                          : 'border-border bg-card text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      All Sections ({vendor.products.length})
+                    </button>
+                    {menuSections.map((sec) => {
+                      const secCount = vendor.products.filter(
+                        (p) => (p.menuSection?.trim() || '') === sec
+                      ).length;
+                      return (
+                        <button
+                          key={sec}
+                          type="button"
+                          onClick={() => setSelectedSection(sec)}
+                          className={`cursor-pointer rounded-lg border px-3 py-1.5 text-xs font-bold transition-colors ${
+                            selectedSection === sec
+                              ? 'border-brand bg-brand text-brand-foreground'
+                              : 'border-border bg-card text-muted-foreground hover:border-brand/50 hover:text-foreground'
+                          }`}
+                        >
+                          {sec} ({secCount})
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
 
                 <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
                   {displayedProducts.map((product) => {
@@ -1012,16 +1161,19 @@ export function VendorWebsiteView({
                       : product.name;
                     const productWaText = `Hi ${vendor.name}, I saw "${waItemName}" (${formatMoney(activePriceUsd, currency)} · ${activeServesText}${foodTypeText}${dietarySuffix}${deliveryRegionSuffix}) on your FindMyBites page (${shareUrl}). Is it available for my upcoming event?`;
 
+                    const isSoldOut = product.inStock === false;
                     return (
                       <div
                         key={product.id}
                         id={`vendor-product-${product.id}`}
                         className={`flex scroll-mt-24 flex-col overflow-hidden rounded-2xl border bg-card transition-all ${
-                          qty > 0
-                            ? 'border-[#25D366] ring-2 ring-[#25D366]/20'
-                            : isSelected
-                              ? 'border-brand ring-2 ring-brand/20'
-                              : 'border-border'
+                          isSoldOut
+                            ? 'border-border opacity-75'
+                            : qty > 0
+                              ? 'border-[#25D366] ring-2 ring-[#25D366]/20'
+                              : isSelected
+                                ? 'border-brand ring-2 ring-brand/20'
+                                : 'border-border'
                         }`}
                       >
                         <div className="relative flex aspect-[4/3] w-full items-center justify-center overflow-hidden border-b border-border/60 bg-white dark:bg-neutral-900">
@@ -1029,13 +1181,17 @@ export function VendorWebsiteView({
                             src={product.image}
                             alt={product.name}
                             referrerPolicy="no-referrer"
-                            className="h-full w-full object-contain object-center"
+                            className={`h-full w-full object-contain object-center ${isSoldOut ? 'grayscale-[60%]' : ''}`}
                           />
-                          {product.tag && (
+                          {isSoldOut ? (
+                            <span className="absolute left-3 top-3 rounded-full bg-rose-600 px-2.5 py-1 text-[11px] font-bold text-white shadow-sm">
+                              Sold Out
+                            </span>
+                          ) : product.tag ? (
                             <span className="absolute left-3 top-3 rounded-full bg-black/75 px-2.5 py-1 text-[11px] font-semibold text-white backdrop-blur-md">
                               {product.tag}
                             </span>
-                          )}
+                          ) : null}
                           <button
                             type="button"
                             onClick={() =>
@@ -1060,6 +1216,10 @@ export function VendorWebsiteView({
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <p className="text-xs font-medium text-muted-foreground">
                               {activeServesText}
+                              {product.menuSection ? ` · ${product.menuSection}` : ''}
+                              {product.advanceHours && product.advanceHours > 0
+                                ? ` · ${product.advanceHours}h pre-order`
+                                : ''}
                             </p>
                             <FoodTypeBadge foodType={product.foodType} size="sm" />
                           </div>
@@ -1130,7 +1290,23 @@ export function VendorWebsiteView({
                           </p>
 
                     <div className="mt-4 flex items-center gap-2 border-t border-border pt-4">
-                      {qty > 0 ? (
+                      {isSoldOut ? (
+                        <button
+                          type="button"
+                          disabled
+                          className="inline-flex flex-1 cursor-not-allowed items-center justify-center gap-1.5 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-bold text-rose-700 dark:text-rose-300"
+                        >
+                          Sold Out
+                        </button>
+                      ) : isOrderingPaused ? (
+                        <button
+                          type="button"
+                          disabled
+                          className="inline-flex flex-1 cursor-not-allowed items-center justify-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-800 dark:text-amber-300"
+                        >
+                          Orders Paused
+                        </button>
+                      ) : qty > 0 ? (
                         <div className="inline-flex flex-1 items-center justify-between rounded-lg border border-[#25D366] bg-[#25D366]/10 px-2 py-1.5">
                           <button
                             type="button"
@@ -1206,6 +1382,7 @@ export function VendorWebsiteView({
         </section>
 
         {/* Booking Form + Verified Reviews side-by-side */}
+        {!qrMenuMode && (
         <section
           id="vendor-enquiry-form"
           className="grid grid-cols-1 gap-8 border-t border-border pt-10 lg:grid-cols-12"
@@ -1532,6 +1709,7 @@ export function VendorWebsiteView({
             </div>
           </div>
         </section>
+        )}
       </main>
 
       {/* Sticky Bottom WhatsApp Bar + Expandable Multi-Item Order Basket */}
@@ -1588,7 +1766,7 @@ export function VendorWebsiteView({
           </div>
         )}
 
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
           {basketItems.length > 0 ? (
             <button
               type="button"
@@ -1596,12 +1774,12 @@ export function VendorWebsiteView({
               className="min-w-0 cursor-pointer text-left"
             >
               <p className="flex items-center gap-1.5 text-sm font-bold text-foreground">
-                <ShoppingBag className="size-4 text-[#25D366]" aria-hidden="true" />
-                {basketTotalCount} {basketTotalCount === 1 ? 'item' : 'items'} selected ·{' '}
+                <ShoppingBag className="size-4 text-brand" aria-hidden="true" />
+                {basketTotalCount} {basketTotalCount === 1 ? 'item' : 'items'} ·{' '}
                 <span className="font-mono">{formatMoney(basketTotalUsd, currency)}</span>
               </p>
               <p className="truncate text-xs text-brand">
-                {basketExpanded ? 'Hide itemized basket' : 'Tap to review items before sending'}
+                {basketExpanded ? 'Hide basket items' : 'Tap to review items · 0% commission'}
               </p>
             </button>
           ) : (
@@ -1616,24 +1794,52 @@ export function VendorWebsiteView({
             </div>
           )}
 
-          <a
-            href={buildWhatsAppUrl(
-              vendor,
-              basketItems.length > 0
-                ? buildBasketWhatsAppMessage()
-                : `Hi ${vendor.name}, I'm viewing your page on FindMyBites × PimpMyParty and want to ask about "${activeProductLabel}".`
+          <div className="flex shrink-0 items-center gap-2">
+            {basketItems.length > 0 && !isOrderingPaused && (
+              <button
+                type="button"
+                onClick={() => {
+                  setBasketExpanded(false);
+                  setCheckoutOpen(true);
+                }}
+                className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl bg-brand px-4 py-2.5 text-xs font-extrabold text-brand-foreground shadow-md transition-colors hover:bg-brand-hover sm:px-5 sm:text-sm"
+              >
+                <ShoppingBag className="size-4" aria-hidden="true" />
+                Checkout &amp; Order
+              </button>
             )}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={() => onTrackWhatsAppClick?.(vendor.id)}
-            className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-[#25D366] px-5 py-2.5 text-xs font-bold text-white shadow-md transition-colors hover:bg-[#1ebe5d] sm:text-sm"
-          >
-            <MessageCircle className="size-4" aria-hidden="true" />
-            {basketItems.length > 0 ? 'Send Order on WhatsApp' : 'Chat on WhatsApp'}
-          </a>
+            <a
+              href={buildWhatsAppUrl(
+                vendor,
+                basketItems.length > 0
+                  ? buildBasketWhatsAppMessage()
+                  : `Hi ${vendor.name}, I'm viewing your page on FindMyBites × PimpMyParty and want to ask about "${activeProductLabel}".`
+              )}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => onTrackWhatsAppClick?.(vendor.id)}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-[#25D366] px-4 py-2.5 text-xs font-bold text-white shadow-md transition-colors hover:bg-[#1ebe5d] sm:text-sm"
+            >
+              <MessageCircle className="size-4" aria-hidden="true" />
+              {basketItems.length > 0 ? 'WhatsApp' : 'Chat on WhatsApp'}
+            </a>
+          </div>
         </div>
       </div>
 
+      <DirectOrderCheckoutModal
+        vendor={checkoutOpen ? vendor : null}
+        items={basketItems}
+        currency={currency}
+        defaultCustomerName={user?.displayName || customerName}
+        defaultCustomerContact={user?.email || customerEmail}
+        onClose={() => setCheckoutOpen(false)}
+        onOrderPlaced={(order) => {
+          onCreateBooking(order);
+          setBasket({});
+        }}
+        onTrackWhatsAppClick={onTrackWhatsAppClick}
+      />
       <QrPosterModal vendor={qrOpen ? vendor : null} onClose={() => setQrOpen(false)} />
       <PromoCardModal
         vendor={promoCardOpen ? vendor : null}
