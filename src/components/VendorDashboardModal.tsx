@@ -294,6 +294,9 @@ export function VendorDashboardModal({
   const [newPromoType, setNewPromoType] = useState<'percent' | 'flat'>('percent');
   const [newPromoValue, setNewPromoValue] = useState('10');
   const [newPromoMinLocal, setNewPromoMinLocal] = useState('0');
+  const [customSectionOptions, setCustomSectionOptions] = useState<string[]>([]);
+  const [addingCustomSection, setAddingCustomSection] = useState(false);
+  const [newSectionInput, setNewSectionInput] = useState('');
 
   // Order Board filter state
   const [orderStatusFilter, setOrderStatusFilter] = useState<string>('all');
@@ -814,6 +817,8 @@ export function VendorDashboardModal({
     setProdBuilderPresets([]);
     setProdVariants([]);
     setEditingProductId(null);
+    setAddingCustomSection(false);
+    setNewSectionInput('');
   };
 
   const scrollToProductForm = (vendorId: string) => {
@@ -3046,6 +3051,28 @@ export function VendorDashboardModal({
                                   const modeCfg = getCustomBuilderModeConfig(
                                     v.customBuilderMode ?? suggestBuilderModeForCategory(v.category)
                                   );
+                                  const availableSections = Array.from(
+                                    new Set([
+                                      ...modeCfg.sections,
+                                      ...v.products
+                                        .map((p) => p.builderSection?.trim() || '')
+                                        .filter(Boolean),
+                                      ...customSectionOptions,
+                                      ...(prodBuilderSection.trim()
+                                        ? [prodBuilderSection.trim()]
+                                        : []),
+                                    ])
+                                  );
+                                  const commitNewSection = () => {
+                                    const cleaned = newSectionInput.trim().slice(0, 60);
+                                    if (!cleaned) return;
+                                    setCustomSectionOptions((prev) =>
+                                      prev.includes(cleaned) ? prev : [...prev, cleaned]
+                                    );
+                                    setProdBuilderSection(cleaned);
+                                    setNewSectionInput('');
+                                    setAddingCustomSection(false);
+                                  };
                                   return (
                                     <div className="space-y-2 rounded-lg border border-brand-border bg-card p-2.5">
                                       <div className="flex flex-wrap items-center gap-2">
@@ -3054,17 +3081,68 @@ export function VendorDashboardModal({
                                         </label>
                                         <select
                                           value={prodBuilderSection}
-                                          onChange={(e) => setProdBuilderSection(e.target.value)}
+                                          onChange={(e) => {
+                                            if (e.target.value === '__add_new__') {
+                                              setAddingCustomSection(true);
+                                              return;
+                                            }
+                                            setProdBuilderSection(e.target.value);
+                                          }}
                                           className="rounded-md border border-border bg-background px-2 py-1 text-[11px] font-semibold text-foreground"
                                         >
                                           <option value="">General / All Items</option>
-                                          {modeCfg.sections.map((sec) => (
+                                          {availableSections.map((sec) => (
                                             <option key={sec} value={sec}>
                                               {sec}
                                             </option>
                                           ))}
+                                          <option value="__add_new__">+ Add New Category...</option>
                                         </select>
+                                        <button
+                                          type="button"
+                                          onClick={() => setAddingCustomSection((prev) => !prev)}
+                                          className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-brand-border bg-brand-soft/60 px-2 py-1 text-[11px] font-bold text-brand hover:bg-brand hover:text-brand-foreground"
+                                        >
+                                          <Plus className="size-3" aria-hidden="true" />
+                                          Add Category
+                                        </button>
                                       </div>
+                                      {addingCustomSection && (
+                                        <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-brand-border/70 bg-brand-soft/20 p-2">
+                                          <input
+                                            type="text"
+                                            value={newSectionInput}
+                                            onChange={(e) => setNewSectionInput(e.target.value)}
+                                            onKeyDown={(e) => {
+                                              if (e.key === 'Enter') {
+                                                e.preventDefault();
+                                                commitNewSection();
+                                              }
+                                            }}
+                                            maxLength={60}
+                                            placeholder="New category name (e.g. Live Counters, Chaat, Salads, Ice Creams)"
+                                            className="min-w-[180px] flex-1 rounded-md border border-border bg-background px-2.5 py-1 text-xs text-foreground focus:border-brand focus:outline-none"
+                                          />
+                                          <button
+                                            type="button"
+                                            onClick={commitNewSection}
+                                            disabled={!newSectionInput.trim()}
+                                            className="cursor-pointer rounded-md bg-brand px-2.5 py-1 text-[11px] font-bold text-brand-foreground hover:bg-brand-hover disabled:opacity-50"
+                                          >
+                                            Add
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setAddingCustomSection(false);
+                                              setNewSectionInput('');
+                                            }}
+                                            className="cursor-pointer rounded-md px-2 py-1 text-[11px] font-semibold text-muted-foreground hover:text-foreground"
+                                          >
+                                            Cancel
+                                          </button>
+                                        </div>
+                                      )}
                                       <div className="flex flex-wrap items-center gap-1.5">
                                         <span className="text-[11px] font-semibold text-muted-foreground">
                                           Include in Quick-Start Presets:

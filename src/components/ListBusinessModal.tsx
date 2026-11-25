@@ -182,6 +182,9 @@ export function ListBusinessModal({
   const [customBuilderMode, setCustomBuilderMode] = useState<CustomBuilderMode>('snackbox');
   const [customBuilderMinQty, setCustomBuilderMinQty] = useState(10);
   const [customBuilderPackagingLocal, setCustomBuilderPackagingLocal] = useState(0);
+  const [customBuilderSections, setCustomBuilderSections] = useState<string[]>([]);
+  const [addingSectionForProdId, setAddingSectionForProdId] = useState<string | null>(null);
+  const [newBuilderSectionInput, setNewBuilderSectionInput] = useState('');
   const [planTier, setPlanTier] = useState<PlanTier>(
     initialPlanTier === 'pro' ? 'business' : initialPlanTier
   );
@@ -1631,25 +1634,96 @@ export function ListBusinessModal({
                         })}
                       </div>
 
-                      {marketplace === 'food' && isPaidPlan && customBuilderEnabled && (
+                      {marketplace === 'food' && isPaidPlan && customBuilderEnabled && (() => {
+                        const modeCfg = getCustomBuilderModeConfig(customBuilderMode);
+                        const sectionChoices = Array.from(
+                          new Set([
+                            ...modeCfg.sections,
+                            ...products.map((item) => item.builderSection.trim()).filter(Boolean),
+                            ...customBuilderSections,
+                          ])
+                        );
+                        const isAddingHere = addingSectionForProdId === prod.id;
+                        const commitDraftSection = () => {
+                          const cleaned = newBuilderSectionInput.trim().slice(0, 60);
+                          if (!cleaned) return;
+                          setCustomBuilderSections((prev) =>
+                            prev.includes(cleaned) ? prev : [...prev, cleaned]
+                          );
+                          updateProductField(prod.id, 'builderSection', cleaned);
+                          setNewBuilderSectionInput('');
+                          setAddingSectionForProdId(null);
+                        };
+                        return (
                         <div className="flex flex-wrap items-center gap-2 rounded-lg border border-brand-border/60 bg-brand-soft/20 px-2.5 py-1.5">
                           <select
                             aria-label="Builder Section"
                             value={prod.builderSection}
-                            onChange={(e) =>
-                              updateProductField(prod.id, 'builderSection', e.target.value)
-                            }
+                            onChange={(e) => {
+                              if (e.target.value === '__add_new__') {
+                                setAddingSectionForProdId(prod.id);
+                                return;
+                              }
+                              updateProductField(prod.id, 'builderSection', e.target.value);
+                            }}
                             className="rounded-md border border-border bg-card px-2 py-1 text-[11px] font-semibold text-foreground"
                           >
                             <option value="">
-                              {getCustomBuilderModeConfig(customBuilderMode).label} Section (Optional)
+                              {modeCfg.label} Section (Optional)
                             </option>
-                            {getCustomBuilderModeConfig(customBuilderMode).sections.map((sec) => (
+                            {sectionChoices.map((sec) => (
                               <option key={sec} value={sec}>
                                 {sec}
                               </option>
                             ))}
+                            <option value="__add_new__">+ Add New Category...</option>
                           </select>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setAddingSectionForProdId((prev) => (prev === prod.id ? null : prod.id))
+                            }
+                            className="inline-flex cursor-pointer items-center gap-0.5 rounded-md border border-brand-border bg-card px-2 py-1 text-[10px] font-bold text-brand hover:bg-brand hover:text-brand-foreground"
+                          >
+                            <Plus className="size-3" aria-hidden="true" />
+                            Category
+                          </button>
+                          {isAddingHere && (
+                            <div className="flex w-full flex-wrap items-center gap-1.5 pt-1">
+                              <input
+                                type="text"
+                                value={newBuilderSectionInput}
+                                onChange={(e) => setNewBuilderSectionInput(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    commitDraftSection();
+                                  }
+                                }}
+                                maxLength={60}
+                                placeholder="New category (e.g. Live Counters, Chaat, Salads)"
+                                className="min-w-[160px] flex-1 rounded-md border border-border bg-background px-2 py-1 text-[11px] text-foreground focus:border-brand focus:outline-none"
+                              />
+                              <button
+                                type="button"
+                                onClick={commitDraftSection}
+                                disabled={!newBuilderSectionInput.trim()}
+                                className="cursor-pointer rounded-md bg-brand px-2.5 py-1 text-[10px] font-bold text-brand-foreground hover:bg-brand-hover disabled:opacity-50"
+                              >
+                                Add
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setAddingSectionForProdId(null);
+                                  setNewBuilderSectionInput('');
+                                }}
+                                className="cursor-pointer rounded-md px-2 py-1 text-[10px] font-semibold text-muted-foreground hover:text-foreground"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          )}
                           <span className="text-[10px] font-semibold text-muted-foreground">
                             Presets:
                           </span>
@@ -1673,7 +1747,8 @@ export function ListBusinessModal({
                             );
                           })}
                         </div>
-                      )}
+                        );
+                      })()}
                     </div>
 
                     {products.length > 1 && (
