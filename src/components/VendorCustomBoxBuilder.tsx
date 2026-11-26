@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Calendar,
   MapPin,
@@ -47,11 +47,30 @@ export function VendorCustomBoxBuilder({
   const packagingUsd = Math.max(0, vendor.customBuilderPackagingUsd ?? 0);
 
   const quickQtyChoices = useMemo(() => {
-    const base = [minQty, 15, 25, 50, 100, 200].filter((n) => n >= minQty);
-    return Array.from(new Set(base)).slice(0, 6);
+    const step = minQty >= 100 ? 50 : minQty >= 50 ? 25 : 10;
+    const base = [
+      minQty,
+      minQty + step,
+      minQty + step * 2,
+      15,
+      25,
+      50,
+      100,
+      150,
+      200,
+      300,
+      500,
+    ].filter((n) => n >= minQty && n <= 5000);
+    return Array.from(new Set(base))
+      .sort((a, b) => a - b)
+      .slice(0, 6);
   }, [minQty]);
 
   const [orderQty, setOrderQty] = useState<number>(minQty);
+
+  useEffect(() => {
+    setOrderQty((prev) => Math.max(minQty, prev || minQty));
+  }, [minQty]);
   const [eventDate, setEventDate] = useState(() => {
     const d = new Date(Date.now() + 2 * 86400000);
     return d.toISOString().slice(0, 10);

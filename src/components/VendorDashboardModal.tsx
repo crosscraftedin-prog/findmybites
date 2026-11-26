@@ -1,4 +1,4 @@
-import { ChangeEvent, FormEvent, useEffect, useState } from 'react';
+import { ChangeEvent, FormEvent, useCallback, useEffect, useState } from 'react';
 import type { User } from 'firebase/auth';
 import {
   BarChart3,
@@ -327,69 +327,118 @@ export function VendorDashboardModal({
     }
   }, [myVendors, quoteVendorId]);
 
+  const populateVendorEditForm = useCallback(
+    (v: Vendor) => {
+      setEditingVendorId(v.id);
+      setEditName(v.name);
+      setEditTagline(v.tagline);
+      setEditDescription(v.description);
+      setEditWhatsapp(v.whatsappNumber);
+      setEditPromoBanner(v.promoBanner || '');
+      setEditChristmasSpecial(Boolean(v.christmasSpecial));
+      setEditChristmasOffer(v.christmasOffer || '');
+      const suggestedMode = v.customBuilderMode ?? suggestBuilderModeForCategory(v.category);
+      setEditCustomBuilderEnabled(Boolean(v.customBuilderEnabled));
+      setEditCustomBuilderMode(suggestedMode);
+      setEditCustomBuilderMinQty(
+        v.customBuilderMinQty ?? getCustomBuilderModeConfig(suggestedMode).defaultMinQty
+      );
+      setEditCustomBuilderPackagingLocal(
+        v.customBuilderPackagingUsd && v.customBuilderPackagingUsd > 0
+          ? usdToLocal(v.customBuilderPackagingUsd, currency)
+          : 0
+      );
+      setEditBioHandle(getVendorBioHandle(v));
+      setEditBioTheme(v.bioTheme ?? (v.marketplace === 'party' ? 'party' : 'saffron'));
+      setEditInstagram(v.instagramHandle || '');
+      setEditGoogleMapsUrl(v.googleMapsUrl || '');
+      setEditGoogleReviewUrl(v.googleReviewUrl || '');
+      setEditCustomLinks(v.customLinks ? [...v.customLinks] : []);
+      setNewLinkTitle('');
+      setNewLinkUrl('');
+      setNewLinkBadge('');
+      setEditPlanTier(v.planTier === 'pro' ? 'business' : v.planTier);
+      setEditBillingCycle(v.orderingConfig?.billingCycle ?? 'monthly');
+      setEditLogo(v.logo || '');
+      setEditCover(v.image);
+      setEditGallery(v.gallery ? [...v.gallery] : []);
+
+      const countryRegions = STATES_BY_COUNTRY[v.country] || [];
+      const rawState = (v.state || '').trim();
+      const matchedState =
+        countryRegions.find((s) => s.name.toLowerCase() === rawState.toLowerCase()) ||
+        countryRegions[0];
+      const resolvedState = matchedState
+        ? rawState && matchedState.name.toLowerCase() === rawState.toLowerCase()
+          ? matchedState.name
+          : rawState || matchedState.name
+        : rawState;
+      const rawCity = (v.city || '').trim();
+      const matchedCity = matchedState?.cities.find(
+        (c) => c.toLowerCase() === rawCity.toLowerCase()
+      );
+      const resolvedCity = matchedCity || rawCity || matchedState?.cities[0] || '';
+
+      setEditState(resolvedState);
+      setEditCity(resolvedCity);
+      setEditCustomCityMode(
+        Boolean(resolvedCity && matchedState && !matchedState.cities.includes(resolvedCity))
+      );
+      setEditArea(v.area || '');
+      setEditExtraCities(
+        (v.serviceAreas || [])
+          .filter(
+            (a) =>
+              a &&
+              a !== v.city &&
+              a !== v.area &&
+              a !== v.state &&
+              a !== `${v.city} Metro`
+          )
+          .join(', ')
+      );
+      setEditAllStatesCoverage(Boolean(v.allStatesCoverage));
+      setEditServiceStates(Array.isArray(v.serviceStates) ? [...v.serviceStates] : []);
+
+      const oc = v.orderingConfig;
+      setEditOrderAccepting(oc?.acceptingOrders !== false);
+      setEditOrderDelivery(oc?.deliveryEnabled !== false);
+      setEditOrderPickup(oc?.pickupEnabled !== false);
+      setEditOrderCod(oc?.codEnabled !== false);
+      setEditOrderDeliveryFeeLocal(
+        oc?.deliveryFeeUsd && oc.deliveryFeeUsd > 0 ? usdToLocal(oc.deliveryFeeUsd, currency) : 0
+      );
+      setEditOrderFreeDeliveryLocal(
+        oc?.freeDeliveryAboveUsd && oc.freeDeliveryAboveUsd > 0
+          ? usdToLocal(oc.freeDeliveryAboveUsd, currency)
+          : 0
+      );
+      setEditOrderMinAdvanceHours(oc?.minAdvanceHours ?? 2);
+      setEditOrderTimeSlots(
+        oc?.timeSlots && oc.timeSlots.length > 0
+          ? oc.timeSlots.join(', ')
+          : DEFAULT_ORDERING_TIME_SLOTS.join(', ')
+      );
+      setEditOrderUpiId(oc?.upiId || '');
+      setEditOrderUpiName(oc?.upiPayeeName || v.name);
+      setEditOrderPaymentLink(oc?.paymentLinkUrl || '');
+      setEditOrderPromoCodes(oc?.promoCodes ? [...oc.promoCodes] : []);
+      setNewPromoCode('');
+      setNewPromoType('percent');
+      setNewPromoValue('10');
+      setNewPromoMinLocal('0');
+    },
+    [currency]
+  );
+
   useEffect(() => {
     if (!isOpen || !initialEditVendorId) return;
     const target = myVendors.find((v) => v.id === initialEditVendorId);
     if (!target) return;
     setTab('storefronts');
-    setEditingVendorId(target.id);
-    setEditName(target.name);
-    setEditTagline(target.tagline);
-    setEditDescription(target.description);
-    setEditWhatsapp(target.whatsappNumber);
-    setEditPromoBanner(target.promoBanner || '');
-    setEditChristmasSpecial(Boolean(target.christmasSpecial));
-    setEditChristmasOffer(target.christmasOffer || '');
-    const suggestedMode = target.customBuilderMode ?? suggestBuilderModeForCategory(target.category);
-    setEditCustomBuilderEnabled(Boolean(target.customBuilderEnabled));
-    setEditCustomBuilderMode(suggestedMode);
-    setEditCustomBuilderMinQty(
-      target.customBuilderMinQty ?? getCustomBuilderModeConfig(suggestedMode).defaultMinQty
-    );
-    setEditCustomBuilderPackagingLocal(
-      target.customBuilderPackagingUsd && target.customBuilderPackagingUsd > 0
-        ? usdToLocal(target.customBuilderPackagingUsd, currency)
-        : 0
-    );
-    setEditBioHandle(getVendorBioHandle(target));
-    setEditBioTheme(target.bioTheme ?? (target.marketplace === 'party' ? 'party' : 'saffron'));
-    setEditInstagram(target.instagramHandle || '');
-    setEditGoogleMapsUrl(target.googleMapsUrl || '');
-    setEditGoogleReviewUrl(target.googleReviewUrl || '');
-    setEditCustomLinks(target.customLinks ? [...target.customLinks] : []);
-    setNewLinkTitle('');
-    setNewLinkUrl('');
-    setNewLinkBadge('');
-    setEditPlanTier(target.planTier === 'pro' ? 'business' : target.planTier);
-    setEditBillingCycle(target.orderingConfig?.billingCycle ?? 'monthly');
-    setEditLogo(target.logo || '');
-    setEditCover(target.image);
-    setEditGallery(target.gallery ? [...target.gallery] : []);
-    const oc = target.orderingConfig;
-    setEditOrderAccepting(oc?.acceptingOrders !== false);
-    setEditOrderDelivery(oc?.deliveryEnabled !== false);
-    setEditOrderPickup(oc?.pickupEnabled !== false);
-    setEditOrderCod(oc?.codEnabled !== false);
-    setEditOrderDeliveryFeeLocal(
-      oc?.deliveryFeeUsd && oc.deliveryFeeUsd > 0 ? usdToLocal(oc.deliveryFeeUsd, currency) : 0
-    );
-    setEditOrderFreeDeliveryLocal(
-      oc?.freeDeliveryAboveUsd && oc.freeDeliveryAboveUsd > 0
-        ? usdToLocal(oc.freeDeliveryAboveUsd, currency)
-        : 0
-    );
-    setEditOrderMinAdvanceHours(oc?.minAdvanceHours ?? 2);
-    setEditOrderTimeSlots(
-      oc?.timeSlots && oc.timeSlots.length > 0
-        ? oc.timeSlots.join(', ')
-        : DEFAULT_ORDERING_TIME_SLOTS.join(', ')
-    );
-    setEditOrderUpiId(oc?.upiId || '');
-    setEditOrderUpiName(oc?.upiPayeeName || target.name);
-    setEditOrderPaymentLink(oc?.paymentLinkUrl || '');
-    setEditOrderPromoCodes(oc?.promoCodes ? [...oc.promoCodes] : []);
+    populateVendorEditForm(target);
     onClearInitialEdit?.();
-  }, [isOpen, initialEditVendorId, myVendors, currency, onClearInitialEdit]);
+  }, [isOpen, initialEditVendorId, myVendors, populateVendorEditForm, onClearInitialEdit]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -409,89 +458,7 @@ export function VendorDashboardModal({
       setEditingVendorId(null);
       return;
     }
-    setEditingVendorId(v.id);
-    setEditName(v.name);
-    setEditTagline(v.tagline);
-    setEditDescription(v.description);
-    setEditWhatsapp(v.whatsappNumber);
-    setEditPromoBanner(v.promoBanner || '');
-    setEditChristmasSpecial(Boolean(v.christmasSpecial));
-    setEditChristmasOffer(v.christmasOffer || '');
-    const suggestedMode = v.customBuilderMode ?? suggestBuilderModeForCategory(v.category);
-    setEditCustomBuilderEnabled(Boolean(v.customBuilderEnabled));
-    setEditCustomBuilderMode(suggestedMode);
-    setEditCustomBuilderMinQty(
-      v.customBuilderMinQty ?? getCustomBuilderModeConfig(suggestedMode).defaultMinQty
-    );
-    setEditCustomBuilderPackagingLocal(
-      v.customBuilderPackagingUsd && v.customBuilderPackagingUsd > 0
-        ? usdToLocal(v.customBuilderPackagingUsd, currency)
-        : 0
-    );
-    setEditBioHandle(getVendorBioHandle(v));
-    setEditBioTheme(v.bioTheme ?? (v.marketplace === 'party' ? 'party' : 'saffron'));
-    setEditInstagram(v.instagramHandle || '');
-    setEditGoogleMapsUrl(v.googleMapsUrl || '');
-    setEditGoogleReviewUrl(v.googleReviewUrl || '');
-    setEditCustomLinks(v.customLinks ? [...v.customLinks] : []);
-    setNewLinkTitle('');
-    setNewLinkUrl('');
-    setNewLinkBadge('');
-    setEditPlanTier(v.planTier === 'pro' ? 'business' : v.planTier);
-    setEditBillingCycle(v.orderingConfig?.billingCycle ?? 'monthly');
-    setEditLogo(v.logo || '');
-    setEditCover(v.image);
-    setEditGallery(v.gallery ? [...v.gallery] : []);
-    const countryRegions = STATES_BY_COUNTRY[v.country] || [];
-    const matchedState = countryRegions.find((s) => s.name === v.state) || countryRegions[0];
-    setEditState(v.state || matchedState?.name || '');
-    setEditCity(v.city || '');
-    setEditCustomCityMode(
-      Boolean(v.city && matchedState && !matchedState.cities.includes(v.city))
-    );
-    setEditArea(v.area || '');
-    setEditExtraCities(
-      (v.serviceAreas || [])
-        .filter(
-          (a) =>
-            a &&
-            a !== v.city &&
-            a !== v.area &&
-            a !== v.state &&
-            a !== `${v.city} Metro`
-        )
-        .join(', ')
-    );
-    setEditAllStatesCoverage(Boolean(v.allStatesCoverage));
-    setEditServiceStates(Array.isArray(v.serviceStates) ? [...v.serviceStates] : []);
-
-    const oc = v.orderingConfig;
-    setEditOrderAccepting(oc?.acceptingOrders !== false);
-    setEditOrderDelivery(oc?.deliveryEnabled !== false);
-    setEditOrderPickup(oc?.pickupEnabled !== false);
-    setEditOrderCod(oc?.codEnabled !== false);
-    setEditOrderDeliveryFeeLocal(
-      oc?.deliveryFeeUsd && oc.deliveryFeeUsd > 0 ? usdToLocal(oc.deliveryFeeUsd, currency) : 0
-    );
-    setEditOrderFreeDeliveryLocal(
-      oc?.freeDeliveryAboveUsd && oc.freeDeliveryAboveUsd > 0
-        ? usdToLocal(oc.freeDeliveryAboveUsd, currency)
-        : 0
-    );
-    setEditOrderMinAdvanceHours(oc?.minAdvanceHours ?? 2);
-    setEditOrderTimeSlots(
-      oc?.timeSlots && oc.timeSlots.length > 0
-        ? oc.timeSlots.join(', ')
-        : DEFAULT_ORDERING_TIME_SLOTS.join(', ')
-    );
-    setEditOrderUpiId(oc?.upiId || '');
-    setEditOrderUpiName(oc?.upiPayeeName || v.name);
-    setEditOrderPaymentLink(oc?.paymentLinkUrl || '');
-    setEditOrderPromoCodes(oc?.promoCodes ? [...oc.promoCodes] : []);
-    setNewPromoCode('');
-    setNewPromoType('percent');
-    setNewPromoValue('10');
-    setNewPromoMinLocal('0');
+    populateVendorEditForm(v);
   };
 
   const handleToggleChristmasHighlight = async (v: Vendor) => {
@@ -1773,8 +1740,16 @@ export function VendorDashboardModal({
                               {/* Location, Custom City & Pan-India / Multi-State Delivery Coverage */}
                               {(() => {
                                 const editRegions = STATES_BY_COUNTRY[v.country] || [];
+                                const activeEditState = editState || v.state || editRegions[0]?.name || '';
                                 const editStateObj =
-                                  editRegions.find((s) => s.name === editState) || editRegions[0];
+                                  editRegions.find(
+                                    (s) => s.name.toLowerCase() === activeEditState.toLowerCase()
+                                  ) || editRegions[0];
+                                const hasCustomStateOption =
+                                  Boolean(activeEditState) &&
+                                  !editRegions.some(
+                                    (s) => s.name.toLowerCase() === activeEditState.toLowerCase()
+                                  );
                                 return (
                                   <div className="space-y-3 rounded-xl border border-border bg-card p-3">
                                     <p className="flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wide text-foreground">
@@ -1787,7 +1762,7 @@ export function VendorDashboardModal({
                                           {COUNTRY_REGION_LABEL[v.country]}
                                         </label>
                                         <select
-                                          value={editState}
+                                          value={editStateObj && !hasCustomStateOption ? editStateObj.name : activeEditState}
                                           onChange={(e) => {
                                             const nextSt = e.target.value;
                                             setEditState(nextSt);
@@ -1799,6 +1774,9 @@ export function VendorDashboardModal({
                                           }}
                                           className="mt-1 w-full rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs text-foreground"
                                         >
+                                          {hasCustomStateOption && (
+                                            <option value={activeEditState}>{activeEditState}</option>
+                                          )}
                                           {editRegions.map((st) => (
                                             <option key={st.name} value={st.name}>
                                               {st.name}

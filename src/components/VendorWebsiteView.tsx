@@ -120,6 +120,7 @@ export function VendorWebsiteView({
   const [qrMenuMode, setQrMenuMode] = useState<boolean>(false);
   const [checkoutOpen, setCheckoutOpen] = useState<boolean>(false);
   const [basket, setBasket] = useState<Record<string, number>>({});
+  const [qtyDrafts, setQtyDrafts] = useState<Record<string, string>>({});
   const [basketExpanded, setBasketExpanded] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
   const [promoCardOpen, setPromoCardOpen] = useState(false);
@@ -170,6 +171,7 @@ export function VendorWebsiteView({
       setCheckoutOpen(false);
       setSelectedVariants({});
       setBasket({});
+      setQtyDrafts({});
       setBasketExpanded(false);
       setQrOpen(false);
       setPromoCardOpen(false);
@@ -283,6 +285,11 @@ export function VendorWebsiteView({
     };
   }, [vendor]);
 
+  const getProductMinQty = (product?: VendorProduct): number =>
+    product?.isPackage && product.minOrderQty && product.minOrderQty > 1
+      ? Math.max(1, Math.min(5000, Math.round(product.minOrderQty)))
+      : 1;
+
   const basketItems = useMemo(() => {
     if (!vendor) return [];
     const items: Array<{
@@ -292,12 +299,15 @@ export function VendorWebsiteView({
       unitPriceUsd: number;
       displayName: string;
       qty: number;
+      minQty: number;
     }> = [];
-    for (const [key, qty] of Object.entries(basket)) {
-      if (!qty || qty <= 0) continue;
+    for (const [key, rawQty] of Object.entries(basket)) {
+      if (!rawQty || rawQty <= 0) continue;
       const [prodId, varId] = key.split('::');
       const product = vendor.products.find((p) => p.id === prodId);
       if (!product) continue;
+      const minQty = getProductMinQty(product);
+      const qty = Math.max(minQty, Math.round(rawQty));
       const variant = varId ? product.variants?.find((v) => v.id === varId) : undefined;
       const unitPriceUsd = variant ? variant.priceUsd : product.priceUsd;
       const displayName = variant ? `${product.name} (${variant.label})` : product.name;
@@ -308,6 +318,7 @@ export function VendorWebsiteView({
         unitPriceUsd,
         displayName,
         qty,
+        minQty,
       });
     }
     return items;
@@ -345,15 +356,66 @@ export function VendorWebsiteView({
   const quickTags = getVendorQuickTags(vendor);
   const shareUrl = `findmybites.com/v/${vendor.slug}`;
 
+  const getMinQtyForBasketKey = (basketKey: string): number => {
+    const prodId = basketKey.split('::')[0];
+    const product = vendor.products.find((p) => p.id === prodId);
+    return getProductMinQty(product);
+  };
+
   const updateBasketQty = (basketKey: string, delta: number) => {
+    const minQty = getMinQtyForBasketKey(basketKey);
     setBasket((prev) => {
-      const nextQty = Math.max(0, (prev[basketKey] ?? 0) + delta);
-      if (nextQty === 0) {
-        const next = { ...prev };
-        delete next[basketKey];
-        return next;
+      const currentQty = prev[basketKey] ?? 0;
+      if (currentQty === 0) {
+        if (delta <= 0) return prev;
+        return { ...prev, [basketKey]: Math.min(5000, Math.max(minQty, delta)) };
       }
-      return { ...prev, [basketKey]: nextQty };
+      if (delta < 0) {
+        if (minQty > 1) {
+          const clamped = Math.max(minQty, currentQty + delta);
+          return { ...prev, [basketKey]: clamped };
+        }
+        const nextQty = Math.max(0, currentQty + delta);
+        if (nextQty === 0) {
+          const next = { ...prev };
+          delete next[basketKey];
+          return next;
+        }
+        return { ...prev, [basketKey]: nextQty };
+      }
+      return { ...prev, [basketKey]: Math.min(5000, Math.max(minQty, currentQty + delta)) };
+    });
+    setQtyDrafts((prev) => {
+      if (!(basketKey in prev)) return prev;
+      const next = { ...prev };
+      delete next[basketKey];
+      return next;
+    });
+  };
+
+  const setBasketQtyExact = (basketKey: string, rawValue: number) => {
+    const minQty = getMinQtyForBasketKey(basketKey);
+    const clamped = Math.max(minQty, Math.min(5000, Math.round(rawValue || minQty)));
+    setBasket((prev) => ({ ...prev, [basketKey]: clamped }));
+    setQtyDrafts((prev) => {
+      if (!(basketKey in prev)) return prev;
+      const next = { ...prev };
+      delete next[basketKey];
+      return next;
+    });
+  };
+
+  const removeBasketItem = (basketKey: string) => {
+    setBasket((prev) => {
+      const next = { ...prev };
+      delete next[basketKey];
+      return next;
+    });
+    setQtyDrafts((prev) => {
+      if (!(basketKey in prev)) return prev;
+      const next = { ...prev };
+      delete next[basketKey];
+      return next;
     });
   };
 
@@ -365,7 +427,11 @@ export function VendorWebsiteView({
           : product.foodType === 'non-veg'
             ? ' [Non-Veg]'
             : '';
-      return `• ${qty}× ${displayName}${foodLabel} (${formatMoney(unitPriceUsd * qty, currency)})`;
+      const includesText =
+        product.isPackage && product.includedItems && product.includedItems.length > 0
+          ? ` (Includes: ${product.includedItems.join(', ')})`
+          : '';
+      return `• ${qty}× ${displayName}${foodLabel} (${formatMoney(unitPriceUsd * qty, currency)})${includesText}`;
     });
     return [
       `Hi ${vendor.name}, I'd like to order from your FindMyBites storefront (${shareUrl}):`,
@@ -1502,45 +1568,101 @@ export function VendorWebsiteView({
                         >
                           Orders Paused
                         </button>
-                      ) : qty > 0 ? (
-                        <div className="inline-flex flex-1 items-center justify-between rounded-lg border border-[#25D366] bg-[#25D366]/10 px-2 py-1.5">
-                          <button
-                            type="button"
-                            aria-label={`Remove one ${waItemName}`}
-                            onClick={() => updateBasketQty(basketKey, -1)}
-                            className="grid size-6 cursor-pointer place-items-center rounded-md bg-background text-foreground hover:bg-accent"
-                          >
-                            <Minus className="size-3.5" aria-hidden="true" />
-                          </button>
-                          <span className="font-mono text-xs font-bold text-foreground">
-                            {qty}
-                            {selectedVariant ? ` × ${selectedVariant.label}` : ' in order'}
-                          </span>
-                          <button
-                            type="button"
-                            aria-label={`Add one more ${waItemName}`}
-                            onClick={() => updateBasketQty(basketKey, 1)}
-                            className="grid size-6 cursor-pointer place-items-center rounded-md bg-[#25D366] text-white hover:bg-[#1ebe5d]"
-                          >
-                            <Plus className="size-3.5" aria-hidden="true" />
-                          </button>
-                        </div>
-                      ) : (
+                      ) : qty > 0 ? (() => {
+                        const minQty = getProductMinQty(product);
+                        const effectiveQty = Math.max(minQty, qty);
+                        const isAtMin = minQty > 1 && effectiveQty <= minQty;
+                        const draftVal = qtyDrafts[basketKey];
+                        return (
+                          <div className="inline-flex flex-1 items-center gap-1.5">
+                            <div className="inline-flex flex-1 items-center justify-between rounded-lg border border-[#25D366] bg-[#25D366]/10 px-2 py-1.5">
+                              <button
+                                type="button"
+                                disabled={isAtMin}
+                                aria-label={
+                                  isAtMin
+                                    ? `Minimum ${minQty} required for ${waItemName}`
+                                    : `Decrease ${waItemName}`
+                                }
+                                title={isAtMin ? `Minimum order is ${minQty}` : undefined}
+                                onClick={() => updateBasketQty(basketKey, -1)}
+                                className="grid size-6 cursor-pointer place-items-center rounded-md bg-background text-foreground hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
+                              >
+                                <Minus className="size-3.5" aria-hidden="true" />
+                              </button>
+                              {minQty > 1 ? (
+                                <div className="inline-flex items-center gap-1">
+                                  <input
+                                    type="number"
+                                    min={minQty}
+                                    max={5000}
+                                    value={draftVal !== undefined ? draftVal : String(effectiveQty)}
+                                    aria-label={`Quantity for ${waItemName} (minimum ${minQty})`}
+                                    onChange={(e) =>
+                                      setQtyDrafts((prev) => ({
+                                        ...prev,
+                                        [basketKey]: e.target.value,
+                                      }))
+                                    }
+                                    onBlur={() => {
+                                      const parsed = Number(draftVal);
+                                      setBasketQtyExact(
+                                        basketKey,
+                                        Number.isFinite(parsed) ? parsed : minQty
+                                      );
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        e.currentTarget.blur();
+                                      }
+                                    }}
+                                    className="w-14 rounded border border-border/70 bg-background px-1 py-0.5 text-center font-mono text-xs font-bold tabular-nums text-foreground focus:border-brand focus:outline-none"
+                                  />
+                                  <span className="text-[10px] font-semibold text-muted-foreground">
+                                    min {minQty}
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className="font-mono text-xs font-bold text-foreground">
+                                  {effectiveQty}
+                                  {selectedVariant ? ` × ${selectedVariant.label}` : ' in order'}
+                                </span>
+                              )}
+                              <button
+                                type="button"
+                                aria-label={`Add one more ${waItemName}`}
+                                onClick={() => updateBasketQty(basketKey, 1)}
+                                className="grid size-6 cursor-pointer place-items-center rounded-md bg-[#25D366] text-white hover:bg-[#1ebe5d]"
+                              >
+                                <Plus className="size-3.5" aria-hidden="true" />
+                              </button>
+                            </div>
+                            {minQty > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => removeBasketItem(basketKey)}
+                                aria-label={`Remove ${waItemName} from order`}
+                                title="Remove package from order"
+                                className="grid size-8 shrink-0 cursor-pointer place-items-center rounded-lg border border-border bg-background text-muted-foreground transition-colors hover:border-rose-500/50 hover:text-rose-600"
+                              >
+                                <Trash2 className="size-3.5" aria-hidden="true" />
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })() : (
                         <button
                           type="button"
                           onClick={() => {
-                            const startQty =
-                              product.isPackage && product.minOrderQty && product.minOrderQty > 1
-                                ? product.minOrderQty
-                                : 1;
+                            const startQty = getProductMinQty(product);
                             updateBasketQty(basketKey, startQty);
                             setSelectedProductId(product.id);
                           }}
                           className="inline-flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-border bg-background px-3 py-2 text-xs font-semibold text-foreground transition-colors hover:border-brand hover:text-brand whitespace-nowrap"
                         >
                           <Plus className="size-3.5" aria-hidden="true" />
-                          {product.isPackage && product.minOrderQty && product.minOrderQty > 1
-                            ? `Add (${product.minOrderQty} min)`
+                          {getProductMinQty(product) > 1
+                            ? `Add (${getProductMinQty(product)} min)`
                             : `Add${selectedVariant ? ` ${selectedVariant.label}` : ' to Order'}`}
                         </button>
                       )}
@@ -1953,37 +2075,58 @@ export function VendorWebsiteView({
                 </button>
               </div>
               <div className="mt-2 space-y-1.5">
-                {basketItems.map(({ key, displayName, unitPriceUsd, qty }) => (
-                  <div
-                    key={key}
-                    className="flex items-center justify-between gap-3 text-xs"
-                  >
-                    <span className="truncate font-medium text-foreground">
-                      {qty}× {displayName}
-                    </span>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="font-mono font-semibold text-foreground">
-                        {formatMoney(unitPriceUsd * qty, currency)}
+                {basketItems.map(({ key, displayName, unitPriceUsd, qty, minQty }) => {
+                  const isAtMin = minQty > 1 && qty <= minQty;
+                  return (
+                    <div
+                      key={key}
+                      className="flex items-center justify-between gap-3 text-xs"
+                    >
+                      <span className="truncate font-medium text-foreground">
+                        {qty}× {displayName}
+                        {minQty > 1 && (
+                          <span className="ml-1.5 text-[10px] font-bold text-amber-700 dark:text-amber-300">
+                            (Min {minQty})
+                          </span>
+                        )}
                       </span>
-                      <button
-                        type="button"
-                        onClick={() => updateBasketQty(key, -1)}
-                        className="grid size-5 cursor-pointer place-items-center rounded border border-border hover:bg-accent"
-                        aria-label={`Decrease ${displayName}`}
-                      >
-                        <Minus className="size-3" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => updateBasketQty(key, 1)}
-                        className="grid size-5 cursor-pointer place-items-center rounded border border-border hover:bg-accent"
-                        aria-label={`Increase ${displayName}`}
-                      >
-                        <Plus className="size-3" />
-                      </button>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="font-mono font-semibold text-foreground">
+                          {formatMoney(unitPriceUsd * qty, currency)}
+                        </span>
+                        <button
+                          type="button"
+                          disabled={isAtMin}
+                          title={isAtMin ? `Minimum order is ${minQty}` : undefined}
+                          onClick={() => updateBasketQty(key, -1)}
+                          className="grid size-5 cursor-pointer place-items-center rounded border border-border hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
+                          aria-label={`Decrease ${displayName}`}
+                        >
+                          <Minus className="size-3" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => updateBasketQty(key, 1)}
+                          className="grid size-5 cursor-pointer place-items-center rounded border border-border hover:bg-accent"
+                          aria-label={`Increase ${displayName}`}
+                        >
+                          <Plus className="size-3" />
+                        </button>
+                        {minQty > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => removeBasketItem(key)}
+                            className="grid size-5 cursor-pointer place-items-center rounded border border-border text-muted-foreground hover:border-rose-500/50 hover:text-rose-600"
+                            aria-label={`Remove ${displayName}`}
+                            title="Remove from basket"
+                          >
+                            <Trash2 className="size-3" />
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </div>
