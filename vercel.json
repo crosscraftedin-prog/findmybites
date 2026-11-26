@@ -64,6 +64,17 @@
       "destination": "/api/seo?path=/:city/:category"
     },
     {
+      "source": "/:city/:locality/:category",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": ".*(googlebot|bingbot|yandex|baiduspider|duckduckbot|slurp|facebookexternalhit|facebot|whatsapp|twitterbot|linkedinbot|telegrambot|slackbot|discordbot|pinterest|applebot|embedly|quora|outbrain|rogerbot).*"
+        }
+      ],
+      "destination": "/api/seo?path=/:city/:locality/:category"
+    },
+    {
       "source": "/((?!api/|assets/|icons/|sw\\.js|manifest\\.webmanifest|robots\\.txt|sitemap\\.xml|favicon\\.ico|favicon-32x32\\.png|apple-touch-icon\\.png).*)",
       "destination": "/index.html"
     }

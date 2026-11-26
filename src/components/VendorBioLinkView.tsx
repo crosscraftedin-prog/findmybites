@@ -193,10 +193,10 @@ export function VendorBioLinkView({
         <button
           type="button"
           onClick={onClose}
-          className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-semibold backdrop-blur-md transition-opacity hover:opacity-90 ${t.pillBg}`}
+          className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-bold backdrop-blur-md transition-opacity hover:opacity-90 ${t.pillBg}`}
         >
           <ArrowLeft className="size-3.5" aria-hidden="true" />
-          Marketplace
+          Back to Home
         </button>
 
         <div className="flex items-center gap-1.5">

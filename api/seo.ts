@@ -1,10 +1,26 @@
 // Crawler & Social Preview Pre-Render Endpoint for Search Bots (Googlebot, Bingbot, WhatsApp, etc.)
-// Serves rich semantic HTML, exact OpenGraph tags, and JSON-LD Schema directly from live Firestore
+// Serves rich semantic HTML, exact OpenGraph tags, Breadcrumbs, FAQs, and JSON-LD Schema directly from live Supabase
 // while human browsers continue loading the fast interactive React SPA.
 
 const SITE_ORIGIN = 'https://www.findmybites.com';
-const FIREBASE_PROJECT_ID = 'gen-lang-client-0613198330';
-const FIRESTORE_DATABASE_ID = 'ai-studio-findmybitespimpm-e62e8cda-3b00-4f15-9a37-e7c06c6009f7';
+
+const COUNTRY_ISO: Record<string, string> = {
+  India: 'IN',
+  'Dubai / UAE': 'AE',
+  'Sri Lanka': 'LK',
+  Pakistan: 'PK',
+  Bangladesh: 'BD',
+  Nepal: 'NP',
+};
+
+const COUNTRY_CURRENCY: Record<string, { code: string; rate: number; symbol: string }> = {
+  India: { code: 'INR', rate: 84, symbol: '₹' },
+  'Dubai / UAE': { code: 'AED', rate: 3.67, symbol: 'AED ' },
+  'Sri Lanka': { code: 'LKR', rate: 295, symbol: 'LKR ' },
+  Pakistan: { code: 'PKR', rate: 278, symbol: 'PKR ' },
+  Bangladesh: { code: 'BDT', rate: 119, symbol: '৳' },
+  Nepal: { code: 'NPR', rate: 134, symbol: 'NPR ' },
+};
 
 function escapeHtml(str: string): string {
   return str
@@ -19,27 +35,33 @@ function safeJsonLd(obj: unknown): string {
   return JSON.stringify(obj).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
 }
 
+function slugifySegment(raw: string): string {
+  return raw
+    .toLowerCase()
+    .replace(/&/g, 'and')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
 function humanizeSlug(slug: string): string {
   return slug
     .replace(/-and-/g, ' & ')
     .split('-')
     .filter(Boolean)
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .map((w) => {
+      if (w === 'ncr' || w === 'hsr' || w === 'jp' || w === 'btm' || w === 'dlf') {
+        return w.toUpperCase();
+      }
+      return w.charAt(0).toUpperCase() + w.slice(1);
+    })
     .join(' ');
 }
 
-interface FirestoreField {
-  stringValue?: string;
-  doubleValue?: number;
-  integerValue?: string;
-  booleanValue?: boolean;
-  arrayValue?: { values?: FirestoreField[] };
-  mapValue?: { fields?: Record<string, FirestoreField> };
-}
-
-interface FirestoreDoc {
-  name?: string;
-  fields?: Record<string, FirestoreField>;
+function formatPriceRangeForCountry(priceTier: string, country: string): string {
+  const count = Math.max(1, Math.min(4, (priceTier || '$$').length));
+  if (country === 'India') return '₹'.repeat(count);
+  if (country === 'Bangladesh') return '৳'.repeat(count);
+  return '$'.repeat(count);
 }
 
 interface VendorRecord {
@@ -52,10 +74,13 @@ interface VendorRecord {
   state: string;
   country: string;
   area: string;
+  serviceAreas: string[];
+  specialties: string[];
   lat: number;
   lng: number;
   whatsappNumber: string;
   priceTier: string;
+  startingPriceUsd: number;
   rating: number;
   reviewCount: number;
   tagline: string;
@@ -66,7 +91,14 @@ interface VendorRecord {
   seoKeywords?: string;
   googleMapsUrl?: string;
   instagramUrl?: string;
-  products: Array<{ id: string; name: string; description: string; priceUsd: number; image?: string }>;
+  products: Array<{
+    id: string;
+    name: string;
+    description: string;
+    priceUsd: number;
+    inStock?: boolean;
+    image?: string;
+  }>;
 }
 
 function parseSupabaseVendor(row: Record<string, unknown>): VendorRecord | null {
@@ -80,39 +112,62 @@ function parseSupabaseVendor(row: Record<string, unknown>): VendorRecord | null 
       const p = item as Record<string, unknown>;
       return {
         id: typeof p.id === 'string' ? p.id.trim() : '',
-        name: typeof p.name === 'string' && p.name.trim() ? p.name.trim() : 'Package',
+        name: typeof p.name === 'string' && p.name.trim() ? p.name.trim() : 'Signature Cake',
         description: typeof p.description === 'string' ? p.description.trim() : '',
         priceUsd: typeof p.priceUsd === 'number' ? p.priceUsd : 0,
+        inStock: p.inStock === false ? false : true,
         image: typeof p.image === 'string' && p.image.trim() ? p.image.trim() : undefined,
       };
     })
     .filter(
-      (p): p is { id: string; name: string; description: string; priceUsd: number; image: string | undefined } =>
-        p !== null
+      (
+        p
+      ): p is {
+        id: string;
+        name: string;
+        description: string;
+        priceUsd: number;
+        inStock: boolean;
+        image: string | undefined;
+      } => p !== null
     );
 
   const city = typeof row.city === 'string' && row.city.trim() ? row.city.trim() : 'Hyderabad';
+  const serviceAreas = Array.isArray(row.service_areas)
+    ? row.service_areas.filter((s): s is string => typeof s === 'string' && s.trim().length > 0)
+    : [];
+  const specialties = Array.isArray(row.specialties)
+    ? row.specialties.filter((s): s is string => typeof s === 'string' && s.trim().length > 0)
+    : [];
+
   return {
     slug,
     bioHandle:
       typeof row.bio_handle === 'string' && row.bio_handle.trim() ? row.bio_handle.trim() : slug,
     name,
-    category: typeof row.category === 'string' && row.category.trim() ? row.category.trim() : 'Bakers & Cakes',
+    category:
+      typeof row.category === 'string' && row.category.trim()
+        ? row.category.trim()
+        : 'Bakers & Cakes',
     marketplace: row.marketplace === 'party' ? 'party' : 'food',
     city,
     state: typeof row.state === 'string' && row.state.trim() ? row.state.trim() : 'Telangana',
     country: typeof row.country === 'string' && row.country.trim() ? row.country.trim() : 'India',
     area: typeof row.area === 'string' && row.area.trim() ? row.area.trim() : city,
+    serviceAreas,
+    specialties,
     lat: typeof row.lat === 'number' ? row.lat : 17.385,
     lng: typeof row.lng === 'number' ? row.lng : 78.4867,
     whatsappNumber: typeof row.whatsapp_number === 'string' ? row.whatsapp_number : '',
     priceTier: typeof row.price_tier === 'string' ? row.price_tier : '$$',
+    startingPriceUsd: typeof row.starting_price_usd === 'number' ? row.starting_price_usd : 8,
     rating: typeof row.rating === 'number' ? row.rating : 5,
     reviewCount: typeof row.review_count === 'number' ? row.review_count : 1,
     tagline: typeof row.tagline === 'string' ? row.tagline : '',
     description: typeof row.description === 'string' ? row.description : '',
     image: typeof row.image === 'string' ? row.image : '',
-    seoTitle: typeof row.seo_title === 'string' && row.seo_title.trim() ? row.seo_title.trim() : undefined,
+    seoTitle:
+      typeof row.seo_title === 'string' && row.seo_title.trim() ? row.seo_title.trim() : undefined,
     seoDescription:
       typeof row.seo_description === 'string' && row.seo_description.trim()
         ? row.seo_description.trim()
@@ -135,7 +190,7 @@ function parseSupabaseVendor(row: Record<string, unknown>): VendorRecord | null 
 
 async function queryActiveVendors(
   extraFilter?: { fieldPath: string; value: string },
-  limit = 40
+  limit = 60
 ): Promise<VendorRecord[]> {
   const supaUrl = (process.env.SUPABASE_URL || '').trim().replace(/\/$/, '');
   const supaKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
@@ -180,13 +235,35 @@ function safePublicImage(img?: string): string {
   return `${SITE_ORIGIN}${img.startsWith('/') ? img : `/${img}`}`;
 }
 
+function buildServesCuisine(vendor: VendorRecord): string[] {
+  const out = new Set<string>();
+  const lower = vendor.category.toLowerCase();
+  if (lower.includes('baker') || lower.includes('cake')) {
+    out.add('Bakery');
+    out.add('Custom Cakes');
+    out.add('Eggless Cakes');
+    out.add('Desserts');
+  } else if (lower.includes('catering') || lower.includes('counter')) {
+    out.add('Indian Catering');
+    out.add('Live Counters');
+  } else {
+    out.add(vendor.category);
+  }
+  for (const s of vendor.specialties.slice(0, 4)) {
+    if (s.trim()) out.add(s.trim());
+  }
+  return Array.from(out);
+}
+
 function renderHtml(params: {
   title: string;
   description: string;
   keywords: string;
   canonical: string;
   ogImage: string;
+  breadcrumbsHtml: string;
   h1: string;
+  introParagraph: string;
   bodyHtml: string;
   jsonLdList: unknown[];
 }): string {
@@ -205,7 +282,7 @@ function renderHtml(params: {
   <meta name="robots" content="index, follow, max-image-preview:large" />
   <link rel="canonical" href="${escapeHtml(params.canonical)}" />
   <meta property="og:type" content="website" />
-  <meta property="og:site_name" content="FindMyBites × PimpMyParty" />
+  <meta property="og:site_name" content="FindMyBites" />
   <meta property="og:title" content="${escapeHtml(params.title)}" />
   <meta property="og:description" content="${escapeHtml(params.description)}" />
   <meta property="og:url" content="${escapeHtml(params.canonical)}" />
@@ -216,27 +293,47 @@ function renderHtml(params: {
   <meta name="twitter:image" content="${escapeHtml(params.ogImage)}" />
   ${jsonLdTags}
 </head>
-<body style="font-family:system-ui,-apple-system,sans-serif;max-width:960px;margin:0 auto;padding:24px;color:#111;">
-  <header>
-    <a href="${SITE_ORIGIN}/" style="font-weight:800;text-decoration:none;color:#d95b16;">FindMyBites × PimpMyParty</a>
+<body style="font-family:system-ui,-apple-system,sans-serif;max-width:960px;margin:0 auto;padding:24px;color:#111;line-height:1.6;">
+  <header style="padding-bottom:14px;border-bottom:1px solid #e5e7eb;margin-bottom:18px;">
+    <a href="${SITE_ORIGIN}/" style="font-weight:800;text-decoration:none;color:#d95b16;font-size:18px;">FindMyBites — 0% Commission Home Bakers &amp; Custom Cakes in India</a>
   </header>
+  ${params.breadcrumbsHtml}
   <main>
     <h1>${escapeHtml(params.h1)}</h1>
-    <p>${escapeHtml(params.description)}</p>
+    <p>${escapeHtml(params.introParagraph)}</p>
     ${params.bodyHtml}
   </main>
-  <footer style="margin-top:40px;padding-top:16px;border-top:1px solid #e5e7eb;font-size:13px;color:#666;">
-    <p>Discover local bakers, home kitchens, caterers &amp; event decor across India, UAE, Sri Lanka, Pakistan, Bangladesh &amp; Nepal on <a href="${SITE_ORIGIN}/">FindMyBites.com</a>.</p>
+  <footer style="margin-top:40px;padding-top:16px;border-top:1px solid #e5e7eb;font-size:13px;color:#555;">
+    <nav aria-label="Popular Cities and Categories">
+      <p><strong>Popular Cities:</strong>
+        <a href="${SITE_ORIGIN}/hyderabad/home-bakers">Hyderabad</a> ·
+        <a href="${SITE_ORIGIN}/secunderabad/home-bakers">Secunderabad</a> ·
+        <a href="${SITE_ORIGIN}/bengaluru/eggless-cakes">Bengaluru</a> ·
+        <a href="${SITE_ORIGIN}/mumbai/birthday-cakes">Mumbai</a> ·
+        <a href="${SITE_ORIGIN}/delhi-ncr/custom-cakes">Delhi NCR</a> ·
+        <a href="${SITE_ORIGIN}/chennai/eggless-cakes">Chennai</a> ·
+        <a href="${SITE_ORIGIN}/pune/home-bakers">Pune</a> ·
+        <a href="${SITE_ORIGIN}/kolkata/custom-birthday-cakes">Kolkata</a>
+      </p>
+      <p><strong>Top Cake Categories:</strong>
+        <a href="${SITE_ORIGIN}/category/eggless-cakes">Eggless Cakes</a> ·
+        <a href="${SITE_ORIGIN}/category/bento-cakes">Bento Cakes</a> ·
+        <a href="${SITE_ORIGIN}/category/custom-birthday-cakes">Custom Birthday Cakes</a> ·
+        <a href="${SITE_ORIGIN}/category/brownies">Brownies</a> ·
+        <a href="${SITE_ORIGIN}/category/wedding-cakes">Wedding Cakes</a>
+      </p>
+    </nav>
+    <p>Order direct from local home bakers and party caterers via WhatsApp with 0% commission on <a href="${SITE_ORIGIN}/">FindMyBites.com</a>.</p>
   </footer>
 </body>
 </html>`;
 }
 
-interface VercelRequestLike {
+export interface VercelRequestLike {
   query?: Record<string, string | string[] | undefined>;
 }
 
-interface VercelResponseLike {
+export interface VercelResponseLike {
   status: (code: number) => VercelResponseLike;
   setHeader: (key: string, value: string) => void;
   send: (body: string) => void;
@@ -277,7 +374,10 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
           v.bioHandle.toLowerCase() === key ||
           v.slug.toLowerCase() === key ||
           v.slug.toLowerCase().startsWith(`${key}-`) ||
-          v.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') === key
+          v.name
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '') === key
       );
       if (aliasMatch) matches = [aliasMatch];
     }
@@ -286,39 +386,89 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
     if (vendor) {
       const rawItemParam = req.query?.item;
       const itemId = (Array.isArray(rawItemParam) ? rawItemParam[0] : rawItemParam || '').trim();
-      const matchedProduct = itemId
-        ? vendor.products.find((p) => p.id === itemId)
-        : undefined;
+      const matchedProduct = itemId ? vendor.products.find((p) => p.id === itemId) : undefined;
 
       const canonical = matchedProduct
         ? `${SITE_ORIGIN}/v/${encodeURIComponent(vendor.slug)}?item=${encodeURIComponent(matchedProduct.id)}`
         : `${SITE_ORIGIN}/v/${encodeURIComponent(vendor.slug)}`;
       const ogImage = safePublicImage(matchedProduct?.image || vendor.image);
+      const curr = COUNTRY_CURRENCY[vendor.country] || COUNTRY_CURRENCY.India;
+      const isoCountry = COUNTRY_ISO[vendor.country] || 'IN';
+      const citySlug = slugifySegment(vendor.city);
+      const catSlug = slugifySegment(vendor.category);
+
       const title = matchedProduct
-        ? `${matchedProduct.name} by ${vendor.name} (${vendor.city}) | FindMyBites`
+        ? `${matchedProduct.name} by ${vendor.name} (${vendor.area}, ${vendor.city}) | FindMyBites`
         : vendor.seoTitle ||
-          `${vendor.name} – ${vendor.category} in ${vendor.city} | FindMyBites`;
+          `${vendor.name} – ${vendor.category} in ${vendor.area}, ${vendor.city} | FindMyBites`;
       const description = matchedProduct
         ? `${matchedProduct.description || matchedProduct.name} — Order directly from ${vendor.name} in ${vendor.area}, ${vendor.city} on FindMyBites (0% commission).`
         : vendor.seoDescription ||
-          `${vendor.tagline || vendor.description} Book ${vendor.name} in ${vendor.area}, ${vendor.city}, ${vendor.state} directly on WhatsApp via FindMyBites.`;
+          `${vendor.tagline || vendor.description} Order from ${vendor.name} in ${vendor.area}, ${vendor.city}, ${vendor.state} directly on WhatsApp via FindMyBites with 0% commission.`;
       const keywords =
         vendor.seoKeywords ||
-        `${matchedProduct ? `${matchedProduct.name}, ` : ''}${vendor.name}, ${vendor.category} in ${vendor.city}, ${vendor.area} ${vendor.category}`;
-      const schemaType = vendor.category.toLowerCase().includes('baker')
+        `${matchedProduct ? `${matchedProduct.name}, ` : ''}${vendor.name}, ${vendor.category} in ${vendor.city}, ${vendor.area} ${vendor.category}, home bakers in ${vendor.city}`;
+
+      const isBaker =
+        vendor.category.toLowerCase().includes('baker') ||
+        vendor.category.toLowerCase().includes('cake') ||
+        vendor.category.toLowerCase().includes('dessert');
+      const schemaType = isBaker
         ? 'Bakery'
         : vendor.marketplace === 'food'
           ? 'FoodEstablishment'
           : 'LocalBusiness';
 
+      const breadcrumbsHtml = `<nav aria-label="Breadcrumb" style="font-size:13px;color:#555;margin-bottom:12px;">
+        <a href="${SITE_ORIGIN}/">Home</a> ›
+        <a href="${SITE_ORIGIN}/city/${encodeURIComponent(citySlug)}">${escapeHtml(vendor.city)}</a> ›
+        <a href="${SITE_ORIGIN}/${encodeURIComponent(citySlug)}/${encodeURIComponent(catSlug)}">${escapeHtml(vendor.category)}</a> ›
+        <span>${escapeHtml(vendor.name)}</span>
+      </nav>`;
+
       const productListHtml = vendor.products.length
-        ? `<h2>Menu &amp; Packages</h2><ul>${vendor.products
-            .map(
-              (p) =>
-                `<li><strong>${escapeHtml(p.name)}</strong> — ${escapeHtml(p.description)}</li>`
-            )
-            .join('')}</ul>`
+        ? `<section><h2>Signature Cakes, Menu &amp; Packages</h2><div style="display:grid;gap:14px;">${vendor.products
+            .slice(0, 20)
+            .map((p) => {
+              const localPrice = Math.round(Math.max(0, p.priceUsd) * curr.rate);
+              const altText = `${p.name} by ${vendor.name} - ${vendor.category} in ${vendor.area}, ${vendor.city}`;
+              const imgHtml = p.image
+                ? `<img src="${escapeHtml(safePublicImage(p.image))}" alt="${escapeHtml(altText)}" width="400" height="300" loading="lazy" style="max-width:200px;height:auto;border-radius:8px;" />`
+                : '';
+              return `<article style="border:1px solid #e5e7eb;padding:12px;border-radius:10px;">${imgHtml}<h3>${escapeHtml(p.name)} — ${escapeHtml(curr.symbol)}${localPrice.toLocaleString('en-IN')}</h3><p>${escapeHtml(p.description)}</p></article>`;
+            })
+            .join('')}</div></section>`
         : '';
+
+      const signatureOffers = vendor.products.slice(0, 12).map((p) => {
+        const localPrice = Math.round(Math.max(0, p.priceUsd) * curr.rate);
+        return {
+          '@type': 'Offer',
+          price: localPrice,
+          priceCurrency: curr.code,
+          availability:
+            p.inStock === false
+              ? 'https://schema.org/OutOfStock'
+              : 'https://schema.org/InStock',
+          itemOffered: {
+            '@type': 'Product',
+            name: p.name,
+            description:
+              p.description || `${p.name} by ${vendor.name} in ${vendor.area}, ${vendor.city}`,
+            image: safePublicImage(p.image || vendor.image),
+            brand: { '@type': 'Brand', name: vendor.name },
+            offers: {
+              '@type': 'Offer',
+              price: localPrice,
+              priceCurrency: curr.code,
+              availability:
+                p.inStock === false
+                  ? 'https://schema.org/OutOfStock'
+                  : 'https://schema.org/InStock',
+            },
+          },
+        };
+      });
 
       const html = renderHtml({
         title,
@@ -326,10 +476,12 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
         keywords,
         canonical,
         ogImage,
+        breadcrumbsHtml,
         h1: matchedProduct
-          ? `${matchedProduct.name} · ${vendor.name} (${vendor.city})`
+          ? `${matchedProduct.name} by ${vendor.name} (${vendor.area}, ${vendor.city})`
           : `${vendor.name} · ${vendor.category} in ${vendor.area}, ${vendor.city}`,
-        bodyHtml: `<p>${escapeHtml(matchedProduct?.description || vendor.description)}</p>${productListHtml}<p><a href="${escapeHtml(canonical)}">View full storefront &amp; WhatsApp ordering</a></p>`,
+        introParagraph: matchedProduct?.description || vendor.description || description,
+        bodyHtml: `${productListHtml}<p><a href="${escapeHtml(canonical)}">Order directly on WhatsApp with 0% commission</a></p>`,
         jsonLdList: [
           {
             '@context': 'https://schema.org',
@@ -339,7 +491,8 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
             url: canonical,
             image: ogImage,
             telephone: vendor.whatsappNumber ? `+${vendor.whatsappNumber}` : undefined,
-            priceRange: vendor.priceTier,
+            priceRange: formatPriceRangeForCountry(vendor.priceTier, vendor.country),
+            servesCuisine: buildServesCuisine(vendor),
             sameAs: [vendor.googleMapsUrl, vendor.instagramUrl].filter(Boolean),
             geo: {
               '@type': 'GeoCoordinates',
@@ -351,7 +504,7 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
               streetAddress: vendor.area,
               addressLocality: vendor.city,
               addressRegion: vendor.state,
-              addressCountry: vendor.country,
+              addressCountry: isoCountry,
             },
             aggregateRating: {
               '@type': 'AggregateRating',
@@ -360,18 +513,29 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
             },
             hasOfferCatalog: {
               '@type': 'OfferCatalog',
-              name: `${vendor.name} Menu & Packages`,
-              itemListElement: vendor.products.map((p) => ({
-                '@type': 'Offer',
-                itemOffered: {
-                  '@type': 'Product',
-                  name: p.name,
-                  description: p.description,
-                },
-                price: p.priceUsd,
-                priceCurrency: 'USD',
-              })),
+              name: `${vendor.name} Signature Cakes & Menu`,
+              itemListElement: signatureOffers,
             },
+          },
+          {
+            '@context': 'https://schema.org',
+            '@type': 'BreadcrumbList',
+            itemListElement: [
+              { '@type': 'ListItem', position: 1, name: 'Home', item: `${SITE_ORIGIN}/` },
+              {
+                '@type': 'ListItem',
+                position: 2,
+                name: vendor.city,
+                item: `${SITE_ORIGIN}/city/${citySlug}`,
+              },
+              {
+                '@type': 'ListItem',
+                position: 3,
+                name: vendor.category,
+                item: `${SITE_ORIGIN}/${citySlug}/${catSlug}`,
+              },
+              { '@type': 'ListItem', position: 4, name: vendor.name, item: canonical },
+            ],
           },
         ],
       });
@@ -380,10 +544,17 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
     }
   }
 
-  // Case 2: Programmatic City × Category Directory (/city/:city, /category/:cat, /:city/:cat)
+  // Case 2: Programmatic Hyper-Local Directory
+  // Pattern 1: /[city]/[category], /city/[city], /category/[category]
+  // Pattern 2: /[city]/[locality]/[category]
   let citySlug = '';
+  let localitySlug = '';
   let catSlug = '';
-  if (segments.length === 2 && segments[0] === 'city') {
+  if (segments.length === 3) {
+    citySlug = segments[0];
+    localitySlug = segments[1];
+    catSlug = segments[2];
+  } else if (segments.length === 2 && segments[0] === 'city') {
     citySlug = segments[1];
   } else if (segments.length === 2 && segments[0] === 'category') {
     catSlug = segments[1];
@@ -393,66 +564,172 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
   }
 
   const cityLabel = citySlug ? humanizeSlug(citySlug) : '';
+  const localityLabel = localitySlug ? humanizeSlug(localitySlug) : '';
   const isChristmas = catSlug.includes('christmas');
   const catLabel = isChristmas
     ? 'Christmas Plum Cakes & Festive Bakers'
     : catSlug
       ? humanizeSlug(catSlug)
-      : 'Bakers, Caterers & Event Vendors';
+      : 'Home Bakers & Custom Cakes';
+
+  const placeHeading =
+    localityLabel && cityLabel
+      ? `${localityLabel}, ${cityLabel}`
+      : cityLabel || 'India';
 
   const canonicalPath =
-    citySlug && catSlug
-      ? `/${citySlug}/${catSlug}`
-      : citySlug
-        ? `/city/${citySlug}`
-        : catSlug
-          ? `/category/${catSlug}`
-          : '/';
+    citySlug && localitySlug && catSlug
+      ? `/${citySlug}/${localitySlug}/${catSlug}`
+      : citySlug && catSlug
+        ? `/${citySlug}/${catSlug}`
+        : citySlug
+          ? `/city/${citySlug}`
+          : catSlug
+            ? `/category/${catSlug}`
+            : '/';
   const canonical = `${SITE_ORIGIN}${canonicalPath}`;
 
-  const h1 = cityLabel
-    ? `Best ${catLabel} in ${cityLabel}`
-    : `Top Verified ${catLabel} Near You`;
+  const h1 = cityLabel ? `Top ${catLabel} in ${placeHeading}` : `Top ${catLabel} Across India`;
   const title = cityLabel
-    ? `Best ${catLabel} in ${cityLabel} – Prices, Reviews & WhatsApp | FindMyBites`
-    : `${catLabel} Near You – Menus, Prices & Direct WhatsApp | FindMyBites`;
-  const description = cityLabel
-    ? `Discover verified ${catLabel.toLowerCase()} in ${cityLabel} on FindMyBites × PimpMyParty. Compare menus, prices, customer reviews & order directly on WhatsApp with 0% commission.`
-    : `Find verified ${catLabel.toLowerCase()} near you across India, Dubai, Sri Lanka, Pakistan, Bangladesh & Nepal on FindMyBites × PimpMyParty.`;
-  const keywords = cityLabel
-    ? `${catLabel.toLowerCase()} in ${cityLabel.toLowerCase()}, best ${catLabel.toLowerCase()} ${cityLabel.toLowerCase()}, FindMyBites`
-    : `${catLabel.toLowerCase()} near me, FindMyBites, PimpMyParty`;
+    ? `Best ${catLabel} in ${placeHeading} | Order Direct from Home Bakers – FindMyBites`
+    : `Best ${catLabel} Near You in India | Order Direct from Home Bakers – FindMyBites`;
 
   const isBakerySpecialty =
-    /^(cakes-near-me|birthday-cakes|eggless-cakes|brownies-near-me|custom-cakes|wedding-cakes|home-bakers|cupcakes-and-desserts)$/.test(
+    /^(cakes-near-me|birthday-cakes|custom-birthday-cakes|eggless-cakes|bento-cakes|brownies|brownies-near-me|custom-cakes|wedding-cakes|home-bakers|cupcakes-and-desserts)$/.test(
       catSlug
     );
-  const activeVendors = await queryActiveVendors(undefined, 80);
-  const matching = activeVendors.filter((v) => {
+  const activeVendors = await queryActiveVendors(undefined, 100);
+  const cityMatching = activeVendors.filter((v) => {
     const cityOk =
       !cityLabel ||
       v.city.toLowerCase().includes(cityLabel.toLowerCase()) ||
       v.state.toLowerCase().includes(cityLabel.toLowerCase()) ||
-      v.country.toLowerCase().includes(cityLabel.toLowerCase());
+      (citySlug === 'secunderabad' && v.city.toLowerCase().includes('hyderabad'));
     const catOk =
       !catSlug ||
       isChristmas ||
       (isBakerySpecialty &&
         (v.category.toLowerCase().includes('baker') ||
+          v.category.toLowerCase().includes('cake') ||
           v.category.toLowerCase().includes('dessert'))) ||
-      v.category.toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]+/g, '-').includes(catSlug);
+      slugifySegment(v.category).includes(catSlug);
     return cityOk && catOk;
   });
 
-  const listToRender = matching.length > 0 ? matching.slice(0, 20) : activeVendors.slice(0, 12);
+  // Prioritize vendors serving the exact requested locality
+  const sortedMatching = [...cityMatching].sort((a, b) => {
+    if (!localityLabel) return 0;
+    const locLower = localityLabel.toLowerCase();
+    const aHit =
+      a.area.toLowerCase().includes(locLower) ||
+      a.serviceAreas.some((sa) => sa.toLowerCase().includes(locLower))
+        ? 1
+        : 0;
+    const bHit =
+      b.area.toLowerCase().includes(locLower) ||
+      b.serviceAreas.some((sa) => sa.toLowerCase().includes(locLower))
+        ? 1
+        : 0;
+    return bHit - aHit;
+  });
+
+  const listToRender =
+    sortedMatching.length > 0 ? sortedMatching.slice(0, 20) : activeVendors.slice(0, 12);
+
+  const minPriceInr =
+    listToRender.length > 0
+      ? Math.max(
+          250,
+          Math.round(
+            Math.min(...listToRender.map((v) => Math.max(4, v.startingPriceUsd || 7))) * 84
+          )
+        )
+      : 550;
+
+  const introParagraph = cityLabel
+    ? `Looking for fresh ${catLabel.toLowerCase()} in ${placeHeading}? Discover top-rated local home bakers, eggless cake makers, and party food vendors delivering across ${localityLabel ? `${localityLabel} and nearby ${cityLabel} areas` : cityLabel}. Compare transparent INR menus starting from ₹${minPriceInr.toLocaleString('en-IN')}, check doorstep delivery or kitchen pickup availability, and order directly on WhatsApp with 0% commission.`
+    : `Discover top-rated ${catLabel.toLowerCase()} across Hyderabad, Secunderabad, Bengaluru, Mumbai, Delhi NCR, Chennai, Pune, Kolkata & across India. Compare menus starting from ₹${minPriceInr.toLocaleString('en-IN')} and order directly via WhatsApp with 0% commission.`;
+
+  const description = introParagraph.slice(0, 210);
+  const keywords = cityLabel
+    ? `${catLabel.toLowerCase()} in ${placeHeading.toLowerCase()}, eggless cakes ${placeHeading.toLowerCase()}, home bakers in ${cityLabel.toLowerCase()}, custom cakes ${cityLabel.toLowerCase()}, FindMyBites`
+    : `${catLabel.toLowerCase()} near me, eggless cakes india, home bakers india, FindMyBites`;
+
+  const faqs = [
+    {
+      question: `Who are the best eggless home bakers in ${placeHeading}?`,
+      answer: `FindMyBites features verified local home bakers in ${placeHeading} specializing in 100% eggless birthday cakes, bento cakes, fudgy brownies, and custom theme cakes with transparent INR pricing and direct WhatsApp ordering.`,
+    },
+    {
+      question: `How do I order a custom cake in ${cityLabel || 'India'} without delivery app markups?`,
+      answer: `Browse ${catLabel.toLowerCase()} in ${placeHeading} on FindMyBites and chat directly with the home baker on WhatsApp or use direct store checkout with 0% middleman commission.`,
+    },
+    {
+      question: `What is the starting price for ${catLabel.toLowerCase()} in ${placeHeading}?`,
+      answer: `Freshly made ${catLabel.toLowerCase()} from local home bakers in ${placeHeading} start from approximately ₹${minPriceInr.toLocaleString('en-IN')}, with custom designs quoted directly on WhatsApp.`,
+    },
+    {
+      question: `Do bakers in ${placeHeading} offer doorstep delivery and kitchen pickup?`,
+      answer: `Yes! Listed home bakers and caterers in ${placeHeading} offer scheduled doorstep delivery across ${cityLabel || 'your city'} as well as direct pickup.`,
+    },
+  ];
+
+  const breadcrumbItems: Array<Record<string, unknown>> = [
+    { '@type': 'ListItem', position: 1, name: 'Home', item: `${SITE_ORIGIN}/` },
+  ];
+  let pos = 2;
+  if (citySlug) {
+    breadcrumbItems.push({
+      '@type': 'ListItem',
+      position: pos++,
+      name: cityLabel,
+      item: `${SITE_ORIGIN}/city/${citySlug}`,
+    });
+  }
+  if (citySlug && localitySlug) {
+    breadcrumbItems.push({
+      '@type': 'ListItem',
+      position: pos++,
+      name: localityLabel,
+      item: `${SITE_ORIGIN}/${citySlug}/${localitySlug}/${catSlug || 'home-bakers'}`,
+    });
+  }
+  if (catSlug) {
+    breadcrumbItems.push({
+      '@type': 'ListItem',
+      position: pos++,
+      name: catLabel,
+      item: canonical,
+    });
+  }
+
+  const breadcrumbsHtml = `<nav aria-label="Breadcrumb" style="font-size:13px;color:#555;margin-bottom:12px;">
+    <a href="${SITE_ORIGIN}/">Home</a>${
+      citySlug
+        ? ` › <a href="${SITE_ORIGIN}/city/${encodeURIComponent(citySlug)}">${escapeHtml(cityLabel)}</a>`
+        : ''
+    }${
+      citySlug && localitySlug
+        ? ` › <a href="${SITE_ORIGIN}/${encodeURIComponent(citySlug)}/${encodeURIComponent(localitySlug)}/${encodeURIComponent(catSlug || 'home-bakers')}">${escapeHtml(localityLabel)}</a>`
+        : ''
+    }${catSlug ? ` › <span>${escapeHtml(catLabel)}</span>` : ''}
+  </nav>`;
+
   const listHtml = listToRender.length
-    ? `<h2>Verified Listings</h2><ul>${listToRender
+    ? `<section><h2>Verified ${escapeHtml(catLabel)} in ${escapeHtml(placeHeading)}</h2><ul>${listToRender
         .map(
           (v) =>
-            `<li><a href="${SITE_ORIGIN}/v/${encodeURIComponent(v.slug)}">${escapeHtml(v.name)}</a> — ${escapeHtml(v.category)} in ${escapeHtml(v.area)}, ${escapeHtml(v.city)}</li>`
+            `<li><article><a href="${SITE_ORIGIN}/v/${encodeURIComponent(v.slug)}"><strong>${escapeHtml(v.name)}</strong></a> — ${escapeHtml(v.category)} in ${escapeHtml(v.area)}, ${escapeHtml(v.city)} (Starting ₹${Math.round(Math.max(4, v.startingPriceUsd || 7) * 84).toLocaleString('en-IN')})</article></li>`
         )
-        .join('')}</ul>`
+        .join('')}</ul></section>`
     : '';
+
+  const faqHtml = `<section style="margin-top:28px;"><h2>Frequently Asked Questions about ${escapeHtml(catLabel)} in ${escapeHtml(placeHeading)}</h2>${faqs
+    .map(
+      (f) =>
+        `<article style="margin-bottom:14px;"><h3>${escapeHtml(f.question)}</h3><p>${escapeHtml(f.answer)}</p></article>`
+    )
+    .join('')}</section>`;
 
   const html = renderHtml({
     title,
@@ -460,8 +737,10 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
     keywords,
     canonical,
     ogImage: `${SITE_ORIGIN}/og-cover.png`,
+    breadcrumbsHtml,
     h1,
-    bodyHtml: listHtml,
+    introParagraph,
+    bodyHtml: `${listHtml}${faqHtml}`,
     jsonLdList: [
       {
         '@context': 'https://schema.org',
@@ -477,30 +756,20 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
       },
       {
         '@context': 'https://schema.org',
+        '@type': 'FAQPage',
+        mainEntity: faqs.map((f) => ({
+          '@type': 'Question',
+          name: f.question,
+          acceptedAnswer: {
+            '@type': 'Answer',
+            text: f.answer,
+          },
+        })),
+      },
+      {
+        '@context': 'https://schema.org',
         '@type': 'BreadcrumbList',
-        itemListElement: [
-          { '@type': 'ListItem', position: 1, name: 'Home', item: `${SITE_ORIGIN}/` },
-          ...(citySlug
-            ? [
-                {
-                  '@type': 'ListItem',
-                  position: 2,
-                  name: cityLabel,
-                  item: `${SITE_ORIGIN}/city/${citySlug}`,
-                },
-              ]
-            : []),
-          ...(catSlug
-            ? [
-                {
-                  '@type': 'ListItem',
-                  position: citySlug ? 3 : 2,
-                  name: catLabel,
-                  item: canonical,
-                },
-              ]
-            : []),
-        ],
+        itemListElement: breadcrumbItems,
       },
     ],
   });

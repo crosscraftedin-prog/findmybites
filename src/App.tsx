@@ -162,9 +162,15 @@ import {
 import { CustomMenuDish, mergeChristmasDishes } from './data/christmasMenu';
 import { requestBrowserGpsLocation, resolveRegionFromCoords } from './utils/geolocation';
 import {
+  POPULAR_LOCALITIES_BY_CITY,
   ResolvedSeoDirectoryRoute,
+  SEO_CATEGORIES,
+  SEO_CITIES,
+  TOP_CAKE_SEO_CATEGORY_SLUGS,
+  TOP_INDIA_SEO_CITY_SLUGS,
   buildCityCategoryPath,
   resolveSeoDirectoryRoute,
+  slugifySeoSegment,
 } from './utils/seoDirectory';
 
 function slugifySeo(text: string): string {
@@ -401,12 +407,12 @@ const HOW_IT_WORKS_STEPS = [
 
 const HERO_META = {
   FINDMYBITES: {
-    eyebrow: 'FindMyBites · 12 Food, Live Counter, Catering, Bar, Mithai & Gifting Categories',
-    headlineLead: 'Every baker, live counter &',
-    headlineAccent: 'catering artisan near you',
+    eyebrow: 'FindMyBites India · 0% Commission Direct WhatsApp Ordering',
+    headlineLead: 'Order custom cakes from',
+    headlineAccent: 'local home bakers across India',
     subtitle:
-      'Press Near Me for local bakers, custom cakes, live chaat counters, catering, mocktail bars, snack boxes, mithai & gifting hampers across India, Dubai, Sri Lanka, Pakistan, Bangladesh & Nepal — chat straight on WhatsApp.',
-    searchPlaceholder: 'Search cakes, live chaat, caterers, mocktail bars, snack boxes…',
+      'Discover top-rated home bakers, 100% eggless birthday cakes, bento cakes, fudgy brownies, party caterers, live counters & mocktail bars near you in Hyderabad, Bengaluru, Mumbai & across India — order directly on WhatsApp with 0% commission.',
+    searchPlaceholder: 'Search eggless cakes, bento cakes, brownies, home bakers, caterers…',
     image: HERO_FOOD_IMAGE,
     overlay: 'from-amber-950/85 via-orange-950/70 to-rose-950/45',
     chips: [
@@ -940,7 +946,9 @@ export default function App() {
       setUserCoords({
         lat: resolved.cityEntry.lat,
         lng: resolved.cityEntry.lng,
-        label: `${resolved.cityEntry.city}, ${resolved.cityEntry.state}`,
+        label: resolved.localityName
+          ? `${resolved.localityName}, ${resolved.cityEntry.city}`
+          : `${resolved.cityEntry.city}, ${resolved.cityEntry.state}`,
         country: resolved.cityEntry.country,
       });
       setNearMeRadiusKm(0);
@@ -1517,8 +1525,15 @@ export default function App() {
     const isLiveCloudStore = (v: Vendor) => Boolean(v.isCloud || v.ownerId);
 
     // Real cloud storefronts rank ahead of static demo showcase listings,
+    // locality-matched vendors rank first on /[city]/[locality]/[category] routes,
     // and paid SaaS listings (Business Spotlight > Pro Partner > Free) ALWAYS rank at the top!
+    const targetLocality = seoDirectoryRoute?.localityName?.toLowerCase() || '';
     return [...list].sort((a, b) => {
+      if (targetLocality) {
+        const aLocMatch = vendorCoversLocationQuery(a, targetLocality) ? 1 : 0;
+        const bLocMatch = vendorCoversLocationQuery(b, targetLocality) ? 1 : 0;
+        if (aLocMatch !== bLocMatch) return bLocMatch - aLocMatch;
+      }
       const rankDiff = planRankWeight(b.planTier) - planRankWeight(a.planTier);
       const cloudDiff = Number(isLiveCloudStore(b)) - Number(isLiveCloudStore(a));
 
@@ -1553,6 +1568,7 @@ export default function App() {
     sortBy,
     userCoords,
     nearMeRadiusKm,
+    seoDirectoryRoute,
   ]);
 
   useSeoMeta({
@@ -1902,12 +1918,14 @@ export default function App() {
           </div>
         )}
 
-        {/* Programmatic City × Category Local SEO Directory Banner (Justdial-style landing view) */}
+        {/* Programmatic City / Locality × Category Local SEO Directory Banner */}
         {seoDirectoryRoute && (
           <div id="seo-directory-top">
             <CityCategorySeoBanner
               route={seoDirectoryRoute}
               matchingCount={filteredVendors.length}
+              matchingVendors={filteredVendors}
+              currency={currency}
               onNavigateSeoPath={handleNavigateSeoPath}
               onClearRoute={handleClearSeoRoute}
               onOpenEventRequest={() => setEventRequestModalOpen(true)}
@@ -1924,6 +1942,8 @@ export default function App() {
                 src={hero.image}
                 alt=""
                 aria-hidden="true"
+                width={1600}
+                height={900}
                 fetchPriority="high"
                 decoding="async"
                 referrerPolicy="no-referrer"
@@ -1950,18 +1970,33 @@ export default function App() {
                 {hero.eyebrow}
               </span>
 
-              <h1 className="mt-4 text-4xl font-extrabold leading-[1.08] tracking-tight text-white sm:text-5xl lg:text-6xl">
-                {hero.headlineLead}{' '}
-                <span
-                  className={`bg-gradient-to-r bg-clip-text text-transparent ${
-                    ecosystem === 'FINDMYBITES'
-                      ? 'from-amber-300 via-orange-300 to-rose-300'
-                      : 'from-fuchsia-300 via-pink-300 to-amber-200'
-                  }`}
-                >
-                  {hero.headlineAccent}
-                </span>
-              </h1>
+              {seoDirectoryRoute ? (
+                <h2 className="mt-4 text-4xl font-extrabold leading-[1.08] tracking-tight text-white sm:text-5xl lg:text-6xl">
+                  {hero.headlineLead}{' '}
+                  <span
+                    className={`bg-gradient-to-r bg-clip-text text-transparent ${
+                      ecosystem === 'FINDMYBITES'
+                        ? 'from-amber-300 via-orange-300 to-rose-300'
+                        : 'from-fuchsia-300 via-pink-300 to-amber-200'
+                    }`}
+                  >
+                    {hero.headlineAccent}
+                  </span>
+                </h2>
+              ) : (
+                <h1 className="mt-4 text-4xl font-extrabold leading-[1.08] tracking-tight text-white sm:text-5xl lg:text-6xl">
+                  {hero.headlineLead}{' '}
+                  <span
+                    className={`bg-gradient-to-r bg-clip-text text-transparent ${
+                      ecosystem === 'FINDMYBITES'
+                        ? 'from-amber-300 via-orange-300 to-rose-300'
+                        : 'from-fuchsia-300 via-pink-300 to-amber-200'
+                    }`}
+                  >
+                    {hero.headlineAccent}
+                  </span>
+                </h1>
+              )}
 
               <p className="mx-auto mt-4 max-w-2xl text-base text-white/85 sm:text-lg">
                 {hero.subtitle}
@@ -3486,6 +3521,111 @@ export default function App() {
             </div>
           </div>
 
+          {/* Internal Linking SEO Architecture: Popular Cities, Localities & Top Cake Categories */}
+          <nav
+            aria-label="Popular Cities and Localities"
+            className="mt-10 border-t border-border pt-8"
+          >
+            <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-end">
+              <div>
+                <h3 className="text-sm font-extrabold tracking-tight text-foreground">
+                  Popular Cities &amp; Localities — Order Cakes Direct from Home Bakers
+                </h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Explore 0% commission home bakers, eggless birthday cakes, bento cakes, brownies &amp; wedding cakes across India.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-semibold">
+                {TOP_CAKE_SEO_CATEGORY_SLUGS.map((catSlug) => {
+                  const cat = SEO_CATEGORIES.find((c) => c.slug === catSlug);
+                  if (!cat) return null;
+                  const path = `/category/${cat.slug}`;
+                  return (
+                    <a
+                      key={cat.slug}
+                      href={path}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        handleNavigateSeoPath(path);
+                      }}
+                      className="text-brand hover:underline"
+                    >
+                      {cat.shortLabel || cat.displayLabel || cat.category}
+                    </a>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="mt-5 grid grid-cols-2 gap-5 sm:grid-cols-4 lg:grid-cols-4">
+              {TOP_INDIA_SEO_CITY_SLUGS.map((citySlug) => {
+                const cityEntry = SEO_CITIES.find((c) => c.slug === citySlug);
+                if (!cityEntry) return null;
+                const localities = (POPULAR_LOCALITIES_BY_CITY[citySlug] || []).slice(0, 4);
+                return (
+                  <div key={citySlug} className="space-y-1.5">
+                    <h4 className="text-xs font-extrabold uppercase tracking-wider text-foreground">
+                      <a
+                        href={`/${citySlug}/home-bakers`}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          handleNavigateSeoPath(`/${citySlug}/home-bakers`);
+                        }}
+                        className="hover:text-brand"
+                      >
+                        {cityEntry.city} Home Bakers
+                      </a>
+                    </h4>
+                    <ul className="space-y-1 text-xs text-muted-foreground">
+                      <li>
+                        <a
+                          href={`/${citySlug}/eggless-cakes`}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            handleNavigateSeoPath(`/${citySlug}/eggless-cakes`);
+                          }}
+                          className="hover:text-brand"
+                        >
+                          Eggless Cakes in {cityEntry.city}
+                        </a>
+                      </li>
+                      <li>
+                        <a
+                          href={`/${citySlug}/custom-birthday-cakes`}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            handleNavigateSeoPath(`/${citySlug}/custom-birthday-cakes`);
+                          }}
+                          className="hover:text-brand"
+                        >
+                          Birthday Cakes in {cityEntry.city}
+                        </a>
+                      </li>
+                      {localities.map((loc) => {
+                        const locSlug = slugifySeoSegment(loc);
+                        const locPath = `/${citySlug}/${locSlug}/custom-cakes`;
+                        return (
+                          <li key={locSlug}>
+                            <a
+                              href={locPath}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                handleNavigateSeoPath(locPath);
+                              }}
+                              className="hover:text-brand"
+                            >
+                              Custom Cakes in {loc}
+                            </a>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                );
+              })}
+            </div>
+          </nav>
+
           <div className="mt-8 flex flex-col items-center justify-between gap-4 border-t border-border pt-6 text-xs text-muted-foreground sm:flex-row">
             <p>© 2026 FindMyBites × PimpMyParty. Phase 1: India, UAE, Sri Lanka, Pakistan, Bangladesh &amp; Nepal.</p>
             <div className="flex flex-wrap items-center justify-center gap-4">
@@ -3605,6 +3745,7 @@ export default function App() {
             onSignIn={handleSignIn}
             onEditStorefront={handleEditStorefront}
             onOpenBioLink={handleOpenBioLink}
+            onNavigateSeoPath={handleNavigateSeoPath}
             onClose={() => setActiveVendor(null)}
             onToggleSave={toggleSave}
             onCreateBooking={handleCreateBooking}

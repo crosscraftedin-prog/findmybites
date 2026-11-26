@@ -6,6 +6,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { createSupabaseApiRouter } from './api/_lib/supabaseApi.js';
 import { runJoshEventPlanner, type JoshPlannerRequest } from './api/_lib/joshPlanner.js';
+import { buildDynamicSitemapXml } from './api/sitemap.js';
+import seoCrawlerHandler from './api/seo.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -13,6 +15,9 @@ const __dirname = path.dirname(__filename);
 const app = express();
 app.use(express.json({ limit: '12mb' }));
 app.use('/api/db', createSupabaseApiRouter());
+
+const CRAWLER_UA_RE =
+  /(googlebot|bingbot|yandex|baiduspider|duckduckbot|slurp|facebookexternalhit|facebot|whatsapp|twitterbot|linkedinbot|telegrambot|slackbot|discordbot|pinterest|applebot|embedly|quora|outbrain|rogerbot)/i;
 
 function resolveBaseUrl(req: express.Request): string {
   if (process.env.APP_URL && !process.env.APP_URL.includes('MY_APP_URL')) {
@@ -36,116 +41,62 @@ app.get('/robots.txt', (req, res) => {
 });
 
 app.get('/sitemap.xml', async (req, res) => {
-  const baseUrl = resolveBaseUrl(req);
-  const today = new Date().toISOString().split('T')[0];
-
-  const categories = [
-    'bakers-and-cakes',
-    'home-bakers-and-cloud-kitchens',
-    'live-counters-and-food-stalls',
-    'catering-services',
-    'private-chefs-and-home-dining',
-    'bar-mocktails-and-beverage-carts',
-    'snack-boxes-and-party-platters',
-    'dessert-tables-and-sweet-stations',
-    'gifting-hampers-and-return-favors',
-    'mithai-chocolatiers-and-dates',
-    'food-trucks-and-pop-up-carts',
-    'healthy-vegan-and-diet-catering',
-    'wedding-and-party-decor',
-    'balloon-and-theme-birthday-decor',
-    'event-and-wedding-planners',
-    'djs-sound-and-live-bands',
-    'photographers-and-videographers',
-    'venues-farmhouses-and-villas',
-    'photo-booths-and-360-spinners',
-    'kids-entertainment-and-mascots',
-    'anchors-emcees-and-performers',
-    'makeup-hair-and-mehendi-artists',
-    'event-rentals-furniture-and-tents',
-    'lighting-av-and-cold-fireworks',
-  ];
-
-  const countries = ['india', 'dubai-uae', 'sri-lanka', 'pakistan', 'bangladesh', 'nepal'];
-
-  const staticVendorSlugs = [
-    'saffron-crumb-mumbai',
-    'royal-chaat-live-delhi',
-    'botanical-bar-dubai',
-    'marigold-decor-dubai',
-    'festive-hamper-bengaluru',
-    'ceylon-feast-colombo',
-    'lahore-shahi-caterers',
-    'dhaka-velvet-bakes',
-    'himalayan-bloom-kathmandu',
-    'pulse-nights-mumbai',
-    'karachi-sweet-home-baker',
-    'colombo-moments-photo',
-    'pastel-pop-balloons-bengaluru',
-    'qasr-dates-mithai-dubai',
-    'chhatarpur-villa-lawns-delhi',
-    'spin360-booths-mumbai',
-  ];
-
-  let liveSlugs: string[] = [];
   try {
-    const supaUrl = (process.env.SUPABASE_URL || '').trim().replace(/\/$/, '');
-    const supaKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
-    if (supaUrl && supaKey) {
-      const r = await fetch(
-        `${supaUrl}/rest/v1/vendors?select=slug&status=eq.active&limit=500`,
-        {
-          headers: {
-            apikey: supaKey,
-            Authorization: `Bearer ${supaKey}`,
-          },
-        }
-      );
-      if (r.ok) {
-        const rows = (await r.json()) as Array<{ slug?: string }>;
-        liveSlugs = rows.map((row) => row.slug || '').filter(Boolean);
-      }
-    }
-  } catch {
-    // Non-fatal: fall back to static vendor slugs
+    const baseUrl = resolveBaseUrl(req);
+    const xml = await buildDynamicSitemapXml(baseUrl);
+    res.setHeader('Cache-Control', 'public, max-age=1800');
+    res.type('application/xml; charset=utf-8').send(xml);
+  } catch (err) {
+    console.error('Dynamic sitemap error:', err);
+    res.status(500).type('text/plain').send('Failed to generate sitemap');
+  }
+});
+
+// Server-side SEO pre-rendering for Search Engine & Social Media Crawlers
+app.use(async (req, res, next) => {
+  if (req.method !== 'GET') return next();
+  const ua = String(req.headers['user-agent'] || '');
+  if (!CRAWLER_UA_RE.test(ua)) return next();
+
+  const p = req.path || '/';
+  if (
+    p === '/' ||
+    p.startsWith('/api/') ||
+    p.startsWith('/assets/') ||
+    p.startsWith('/icons/') ||
+    p.startsWith('/src/') ||
+    p.startsWith('/@vite') ||
+    p.startsWith('/node_modules') ||
+    /\.(js|css|png|jpg|jpeg|webp|avif|svg|ico|json|webmanifest|xml|txt|map|woff2?)$/i.test(p)
+  ) {
+    return next();
   }
 
-  const vendorSlugs = Array.from(new Set([...liveSlugs, ...staticVendorSlugs]));
-
-  const urls = [
-    { loc: `${baseUrl}/`, priority: '1.0', freq: 'daily' },
-    ...countries.map((c) => ({
-      loc: `${baseUrl}/?country=${encodeURIComponent(c)}`,
-      priority: '0.9',
-      freq: 'daily',
-    })),
-    ...categories.map((cat) => ({
-      loc: `${baseUrl}/?category=${encodeURIComponent(cat)}`,
-      priority: '0.85',
-      freq: 'weekly',
-    })),
-    ...vendorSlugs.map((slug) => ({
-      loc: `${baseUrl}/v/${encodeURIComponent(slug)}`,
-      priority: '0.8',
-      freq: 'weekly',
-    })),
-  ];
-
-  const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${urls
-  .map(
-    (u) => `  <url>
-    <loc>${u.loc}</loc>
-    <lastmod>${today}</lastmod>
-    <changefreq>${u.freq}</changefreq>
-    <priority>${u.priority}</priority>
-  </url>`
-  )
-  .join('\n')}
-</urlset>`;
-
-  res.type('application/xml').send(xml);
+  try {
+    await seoCrawlerHandler(
+      {
+        query: {
+          path: p,
+          item: typeof req.query.item === 'string' ? req.query.item : undefined,
+        },
+      },
+      {
+        status: (code: number) => {
+          res.status(code);
+          return {
+            status: () => res as unknown as never,
+            setHeader: (k: string, v: string) => res.setHeader(k, v),
+            send: (body: string) => res.send(body),
+          };
+        },
+        setHeader: (k: string, v: string) => res.setHeader(k, v),
+        send: (body: string) => res.send(body),
+      }
+    );
+  } catch (err) {
+    console.error('Crawler SSR render error:', err);
+    next();
+  }
 });
 
 // =========================================================================

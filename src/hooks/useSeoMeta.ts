@@ -1,11 +1,16 @@
 import { useEffect } from 'react';
 import {
+  COUNTRY_DEFAULT_CURRENCY,
   DEFAULT_SITE_SETTINGS,
   LaunchCountry,
   SiteSettings,
   Vendor,
+  usdToLocal,
 } from '../data/vendors';
-import { ResolvedSeoDirectoryRoute } from '../utils/seoDirectory';
+import {
+  ResolvedSeoDirectoryRoute,
+  slugifySeoSegment,
+} from '../utils/seoDirectory';
 
 interface SeoMetaOptions {
   activeVendor: Vendor | null;
@@ -16,6 +21,45 @@ interface SeoMetaOptions {
   selectedCountry: LaunchCountry;
   selectedState: string;
   ecosystem: 'FINDMYBITES' | 'PIMPMYPARTY';
+}
+
+const COUNTRY_ISO_CODE: Record<string, string> = {
+  India: 'IN',
+  'Dubai / UAE': 'AE',
+  'Sri Lanka': 'LK',
+  Pakistan: 'PK',
+  Bangladesh: 'BD',
+  Nepal: 'NP',
+};
+
+function formatPriceRangeForCountry(priceTier: string, country: string): string {
+  const count = Math.max(1, Math.min(4, (priceTier || '$$').length));
+  if (country === 'India') return '₹'.repeat(count);
+  if (country === 'Bangladesh') return '৳'.repeat(count);
+  return '$'.repeat(count);
+}
+
+function buildServesCuisine(vendor: Vendor): string[] {
+  const items = new Set<string>();
+  const catLower = vendor.category.toLowerCase();
+  if (catLower.includes('baker') || catLower.includes('cake')) {
+    items.add('Bakery');
+    items.add('Custom Cakes');
+    items.add('Eggless Cakes');
+    items.add('Desserts');
+  } else if (catLower.includes('catering') || catLower.includes('counter')) {
+    items.add('Indian Catering');
+    items.add('Live Food Counters');
+    items.add('Party Food');
+  } else if (catLower.includes('bar') || catLower.includes('mocktail')) {
+    items.add('Mocktails & Beverages');
+  } else {
+    items.add(vendor.category);
+  }
+  for (const spec of vendor.specialties.slice(0, 4)) {
+    if (spec.trim()) items.add(spec.trim());
+  }
+  return Array.from(items);
 }
 
 function upsertMeta(attr: 'name' | 'property', key: string, content: string) {
@@ -75,33 +119,36 @@ export function useSeoMeta({
     if (activeVendor) {
       title =
         activeVendor.seoTitle?.trim() ||
-        `${activeVendor.name} – ${activeVendor.category} in ${activeVendor.city}`;
+        `${activeVendor.name} – ${activeVendor.category} in ${activeVendor.area}, ${activeVendor.city} | FindMyBites`;
       description =
         activeVendor.seoDescription?.trim() ||
-        `${activeVendor.tagline} Book ${activeVendor.name} in ${activeVendor.area}, ${activeVendor.city}, ${activeVendor.state} directly on WhatsApp via FindMyBites × PimpMyParty.`;
+        `${activeVendor.tagline} Order from ${activeVendor.name} in ${activeVendor.area}, ${activeVendor.city}, ${activeVendor.state} directly on WhatsApp with 0% commission via FindMyBites.`;
       keywords =
         activeVendor.seoKeywords?.trim() ||
-        `${activeVendor.name}, ${activeVendor.category} in ${activeVendor.city}, ${activeVendor.area} ${activeVendor.category.toLowerCase()}`;
+        `${activeVendor.name}, ${activeVendor.category} in ${activeVendor.city}, ${activeVendor.area} ${activeVendor.category.toLowerCase()}, home bakers in ${activeVendor.city}`;
       canonical = `${origin}/v/${activeVendor.slug}`;
     } else if (seoDirectoryRoute) {
       title = seoDirectoryRoute.title;
       description = seoDirectoryRoute.description;
       keywords = seoDirectoryRoute.keywords;
       canonical = `${origin}${seoDirectoryRoute.canonicalPath}`;
-    } else if (selectedCategory !== 'All' || selectedCountry !== 'All' || selectedState !== 'All') {
+    } else if (selectedCategory !== 'All' || selectedState !== 'All' || ecosystem === 'PIMPMYPARTY') {
       const subject =
         selectedCategory !== 'All'
           ? selectedCategory
           : ecosystem === 'FINDMYBITES'
-            ? 'Bakers, Catering & Live Counters'
+            ? 'Home Bakers, Custom Cakes & Catering'
             : 'Wedding Decor, DJs & Event Vendors';
       const placeParts = [
         selectedState !== 'All' ? selectedState : '',
         selectedCountry !== 'All' ? selectedCountry : '',
       ].filter(Boolean);
-      const place = placeParts.length > 0 ? ` in ${placeParts.join(', ')}` : ' Near You';
-      title = `${subject}${place} – FindMyBites × PimpMyParty`;
-      description = `Compare verified ${subject.toLowerCase()}${place}. View full one-page product catalogs, prices, reviews & chat directly on WhatsApp.`;
+      const place = placeParts.length > 0 ? ` in ${placeParts.join(', ')}` : ' in India';
+      title = `Best ${subject}${place} | Order Direct – FindMyBites`;
+      description = `Compare verified ${subject.toLowerCase()}${place}. View real INR product menus, starting prices, reviews & order directly on WhatsApp with 0% commission.`;
+    } else {
+      // Preserve exact homepage SEO title, description & canonical when on root homepage
+      canonical = `${origin}/`;
     }
 
     const resolvePublicImage = (img?: string) => {
@@ -124,89 +171,168 @@ export function useSeoMeta({
     upsertMeta('name', 'twitter:image', ogImage);
     upsertCanonical(canonical);
 
-    // 1. Vendor LocalBusiness / Bakery + BreadcrumbList JSON-LD
+    // 1. Vendor Bakery / LocalBusiness + Product Offers (INR) + BreadcrumbList JSON-LD
     if (activeVendor) {
-      const schemaType = activeVendor.category.toLowerCase().includes('baker')
+      const isBaker =
+        activeVendor.category.toLowerCase().includes('baker') ||
+        activeVendor.category.toLowerCase().includes('cake') ||
+        activeVendor.category.toLowerCase().includes('dessert');
+      const schemaType = isBaker
         ? 'Bakery'
         : activeVendor.marketplace === 'food'
           ? 'FoodEstablishment'
           : 'LocalBusiness';
+      const currencyCode = COUNTRY_DEFAULT_CURRENCY[activeVendor.country] || 'INR';
+      const isoCountry = COUNTRY_ISO_CODE[activeVendor.country] || 'IN';
+      const citySlug = slugifySeoSegment(activeVendor.city);
+      const catSlug = slugifySeoSegment(activeVendor.category);
+
+      const signatureProducts = activeVendor.products.slice(0, 12).map((p) => {
+        const localPrice = usdToLocal(p.priceUsd, currencyCode);
+        return {
+          '@type': 'Product',
+          name: p.name,
+          description:
+            p.description ||
+            `${p.name} by ${activeVendor.name} in ${activeVendor.area}, ${activeVendor.city}`,
+          image: resolvePublicImage(p.image),
+          brand: {
+            '@type': 'Brand',
+            name: activeVendor.name,
+          },
+          offers: {
+            '@type': 'Offer',
+            price: localPrice,
+            priceCurrency: currencyCode,
+            availability:
+              p.inStock === false
+                ? 'https://schema.org/OutOfStock'
+                : 'https://schema.org/InStock',
+            url: `${canonical}?item=${encodeURIComponent(p.id)}`,
+          },
+        };
+      });
 
       upsertJsonLd('dynamic-vendor-jsonld', {
         '@context': 'https://schema.org',
-        '@type': schemaType,
-        name: activeVendor.name,
-        description: activeVendor.description,
-        url: canonical,
-        image: ogImage,
-        telephone: `+${activeVendor.whatsappNumber}`,
-        priceRange: activeVendor.priceTier,
-        geo: {
-          '@type': 'GeoCoordinates',
-          latitude: activeVendor.lat,
-          longitude: activeVendor.lng,
-        },
-        address: {
-          '@type': 'PostalAddress',
-          streetAddress: activeVendor.area,
-          addressLocality: activeVendor.city,
-          addressRegion: activeVendor.state,
-          addressCountry: activeVendor.country,
-        },
-        aggregateRating: {
-          '@type': 'AggregateRating',
-          ratingValue: activeVendor.rating,
-          reviewCount: Math.max(1, activeVendor.reviewCount),
-        },
-        hasOfferCatalog: {
-          '@type': 'OfferCatalog',
-          name: `${activeVendor.name} Products & Packages`,
-          itemListElement: activeVendor.products.map((p) => ({
-            '@type': 'Offer',
-            itemOffered: {
-              '@type': 'Product',
-              name: p.name,
-              description: p.description,
+        '@graph': [
+          {
+            '@type': schemaType,
+            '@id': `${canonical}#business`,
+            name: activeVendor.name,
+            description: activeVendor.description,
+            url: canonical,
+            image: ogImage,
+            telephone: `+${activeVendor.whatsappNumber}`,
+            priceRange: formatPriceRangeForCountry(activeVendor.priceTier, activeVendor.country),
+            servesCuisine: buildServesCuisine(activeVendor),
+            sameAs: [
+              activeVendor.googleMapsUrl,
+              activeVendor.instagramHandle
+                ? activeVendor.instagramHandle.startsWith('http')
+                  ? activeVendor.instagramHandle
+                  : `https://instagram.com/${activeVendor.instagramHandle.replace(/^@/, '')}`
+                : undefined,
+            ].filter(Boolean),
+            geo: {
+              '@type': 'GeoCoordinates',
+              latitude: activeVendor.lat,
+              longitude: activeVendor.lng,
             },
-            price: p.priceUsd,
-            priceCurrency: 'USD',
-          })),
-        },
+            address: {
+              '@type': 'PostalAddress',
+              streetAddress: activeVendor.area,
+              addressLocality: activeVendor.city,
+              addressRegion: activeVendor.state,
+              addressCountry: isoCountry,
+            },
+            aggregateRating: {
+              '@type': 'AggregateRating',
+              ratingValue: activeVendor.rating,
+              reviewCount: Math.max(1, activeVendor.reviewCount),
+            },
+            hasOfferCatalog: {
+              '@type': 'OfferCatalog',
+              name: `${activeVendor.name} Signature Cakes & Menu`,
+              itemListElement: signatureProducts.map((prod) => ({
+                '@type': 'Offer',
+                itemOffered: prod,
+                price: prod.offers.price,
+                priceCurrency: currencyCode,
+              })),
+            },
+          },
+          {
+            '@type': 'BreadcrumbList',
+            itemListElement: [
+              { '@type': 'ListItem', position: 1, name: 'Home', item: `${origin}/` },
+              {
+                '@type': 'ListItem',
+                position: 2,
+                name: activeVendor.city,
+                item: `${origin}/city/${citySlug}`,
+              },
+              {
+                '@type': 'ListItem',
+                position: 3,
+                name: activeVendor.category,
+                item: `${origin}/${citySlug}/${catSlug}`,
+              },
+              {
+                '@type': 'ListItem',
+                position: 4,
+                name: activeVendor.name,
+                item: canonical,
+              },
+            ],
+          },
+        ],
       });
       upsertJsonLd('dynamic-directory-jsonld', null);
       upsertJsonLd('dynamic-faq-jsonld', null);
     } else if (seoDirectoryRoute) {
       upsertJsonLd('dynamic-vendor-jsonld', null);
 
-      // 2. Programmatic City × Category ItemList + BreadcrumbList JSON-LD
+      const breadcrumbItems: Array<Record<string, unknown>> = [
+        { '@type': 'ListItem', position: 1, name: 'Home', item: `${origin}/` },
+      ];
+      let nextPos = 2;
+
+      if (seoDirectoryRoute.cityEntry) {
+        breadcrumbItems.push({
+          '@type': 'ListItem',
+          position: nextPos++,
+          name: seoDirectoryRoute.cityEntry.city,
+          item: `${origin}/city/${seoDirectoryRoute.cityEntry.slug}`,
+        });
+      }
+      if (seoDirectoryRoute.cityEntry && seoDirectoryRoute.localitySlug && seoDirectoryRoute.localityName) {
+        breadcrumbItems.push({
+          '@type': 'ListItem',
+          position: nextPos++,
+          name: seoDirectoryRoute.localityName,
+          item: `${origin}/${seoDirectoryRoute.cityEntry.slug}/${seoDirectoryRoute.localitySlug}/${seoDirectoryRoute.categoryEntry?.slug || 'home-bakers'}`,
+        });
+      }
+      if (seoDirectoryRoute.categoryEntry) {
+        breadcrumbItems.push({
+          '@type': 'ListItem',
+          position: nextPos++,
+          name:
+            seoDirectoryRoute.categoryEntry.shortLabel ||
+            seoDirectoryRoute.categoryEntry.displayLabel ||
+            seoDirectoryRoute.categoryEntry.category,
+          item: canonical,
+        });
+      }
+
+      // 2. Programmatic City / Locality × Category ItemList + BreadcrumbList JSON-LD
       upsertJsonLd('dynamic-directory-jsonld', {
         '@context': 'https://schema.org',
         '@graph': [
           {
             '@type': 'BreadcrumbList',
-            itemListElement: [
-              { '@type': 'ListItem', position: 1, name: 'Home', item: `${origin}/` },
-              ...(seoDirectoryRoute.cityEntry
-                ? [
-                    {
-                      '@type': 'ListItem',
-                      position: 2,
-                      name: seoDirectoryRoute.cityEntry.city,
-                      item: `${origin}/city/${seoDirectoryRoute.cityEntry.slug}`,
-                    },
-                  ]
-                : []),
-              ...(seoDirectoryRoute.categoryEntry
-                ? [
-                    {
-                      '@type': 'ListItem',
-                      position: seoDirectoryRoute.cityEntry ? 3 : 2,
-                      name: seoDirectoryRoute.categoryEntry.category,
-                      item: canonical,
-                    },
-                  ]
-                : []),
-            ],
+            itemListElement: breadcrumbItems,
           },
           {
             '@type': 'ItemList',
@@ -222,7 +348,7 @@ export function useSeoMeta({
         ],
       });
 
-      // 3. FAQPage Rich Snippet JSON-LD
+      // 3. FAQPage Rich Snippet JSON-LD matching visible on-page FAQs
       upsertJsonLd('dynamic-faq-jsonld', {
         '@context': 'https://schema.org',
         '@type': 'FAQPage',

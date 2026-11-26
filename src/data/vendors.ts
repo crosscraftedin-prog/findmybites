@@ -74,7 +74,7 @@ export const STATES_BY_COUNTRY: Record<Exclude<LaunchCountry, 'All'>, StateRegio
     { name: 'Delhi NCR', cities: ['Delhi NCR', 'New Delhi', 'Gurugram', 'Noida', 'Ghaziabad', 'Faridabad'], lat: 28.6139, lng: 77.209 },
     { name: 'Kerala', cities: ['Kochi', 'Thiruvananthapuram', 'Kozhikode', 'Thrissur'], lat: 9.9312, lng: 76.2673 },
     { name: 'Tamil Nadu', cities: ['Chennai', 'Coimbatore', 'Madurai', 'Tiruchirappalli'], lat: 13.0827, lng: 80.2707 },
-    { name: 'Telangana', cities: ['Hyderabad', 'Warangal', 'Nizamabad'], lat: 17.385, lng: 78.4867 },
+    { name: 'Telangana', cities: ['Hyderabad', 'Secunderabad', 'Warangal', 'Nizamabad'], lat: 17.385, lng: 78.4867 },
     { name: 'Gujarat', cities: ['Ahmedabad', 'Surat', 'Vadodara', 'Rajkot'], lat: 23.0225, lng: 72.5714 },
     { name: 'West Bengal', cities: ['Kolkata', 'Siliguri', 'Howrah', 'Durgapur'], lat: 22.5726, lng: 88.3639 },
     { name: 'Rajasthan', cities: ['Jaipur', 'Udaipur', 'Jodhpur', 'Kota'], lat: 26.9124, lng: 75.7873 },
@@ -639,11 +639,11 @@ export interface SiteSettings {
 }
 
 export const DEFAULT_SITE_SETTINGS: SiteSettings = {
-  siteTitle: 'FindMyBites × PimpMyParty – Bakers, Catering & Party Decor',
+  siteTitle: 'FindMyBites | Order Custom Cakes from Local Home Bakers in India (0% Commission)',
   siteDescription:
-    'Find verified home bakers, Christmas plum cakes, catering, live counters, mocktail bars & wedding decor near you across India, Dubai, Sri Lanka, Pakistan, Bangladesh & Nepal.',
+    'Discover top-rated home bakers, eggless birthday cakes, brownies, and party caterers near you in Hyderabad, Bengaluru, Mumbai & across India. Chat & order directly on WhatsApp with zero middleman fees.',
   siteKeywords:
-    'home bakers near me, custom birthday cakes, christmas plum cakes, event catering, wedding decor, balloon decorators, FindMyBites, PimpMyParty',
+    'cakes, cakes near me, eggless cakes, home bakers, custom birthday cakes, bento cakes, brownies near me, wedding cakes, party caterers, FindMyBites',
   promoEnabled: true,
   promoText:
     'Christmas & New Year 2026 Baker Spotlight — Plum Cakes, Yule Logs, Hampers & NYE Party Catering!',

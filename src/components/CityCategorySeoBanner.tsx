@@ -9,16 +9,22 @@ import {
   Sparkles,
   X,
 } from 'lucide-react';
+import { CurrencyCode, Vendor, formatMoney } from '../data/vendors';
 import {
+  POPULAR_LOCALITIES_BY_CITY,
   PRIORITY_SEO_CITY_SLUGS,
   ResolvedSeoDirectoryRoute,
   SEO_CATEGORIES,
   SEO_CITIES,
+  TOP_CAKE_SEO_CATEGORY_SLUGS,
+  slugifySeoSegment,
 } from '../utils/seoDirectory';
 
 interface CityCategorySeoBannerProps {
   route: ResolvedSeoDirectoryRoute;
   matchingCount: number;
+  matchingVendors?: Vendor[];
+  currency?: CurrencyCode;
   onNavigateSeoPath: (path: string) => void;
   onClearRoute: () => void;
   onOpenEventRequest: () => void;
@@ -28,6 +34,8 @@ interface CityCategorySeoBannerProps {
 export function CityCategorySeoBanner({
   route,
   matchingCount,
+  matchingVendors = [],
+  currency = 'INR',
   onNavigateSeoPath,
   onClearRoute,
   onOpenEventRequest,
@@ -37,14 +45,39 @@ export function CityCategorySeoBanner({
 
   const activeCity = route.cityEntry;
   const activeCategory = route.categoryEntry;
+  const activeLocalityName = route.localityName;
+  const activeLocalitySlug = route.localitySlug;
 
   const relatedCategories = SEO_CATEGORIES.filter(
-    (c) => c.slug !== activeCategory?.slug && !c.isChristmasHub
-  ).slice(0, 8);
+    (c) =>
+      c.slug !== activeCategory?.slug &&
+      !c.isChristmasHub &&
+      (TOP_CAKE_SEO_CATEGORY_SLUGS.includes(c.slug as (typeof TOP_CAKE_SEO_CATEGORY_SLUGS)[number]) ||
+        c.slug === 'catering-services' ||
+        c.slug === 'live-counters-and-food-stalls' ||
+        c.slug === 'bar-mocktails-and-beverage-carts')
+  ).slice(0, 9);
 
   const relatedCities = SEO_CITIES.filter(
     (c) => PRIORITY_SEO_CITY_SLUGS.includes(c.slug) && c.slug !== activeCity?.slug
   ).slice(0, 10);
+
+  const cityLocalities = activeCity ? POPULAR_LOCALITIES_BY_CITY[activeCity.slug] || [] : [];
+
+  // Compute live starting price range in INR (or active currency) from matched vendors
+  const liveMinPriceUsd =
+    matchingVendors.length > 0
+      ? Math.min(
+          ...matchingVendors
+            .map((v) => v.startingPriceUsd)
+            .filter((p) => Number.isFinite(p) && p > 0)
+        )
+      : null;
+
+  const formattedStartingPrice =
+    liveMinPriceUsd && Number.isFinite(liveMinPriceUsd)
+      ? formatMoney(liveMinPriceUsd, currency)
+      : activeCategory?.startingPriceInr || '₹550';
 
   const handleLinkClick = (e: React.MouseEvent<HTMLAnchorElement>, path: string) => {
     e.preventDefault();
@@ -57,7 +90,7 @@ export function CityCategorySeoBanner({
       className="border-b border-border bg-gradient-to-b from-brand-soft/60 via-background to-background"
     >
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        {/* Breadcrumb Trail (mirrors BreadcrumbList JSON-LD) */}
+        {/* Semantic Breadcrumb Trail (mirrors BreadcrumbList JSON-LD) */}
         <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
           <a
             href="/"
@@ -72,8 +105,6 @@ export function CityCategorySeoBanner({
           {activeCity && (
             <>
               <ChevronRight className="size-3.5" aria-hidden="true" />
-              <span>{activeCity.country}</span>
-              <ChevronRight className="size-3.5" aria-hidden="true" />
               <a
                 href={`/city/${activeCity.slug}`}
                 onClick={(e) => handleLinkClick(e, `/city/${activeCity.slug}`)}
@@ -83,34 +114,54 @@ export function CityCategorySeoBanner({
               </a>
             </>
           )}
+          {activeCity && activeLocalityName && activeLocalitySlug && (
+            <>
+              <ChevronRight className="size-3.5" aria-hidden="true" />
+              <a
+                href={`/${activeCity.slug}/${activeLocalitySlug}/${activeCategory?.slug || 'home-bakers'}`}
+                onClick={(e) =>
+                  handleLinkClick(
+                    e,
+                    `/${activeCity.slug}/${activeLocalitySlug}/${activeCategory?.slug || 'home-bakers'}`
+                  )
+                }
+                className="font-semibold hover:text-brand"
+              >
+                {activeLocalityName}
+              </a>
+            </>
+          )}
           {activeCategory && (
             <>
               <ChevronRight className="size-3.5" aria-hidden="true" />
               <span className="font-bold text-foreground">
                 {activeCategory.isChristmasHub
                   ? 'Christmas Cakes & Plum Cakes'
-                  : activeCategory.category}
+                  : activeCategory.shortLabel || activeCategory.displayLabel || activeCategory.category}
               </span>
             </>
           )}
         </nav>
 
-        {/* Primary Semantic H1 & Local Intent Summary */}
+        {/* Primary Single Semantic H1 & Local Intent Summary */}
         <div className="mt-4 flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
           <div className="max-w-3xl">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-brand-border bg-brand-soft px-3 py-1 text-[11px] font-bold text-brand">
+              <span className="inline-flex items-center gap-1.5 rounded-md border border-brand-border bg-brand-soft px-2.5 py-1 text-[11px] font-bold text-brand">
                 {activeCategory?.isChristmasHub ? (
                   <Snowflake className="size-3.5" aria-hidden="true" />
                 ) : (
                   <MapPin className="size-3.5" aria-hidden="true" />
                 )}
                 {activeCity
-                  ? `${activeCity.city}, ${activeCity.state} · ${activeCity.country}`
-                  : 'All 6 Launch Countries'}
+                  ? `${activeLocalityName ? `${activeLocalityName}, ` : ''}${activeCity.city}, ${activeCity.state}`
+                  : 'Across India · 0% Commission'}
               </span>
-              <span className="rounded-full border border-border bg-card px-3 py-1 font-mono text-[11px] font-bold text-foreground">
+              <span className="rounded-md border border-border bg-card px-2.5 py-1 font-mono text-[11px] font-bold text-foreground">
                 {matchingCount} {matchingCount === 1 ? 'verified listing' : 'verified listings'}
+              </span>
+              <span className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 font-mono text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
+                Starting from {formattedStartingPrice} · 0% Commission
               </span>
             </div>
 
@@ -118,7 +169,7 @@ export function CityCategorySeoBanner({
               {route.h1}
             </h1>
             <p className="mt-2.5 text-sm leading-relaxed text-muted-foreground sm:text-base">
-              {route.description}
+              {route.introParagraph}
             </p>
           </div>
 
@@ -150,28 +201,55 @@ export function CityCategorySeoBanner({
           </div>
         </div>
 
-        {/* Internal Linking Spider Web (Justdial-style crawlable city × category matrix) */}
-        <div className="mt-6 grid gap-4 lg:grid-cols-2">
+        {/* Hyper-Local Neighbourhood Links for Active City (Pattern 2: /[city]/[locality]/[category]) */}
+        {activeCity && cityLocalities.length > 0 && (
+          <div className="mt-5 rounded-2xl border border-border bg-card p-4">
+            <p className="flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wider text-muted-foreground">
+              <MapPin className="size-3.5 text-brand" aria-hidden="true" />
+              Popular Localities in {activeCity.city}
+            </p>
+            <div className="mt-2.5 flex flex-wrap gap-1.5">
+              {cityLocalities.map((loc) => {
+                const locSlug = slugifySeoSegment(loc);
+                const catSlug = activeCategory?.slug || 'home-bakers';
+                const path = `/${activeCity.slug}/${locSlug}/${catSlug}`;
+                const isCurrent = activeLocalitySlug === locSlug;
+                return (
+                  <a
+                    key={locSlug}
+                    href={path}
+                    onClick={(e) => handleLinkClick(e, path)}
+                    className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors ${
+                      isCurrent
+                        ? 'border-brand bg-brand text-brand-foreground font-bold'
+                        : 'border-border bg-background text-foreground hover:border-brand hover:bg-brand-soft hover:text-brand'
+                    }`}
+                  >
+                    {loc}
+                  </a>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Internal Linking Matrix: Related Categories & Other Cities */}
+        <div className="mt-4 grid gap-4 lg:grid-cols-2">
           <div className="rounded-2xl border border-border bg-card p-4">
             <p className="flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wider text-muted-foreground">
               <Sparkles className="size-3.5 text-brand" aria-hidden="true" />
-              {activeCity ? `More Categories in ${activeCity.city}` : 'Popular Categories'}
+              {activeCity
+                ? `More Cake & Food Categories in ${activeLocalityName ? `${activeLocalityName}, ` : ''}${activeCity.city}`
+                : 'Popular Cake & Baker Categories'}
             </p>
             <div className="mt-2.5 flex flex-wrap gap-1.5">
-              {activeCity && !activeCategory?.isChristmasHub && (
-                <a
-                  href={`/${activeCity.slug}/christmas-cakes`}
-                  onClick={(e) => handleLinkClick(e, `/${activeCity.slug}/christmas-cakes`)}
-                  className="inline-flex items-center gap-1 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-xs font-bold text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300"
-                >
-                  <Snowflake className="size-3" aria-hidden="true" />
-                  Christmas Cakes in {activeCity.city}
-                </a>
-              )}
               {relatedCategories.map((cat) => {
-                const path = activeCity
-                  ? `/${activeCity.slug}/${cat.slug}`
-                  : `/category/${cat.slug}`;
+                const path =
+                  activeCity && activeLocalitySlug
+                    ? `/${activeCity.slug}/${activeLocalitySlug}/${cat.slug}`
+                    : activeCity
+                      ? `/${activeCity.slug}/${cat.slug}`
+                      : `/category/${cat.slug}`;
                 return (
                   <a
                     key={cat.slug}
@@ -179,7 +257,7 @@ export function CityCategorySeoBanner({
                     onClick={(e) => handleLinkClick(e, path)}
                     className="rounded-lg border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:border-brand hover:bg-brand-soft hover:text-brand"
                   >
-                    {cat.category}
+                    {cat.shortLabel || cat.category}
                   </a>
                 );
               })}
@@ -190,8 +268,8 @@ export function CityCategorySeoBanner({
             <p className="flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wider text-muted-foreground">
               <Globe2 className="size-3.5 text-brand" aria-hidden="true" />
               {activeCategory
-                ? `${activeCategory.isChristmasHub ? 'Christmas Cakes' : activeCategory.category} in Other Cities`
-                : 'Explore Other Cities'}
+                ? `${activeCategory.shortLabel || activeCategory.category} in Other Cities`
+                : 'Explore Other Indian Cities'}
             </p>
             <div className="mt-2.5 flex flex-wrap gap-1.5">
               {relatedCities.map((c) => {
@@ -214,11 +292,16 @@ export function CityCategorySeoBanner({
           </div>
         </div>
 
-        {/* Local FAQs (matches FAQPage JSON-LD for Google Rich Snippets) */}
+        {/* Dynamic Locality FAQs (matches FAQPage JSON-LD for Google Rich Snippets) */}
         <div className="mt-5 rounded-2xl border border-border bg-card p-4">
-          <p className="text-xs font-extrabold uppercase tracking-wider text-muted-foreground">
-            Local Booking FAQs · {activeCity ? activeCity.city : 'FindMyBites'}
-          </p>
+          <h2 className="text-xs font-extrabold uppercase tracking-wider text-muted-foreground">
+            Frequently Asked Questions ·{' '}
+            {activeLocalityName && activeCity
+              ? `${activeLocalityName}, ${activeCity.city}`
+              : activeCity
+                ? activeCity.city
+                : 'FindMyBites India'}
+          </h2>
           <div className="mt-2.5 divide-y divide-border">
             {route.faqs.map((faq, idx) => {
               const isOpen = openFaqIdx === idx;
@@ -226,6 +309,7 @@ export function CityCategorySeoBanner({
                 <div key={faq.question} className="py-2.5 first:pt-1 last:pb-0">
                   <button
                     type="button"
+                    aria-expanded={isOpen}
                     onClick={() => setOpenFaqIdx(isOpen ? null : idx)}
                     className="flex w-full cursor-pointer items-center justify-between gap-2 text-left text-xs font-bold text-foreground hover:text-brand sm:text-sm"
                   >

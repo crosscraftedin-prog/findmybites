@@ -23,17 +23,22 @@ export interface SeoCategoryEntry {
   marketplace: 'food' | 'party';
   isChristmasHub?: boolean;
   displayLabel?: string;
+  shortLabel?: string;
   searchKeyword?: string;
   quickTag?: QuickFilterTag;
+  startingPriceInr?: string;
 }
 
 export interface ResolvedSeoDirectoryRoute {
   cityEntry: SeoCityEntry | null;
+  localitySlug: string | null;
+  localityName: string | null;
   categoryEntry: SeoCategoryEntry | null;
   canonicalPath: string;
   h1: string;
   title: string;
   description: string;
+  introParagraph: string;
   keywords: string;
   faqs: Array<{ question: string; answer: string }>;
 }
@@ -46,6 +51,20 @@ export function slugifySeoSegment(raw: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
+export function humanizeSeoSegment(slug: string): string {
+  return slug
+    .replace(/-and-/g, ' & ')
+    .split('-')
+    .filter(Boolean)
+    .map((w) => {
+      if (w === 'ncr' || w === 'hsr' || w === 'jp' || w === 'btm' || w === 'dlf') {
+        return w.toUpperCase();
+      }
+      return w.charAt(0).toUpperCase() + w.slice(1);
+    })
+    .join(' ');
+}
+
 const RESERVED_TOP_LEVEL_SLUGS = new Set([
   'v',
   'fmb',
@@ -56,7 +75,102 @@ const RESERVED_TOP_LEVEL_SLUGS = new Set([
   'category',
   'sitemap.xml',
   'robots.txt',
+  'box-and-bite',
+  'pricing-kit',
 ]);
+
+// Curated popular hyper-local Indian neighborhoods for internal linking & programmatic sitemap
+export const POPULAR_LOCALITIES_BY_CITY: Record<string, string[]> = {
+  hyderabad: [
+    'Jubilee Hills',
+    'Banjara Hills',
+    'Gachibowli',
+    'Madhapur',
+    'Kondapur',
+    'Hitech City',
+    'Kukatpally',
+    'Begumpet',
+  ],
+  secunderabad: [
+    'Bolarum',
+    'Sainikpuri',
+    'Yapral',
+    'Trimulgherry',
+    'Alwal',
+    'Marredpally',
+  ],
+  bengaluru: [
+    'Indiranagar',
+    'Koramangala',
+    'Whitefield',
+    'HSR Layout',
+    'Jayanagar',
+    'JP Nagar',
+  ],
+  mumbai: [
+    'Bandra',
+    'Powai',
+    'Andheri',
+    'Juhu',
+    'Lower Parel',
+    'Thane West',
+  ],
+  'delhi-ncr': [
+    'South Delhi',
+    'Gurugram',
+    'Noida',
+    'Vasant Kunj',
+    'Saket',
+    'Dwarka',
+  ],
+  chennai: [
+    'Anna Nagar',
+    'Adyar',
+    'Velachery',
+    'T Nagar',
+    'Besant Nagar',
+    'OMR',
+  ],
+  pune: [
+    'Koregaon Park',
+    'Baner',
+    'Kothrud',
+    'Viman Nagar',
+    'Wakad',
+    'Kalyani Nagar',
+  ],
+  kolkata: [
+    'Salt Lake',
+    'Park Street',
+    'Ballygunge',
+    'New Town',
+    'Alipore',
+    'South Kolkata',
+  ],
+};
+
+// Top 8 Indian SEO city hubs for footer internal linking & hyper-local discovery
+export const TOP_INDIA_SEO_CITY_SLUGS = [
+  'hyderabad',
+  'secunderabad',
+  'bengaluru',
+  'mumbai',
+  'delhi-ncr',
+  'chennai',
+  'pune',
+  'kolkata',
+] as const;
+
+// Top cake & baker categories for footer & hub internal linking
+export const TOP_CAKE_SEO_CATEGORY_SLUGS = [
+  'eggless-cakes',
+  'bento-cakes',
+  'custom-birthday-cakes',
+  'brownies',
+  'wedding-cakes',
+  'home-bakers',
+  'custom-cakes',
+] as const;
 
 // Build full deduplicated index of all supported cities across all 6 launch countries
 export const SEO_CITIES: SeoCityEntry[] = (() => {
@@ -91,86 +205,137 @@ export const SEO_CATEGORIES: SeoCategoryEntry[] = [
     marketplace: ((FOOD_CATEGORIES as readonly string[]).includes(category)
       ? 'food'
       : 'party') as 'food' | 'party',
+    startingPriceInr: category.toLowerCase().includes('baker') ? '₹450' : '₹1,499',
   })),
   {
     slug: 'cakes-near-me',
     category: 'Bakers & Cakes',
     marketplace: 'food',
     displayLabel: 'Custom Cakes & Home Bakers',
+    shortLabel: 'Custom Cakes',
+    startingPriceInr: '₹550',
   },
   {
     slug: 'birthday-cakes',
     category: 'Bakers & Cakes',
     marketplace: 'food',
     displayLabel: 'Birthday Cakes & Theme Cakes',
+    shortLabel: 'Birthday Cakes',
     searchKeyword: 'birthday',
+    startingPriceInr: '₹650',
+  },
+  {
+    slug: 'custom-birthday-cakes',
+    category: 'Bakers & Cakes',
+    marketplace: 'food',
+    displayLabel: 'Custom Birthday Cakes',
+    shortLabel: 'Custom Birthday Cakes',
+    searchKeyword: 'birthday',
+    startingPriceInr: '₹750',
   },
   {
     slug: 'eggless-cakes',
     category: 'Bakers & Cakes',
     marketplace: 'food',
-    displayLabel: '100% Eggless Cakes & Bakes',
+    displayLabel: 'Eggless Cakes',
+    shortLabel: 'Eggless Cakes',
     quickTag: 'Eggless',
+    startingPriceInr: '₹550',
+  },
+  {
+    slug: 'bento-cakes',
+    category: 'Bakers & Cakes',
+    marketplace: 'food',
+    displayLabel: 'Bento Cakes',
+    shortLabel: 'Bento Cakes',
+    searchKeyword: 'bento',
+    startingPriceInr: '₹350',
+  },
+  {
+    slug: 'brownies',
+    category: 'Bakers & Cakes',
+    marketplace: 'food',
+    displayLabel: 'Fudgy Brownies & Dessert Boxes',
+    shortLabel: 'Brownies',
+    searchKeyword: 'brownie',
+    startingPriceInr: '₹400',
   },
   {
     slug: 'brownies-near-me',
     category: 'Bakers & Cakes',
     marketplace: 'food',
     displayLabel: 'Fudgy Brownies & Dessert Boxes',
+    shortLabel: 'Brownies',
     searchKeyword: 'brownie',
+    startingPriceInr: '₹400',
   },
   {
     slug: 'custom-cakes',
     category: 'Bakers & Cakes',
     marketplace: 'food',
-    displayLabel: 'Custom Designer & Theme Cakes',
+    displayLabel: 'Custom Cakes',
+    shortLabel: 'Custom Cakes',
     searchKeyword: 'custom',
+    startingPriceInr: '₹750',
   },
   {
     slug: 'wedding-cakes',
     category: 'Bakers & Cakes',
     marketplace: 'food',
-    displayLabel: 'Tiered Wedding & Engagement Cakes',
+    displayLabel: 'Wedding Cakes',
+    shortLabel: 'Wedding Cakes',
     quickTag: 'Wedding Ready',
     searchKeyword: 'wedding',
+    startingPriceInr: '₹2,500',
   },
   {
     slug: 'home-bakers',
     category: 'Home Bakers & Cloud Kitchens',
     marketplace: 'food',
-    displayLabel: 'Verified Home Bakers',
+    displayLabel: 'Home Bakers',
+    shortLabel: 'Home Bakers',
+    startingPriceInr: '₹450',
   },
   {
     slug: 'cupcakes-and-desserts',
     category: 'Bakers & Cakes',
     marketplace: 'food',
     displayLabel: 'Cupcakes, Cheesecakes & Dessert Jars',
+    shortLabel: 'Cupcakes & Desserts',
     searchKeyword: 'cupcake',
+    startingPriceInr: '₹450',
   },
   {
     slug: 'christmas-cakes',
     category: 'Bakers & Cakes',
     marketplace: 'food',
+    displayLabel: 'Christmas Plum Cakes',
+    shortLabel: 'Christmas Cakes',
     isChristmasHub: true,
+    startingPriceInr: '₹650',
   },
   {
     slug: 'christmas-plum-cakes',
     category: 'Bakers & Cakes',
     marketplace: 'food',
+    displayLabel: 'Christmas Plum Cakes',
+    shortLabel: 'Christmas Plum Cakes',
     isChristmasHub: true,
+    startingPriceInr: '₹650',
   },
 ];
 
 // Top high-traffic priority cities for sitemap & cross-linking spider web
 export const PRIORITY_SEO_CITY_SLUGS = [
-  'mumbai',
-  'bengaluru',
-  'delhi-ncr',
-  'kochi',
-  'chennai',
   'hyderabad',
+  'secunderabad',
+  'bengaluru',
+  'mumbai',
+  'delhi-ncr',
+  'chennai',
   'pune',
   'kolkata',
+  'kochi',
   'ahmedabad',
   'jaipur',
   'dubai',
@@ -196,40 +361,59 @@ export function buildCityCategoryPath(cityName: string, categoryName: string): s
   return `/${slugifySeoSegment(cityName)}/${slugifySeoSegment(categoryName)}`;
 }
 
+export function buildCityLocalityCategoryPath(
+  cityName: string,
+  localityName: string,
+  categoryName: string
+): string {
+  return `/${slugifySeoSegment(cityName)}/${slugifySeoSegment(localityName)}/${slugifySeoSegment(categoryName)}`;
+}
+
 export function buildLocalFaqs(
   cityName: string | null,
+  localityName: string | null,
   categoryLabel: string,
+  startingPriceInr = '₹550',
   isChristmasHub?: boolean
 ): Array<{ question: string; answer: string }> {
-  const place = cityName ? `in ${cityName}` : 'near you';
+  const areaLabel = localityName
+    ? `${localityName}${cityName ? `, ${cityName}` : ''}`
+    : cityName || 'your area';
+  const cityLabel = cityName || 'your city';
+
   if (isChristmasHub) {
     return [
       {
-        question: `How do I pre-order Christmas plum cakes & Yule logs ${place}?`,
-        answer: `Browse verified home bakers ${place} on FindMyBites, compare 1 kg plum cake prices, rum-soaked & eggless options, and message the baker directly on WhatsApp with 0% commission.`,
+        question: `Who are the best eggless Christmas plum cake home bakers in ${areaLabel}?`,
+        answer: `FindMyBites lists verified home bakers in ${areaLabel} offering both traditional rum-soaked plum cakes and 100% eggless, alcohol-free Christmas hampers. Compare real 1 kg prices starting around ${startingPriceInr} and order directly on WhatsApp with 0% commission.`,
       },
       {
-        question: `Do bakers ${place} offer eggless and alcohol-free Christmas cakes?`,
-        answer: `Yes! Most local bakers listed on FindMyBites ${place} offer both traditional spiced plum cakes and 100% eggless or alcohol-free holiday gift boxes.`,
+        question: `How do I order a custom Christmas cake in ${cityLabel} without delivery app markups?`,
+        answer: `Browse local bakers in ${areaLabel} on FindMyBites, pick your cake weight or hamper box, and click WhatsApp to confirm directly with the baker at true bakery prices — zero middleman commission.`,
       },
       {
-        question: `Can I order bulk Christmas hampers for corporate gifting ${place}?`,
-        answer: `Yes, filter by Christmas Hampers & Sweets or tap any baker's WhatsApp button to request custom corporate hamper quotes with logo ribbons and doorstep delivery ${place}.`,
+        question: `Do bakers in ${areaLabel} offer doorstep delivery and bulk corporate Christmas hampers?`,
+        answer: `Yes! Most local home bakers in ${areaLabel} provide scheduled doorstep delivery and custom-ribbon corporate gifting boxes across ${cityLabel}.`,
       },
     ];
   }
+
   return [
     {
-      question: `How do I book verified ${categoryLabel} ${place}?`,
-      answer: `Compare portfolios, live product menus, transparent starting prices, and verified customer reviews for ${categoryLabel} ${place} on FindMyBites × PimpMyParty, then chat directly on WhatsApp.`,
+      question: `Who are the best eggless home bakers in ${areaLabel}?`,
+      answer: `On FindMyBites, you can explore top-rated verified home bakers and cake artists in ${areaLabel} who specialize in 100% eggless custom birthday cakes, bento cakes, fudgy brownies, and theme tiers — with transparent INR menus and direct WhatsApp chat.`,
     },
     {
-      question: `Is there any booking commission on FindMyBites ${place}?`,
-      answer: `No! FindMyBites connects you directly with local ${categoryLabel.toLowerCase()} ${place} via WhatsApp with zero middleman markup.`,
+      question: `How do I order a custom cake in ${cityLabel} without delivery app markups?`,
+      answer: `Unlike aggregator apps that add 25–35% platform markups, FindMyBites connects you directly to ${categoryLabel.toLowerCase()} in ${areaLabel} via WhatsApp or direct store checkout with 0% commission.`,
     },
     {
-      question: `How far in advance should I book ${categoryLabel.toLowerCase()} ${place}?`,
-      answer: `For custom cakes and home bakers, 2–5 days notice is recommended; for weddings, live counters, and full party decor ${place}, booking 2–6 weeks ahead secures your preferred date.`,
+      question: `What is the starting price for ${categoryLabel.toLowerCase()} in ${areaLabel}?`,
+      answer: `Freshly made ${categoryLabel.toLowerCase()} from local home bakers and vendors in ${areaLabel} typically start around ${startingPriceInr} for half-kg cakes, bento cakes, or brownie boxes, with custom fondant, photo, and tiered designs quoted directly on WhatsApp.`,
+    },
+    {
+      question: `Is doorstep delivery or pickup available for ${categoryLabel.toLowerCase()} in ${areaLabel}?`,
+      answer: `Yes! Most listed bakers and caterers in ${areaLabel} offer both scheduled doorstep delivery across ${cityLabel} and direct kitchen pickup. Pre-ordering 24–48 hours in advance is recommended for custom designs.`,
     },
   ];
 }
@@ -245,18 +429,40 @@ export function resolveSeoDirectoryRoute(pathname: string): ResolvedSeoDirectory
     }
   });
 
-  if (parts[0] === 'v' || parts[0] === 'fmb' || parts[0] === 'claim' || parts[0].startsWith('@')) {
+  if (
+    parts[0] === 'v' ||
+    parts[0] === 'fmb' ||
+    parts[0] === 'claim' ||
+    parts[0] === 'api' ||
+    parts[0] === 'assets' ||
+    parts[0].startsWith('@')
+  ) {
     return null;
   }
 
   let cityEntry: SeoCityEntry | null = null;
+  let localitySlug: string | null = null;
+  let localityName: string | null = null;
   let categoryEntry: SeoCategoryEntry | null = null;
 
-  if (parts.length === 2 && parts[0] === 'city') {
+  if (parts.length === 3) {
+    // Pattern 2: /[city]/[locality]/[category]
+    cityEntry = findSeoCityBySlug(parts[0]);
+    categoryEntry = findSeoCategoryBySlug(parts[2]);
+    const cleanLocality = slugifySeoSegment(parts[1]);
+    if (!cityEntry || !categoryEntry || !cleanLocality || RESERVED_TOP_LEVEL_SLUGS.has(cleanLocality)) {
+      return null;
+    }
+    localitySlug = cleanLocality;
+    const knownLocalities = POPULAR_LOCALITIES_BY_CITY[cityEntry.slug] || [];
+    const matchedKnown = knownLocalities.find((loc) => slugifySeoSegment(loc) === cleanLocality);
+    localityName = matchedKnown || humanizeSeoSegment(cleanLocality);
+  } else if (parts.length === 2 && parts[0] === 'city') {
     cityEntry = findSeoCityBySlug(parts[1]);
   } else if (parts.length === 2 && parts[0] === 'category') {
     categoryEntry = findSeoCategoryBySlug(parts[1]);
   } else if (parts.length === 2) {
+    // Pattern 1: /[city]/[category]
     cityEntry = findSeoCityBySlug(parts[0]);
     categoryEntry = findSeoCategoryBySlug(parts[1]);
     if (!cityEntry || !categoryEntry) return null;
@@ -273,42 +479,75 @@ export function resolveSeoDirectoryRoute(pathname: string): ResolvedSeoDirectory
 
   const subject = categoryEntry?.isChristmasHub
     ? 'Christmas Plum Cakes & Festive Bakers'
-    : categoryEntry?.displayLabel ||
+    : categoryEntry?.shortLabel ||
+      categoryEntry?.displayLabel ||
       categoryEntry?.category ||
-      'Bakers, Catering & Party Vendors';
+      'Home Bakers, Custom Cakes & Party Vendors';
+
+  const startingPriceInr = categoryEntry?.startingPriceInr || '₹550';
 
   const canonicalPath =
-    cityEntry && categoryEntry
-      ? `/${cityEntry.slug}/${categoryEntry.slug}`
+    cityEntry && localitySlug && categoryEntry
+      ? `/${cityEntry.slug}/${localitySlug}/${categoryEntry.slug}`
+      : cityEntry && categoryEntry
+        ? `/${cityEntry.slug}/${categoryEntry.slug}`
+        : cityEntry
+          ? `/city/${cityEntry.slug}`
+          : `/category/${categoryEntry!.slug}`;
+
+  const placeHeading =
+    localityName && cityEntry
+      ? `${localityName}, ${cityEntry.city}`
       : cityEntry
-        ? `/city/${cityEntry.slug}`
-        : `/category/${categoryEntry!.slug}`;
+        ? cityEntry.city
+        : 'India';
 
   const h1 = cityEntry
-    ? `Best ${subject} in ${cityEntry.city}, ${cityEntry.state}`
-    : `Top Verified ${subject} Near You`;
+    ? `Top ${subject} in ${placeHeading}`
+    : `Top ${subject} Across India`;
 
   const title = cityEntry
-    ? `Best ${subject} in ${cityEntry.city} – Prices, Reviews & WhatsApp | FindMyBites`
-    : `${subject} Near You – Menus, Prices & Direct WhatsApp | FindMyBites`;
+    ? `Best ${subject} in ${placeHeading} | Order Direct from Home Bakers – FindMyBites`
+    : `Best ${subject} Near You in India | Order Direct from Home Bakers – FindMyBites`;
 
-  const description = cityEntry
-    ? `Discover verified ${subject.toLowerCase()} in ${cityEntry.city}, ${cityEntry.country}. View real product catalogs, starting prices, customer reviews & order directly on WhatsApp with 0% commission.`
-    : `Compare verified ${subject.toLowerCase()} across India, Dubai, Sri Lanka, Pakistan, Bangladesh & Nepal. Browse full catalogs, prices & direct WhatsApp booking.`;
+  const introParagraph = cityEntry
+    ? `Looking for fresh ${subject.toLowerCase()} in ${placeHeading}? Browse verified local home bakers, eggless cake artists, and party food makers delivering across ${localityName ? `${localityName} and nearby ${cityEntry.city} neighbourhoods` : `${cityEntry.city}, ${cityEntry.state}`}. Compare transparent INR menus starting from ${startingPriceInr}, check doorstep delivery or kitchen pickup slots, and order directly on WhatsApp with 0% middleman commission.`
+    : `Discover top-rated ${subject.toLowerCase()} across Hyderabad, Secunderabad, Bengaluru, Mumbai, Delhi NCR, Chennai, Pune, Kolkata & beyond. View freshly baked menus starting from ${startingPriceInr} and order directly from local home bakers on WhatsApp with 0% commission.`;
+
+  const description = introParagraph.slice(0, 210);
 
   const keywords = cityEntry
-    ? `${subject.toLowerCase()} in ${cityEntry.city.toLowerCase()}, best ${subject.toLowerCase()} ${cityEntry.city.toLowerCase()}, ${cityEntry.city.toLowerCase()} home bakers, ${cityEntry.state.toLowerCase()} event vendors`
-    : `${subject.toLowerCase()} near me, verified ${subject.toLowerCase()}, FindMyBites, PimpMyParty`;
+    ? [
+        `${subject.toLowerCase()} in ${placeHeading.toLowerCase()}`,
+        `best ${subject.toLowerCase()} ${cityEntry.city.toLowerCase()}`,
+        localityName ? `eggless cakes ${localityName.toLowerCase()}` : '',
+        localityName ? `home bakers in ${localityName.toLowerCase()}` : '',
+        `home bakers in ${cityEntry.city.toLowerCase()}`,
+        `cakes near me ${cityEntry.city.toLowerCase()}`,
+        'FindMyBites',
+      ]
+        .filter(Boolean)
+        .join(', ')
+    : `${subject.toLowerCase()} near me, eggless cakes india, home bakers india, custom birthday cakes, FindMyBites`;
 
   return {
     cityEntry,
+    localitySlug,
+    localityName,
     categoryEntry,
     canonicalPath,
     h1,
-    title: title.slice(0, 95),
-    description: description.slice(0, 215),
+    title: title.slice(0, 110),
+    description,
+    introParagraph,
     keywords,
-    faqs: buildLocalFaqs(cityEntry?.city ?? null, subject, categoryEntry?.isChristmasHub),
+    faqs: buildLocalFaqs(
+      cityEntry?.city ?? null,
+      localityName,
+      subject,
+      startingPriceInr,
+      categoryEntry?.isChristmasHub
+    ),
   };
 }
 
@@ -322,18 +561,23 @@ export function generateAutoStoreSeo(vendor: Vendor): {
     .map((p) => p.name)
     .join(', ');
   const seasonal = vendor.christmasSpecial ? ' · Christmas Cakes' : '';
-  const seoTitle = `${vendor.name} – ${vendor.category} in ${vendor.area}, ${vendor.city}${seasonal}`.slice(
+  const seoTitle = `${vendor.name} – ${vendor.category} in ${vendor.area}, ${vendor.city}${seasonal} | FindMyBites`.slice(
     0,
     98
   );
   const seoDescription =
     `Order from ${vendor.name} in ${vendor.area}, ${vendor.city}, ${vendor.state}. ${
       topProds ? `Popular: ${topProds}. ` : ''
-    }View menu prices, photos & chat directly on WhatsApp via FindMyBites.`.slice(0, 215);
+    }View INR menu prices, cake photos & chat directly on WhatsApp with 0% commission on FindMyBites.`.slice(
+      0,
+      215
+    );
   const seoKeywords = [
     vendor.name,
     `${vendor.category} in ${vendor.city}`,
     `${vendor.category} in ${vendor.area}`,
+    `home bakers in ${vendor.area}`,
+    `cakes in ${vendor.city}`,
     vendor.christmasSpecial ? `Christmas plum cakes ${vendor.city}` : '',
     ...vendor.specialties.slice(0, 4),
   ]
@@ -361,50 +605,69 @@ export function generateLiveSitemapXml(
   const urls: Array<{ loc: string; priority: string; changefreq: string }> = [
     { loc: `${origin}/`, priority: '1.0', changefreq: 'daily' },
   ];
+  const seenLocs = new Set<string>([`${origin}/`]);
 
-  // 1. All 24 Category hubs + Christmas hub
+  const pushUrl = (loc: string, priority: string, changefreq: string) => {
+    if (seenLocs.has(loc)) return;
+    seenLocs.add(loc);
+    urls.push({ loc, priority, changefreq });
+  };
+
+  // 1. All Category hubs
   for (const cat of SEO_CATEGORIES) {
-    urls.push({
-      loc: `${origin}/category/${cat.slug}`,
-      priority: '0.85',
-      changefreq: 'weekly',
-    });
+    pushUrl(`${origin}/category/${cat.slug}`, '0.85', 'weekly');
   }
 
   // 2. Priority City hubs + Top City × Category Programmatic SEO URLs
   const priorityCities = SEO_CITIES.filter((c) => PRIORITY_SEO_CITY_SLUGS.includes(c.slug));
-  const topCategories = SEO_CATEGORIES.slice(0, 12).concat(
-    SEO_CATEGORIES.filter((c) => c.isChristmasHub)
-  );
+  const topCategorySlugs = new Set<string>([
+    ...TOP_CAKE_SEO_CATEGORY_SLUGS,
+    'cakes-near-me',
+    'birthday-cakes',
+    'catering-services',
+    'live-counters-and-food-stalls',
+    'bar-mocktails-and-beverage-carts',
+    'christmas-cakes',
+  ]);
+  const topCategories = SEO_CATEGORIES.filter((c) => topCategorySlugs.has(c.slug));
+
   for (const city of priorityCities) {
-    urls.push({
-      loc: `${origin}/city/${city.slug}`,
-      priority: '0.85',
-      changefreq: 'daily',
-    });
+    pushUrl(`${origin}/city/${city.slug}`, '0.85', 'daily');
     for (const cat of topCategories) {
-      urls.push({
-        loc: `${origin}/${city.slug}/${cat.slug}`,
-        priority: '0.8',
-        changefreq: 'weekly',
-      });
+      pushUrl(`${origin}/${city.slug}/${cat.slug}`, '0.85', 'weekly');
+    }
+    // Curated hyper-local /[city]/[locality]/[category] pages
+    const localities = POPULAR_LOCALITIES_BY_CITY[city.slug] || [];
+    for (const loc of localities) {
+      const locSlug = slugifySeoSegment(loc);
+      if (!locSlug) continue;
+      for (const catSlug of ['home-bakers', 'custom-cakes', 'eggless-cakes', 'birthday-cakes']) {
+        pushUrl(`${origin}/${city.slug}/${locSlug}/${catSlug}`, '0.8', 'weekly');
+      }
     }
   }
 
-  // 3. Every Active Vendor Storefront (/v/<slug>) & Bio-Link (/fmb/<handle>)
-  const seenLocs = new Set(urls.map((u) => u.loc));
+  // 3. Every Active Vendor Storefront (/v/<slug>), Bio-Link (/fmb/<handle>), & Dynamic Vendor Localities
   for (const v of vendors) {
     if (v.status === 'paused' || v.status === 'pending_review') continue;
-    const storeLoc = `${origin}/v/${encodeURIComponent(v.slug)}`;
-    if (!seenLocs.has(storeLoc)) {
-      seenLocs.add(storeLoc);
-      urls.push({ loc: storeLoc, priority: '0.9', changefreq: 'weekly' });
-    }
+    pushUrl(`${origin}/v/${encodeURIComponent(v.slug)}`, '0.95', 'daily');
     const handle = getVendorBioHandle(v);
-    const bioLoc = `${origin}/fmb/${encodeURIComponent(handle)}`;
-    if (!seenLocs.has(bioLoc)) {
-      seenLocs.add(bioLoc);
-      urls.push({ loc: bioLoc, priority: '0.75', changefreq: 'weekly' });
+    if (handle) {
+      pushUrl(`${origin}/fmb/${encodeURIComponent(handle)}`, '0.75', 'weekly');
+    }
+    const citySlug = slugifySeoSegment(v.city);
+    const areaSlug = slugifySeoSegment(v.area);
+    const catSlug = slugifySeoSegment(v.category);
+    if (citySlug && catSlug) {
+      pushUrl(`${origin}/${citySlug}/${catSlug}`, '0.8', 'weekly');
+      if (areaSlug && areaSlug !== citySlug) {
+        pushUrl(`${origin}/${citySlug}/${areaSlug}/${catSlug}`, '0.78', 'weekly');
+        if (v.category.toLowerCase().includes('baker') || v.category.toLowerCase().includes('cake')) {
+          pushUrl(`${origin}/${citySlug}/${areaSlug}/home-bakers`, '0.78', 'weekly');
+          pushUrl(`${origin}/${citySlug}/${areaSlug}/custom-cakes`, '0.78', 'weekly');
+          pushUrl(`${origin}/${citySlug}/${areaSlug}/eggless-cakes`, '0.78', 'weekly');
+        }
+      }
     }
   }
 

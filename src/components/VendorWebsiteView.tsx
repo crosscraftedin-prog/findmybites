@@ -5,6 +5,7 @@ import {
   BadgeCheck,
   BookOpen,
   Check,
+  ChevronRight,
   Clock,
   Copy,
   Crown,
@@ -64,6 +65,7 @@ import { ProductShareModal } from './ProductShareModal';
 import { PromoCardModal } from './PromoCardModal';
 import { QrPosterModal } from './QrPosterModal';
 import { VendorCustomBoxBuilder } from './VendorCustomBoxBuilder';
+import { slugifySeoSegment } from '../utils/seoDirectory';
 
 export interface VendorMetrics {
   views: number;
@@ -81,6 +83,7 @@ interface VendorWebsiteViewProps {
   onSignIn?: () => Promise<void>;
   onEditStorefront?: (vendor: Vendor) => void;
   onOpenBioLink?: (vendor: Vendor) => void;
+  onNavigateSeoPath?: (path: string) => void;
   onClose: () => void;
   onToggleSave: (vendorId: string) => void;
   onCreateBooking: (booking: BookingEnquiry) => void;
@@ -100,6 +103,7 @@ export function VendorWebsiteView({
   onSignIn,
   onEditStorefront,
   onOpenBioLink,
+  onNavigateSeoPath,
   onClose,
   onToggleSave,
   onCreateBooking,
@@ -489,10 +493,10 @@ export function VendorWebsiteView({
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground transition-colors hover:bg-accent whitespace-nowrap shrink-0"
+            className="inline-flex h-10 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-card px-3.5 text-xs font-bold text-foreground shadow-xs transition-colors hover:border-brand hover:bg-brand-soft/40 hover:text-brand whitespace-nowrap shrink-0"
           >
             <ArrowLeft className="size-4" aria-hidden="true" />
-            Back
+            <span>Back to Home</span>
           </button>
 
           <div className="hidden items-center gap-2 rounded-full border border-border bg-muted/60 px-3.5 py-1.5 text-xs text-muted-foreground lg:flex">
@@ -613,13 +617,19 @@ export function VendorWebsiteView({
               {vendor.logo ? (
                 <img
                   src={vendor.logo}
-                  alt={`${vendor.name} logo`}
+                  alt={`${vendor.name} logo - ${vendor.category} in ${vendor.area}, ${vendor.city}`}
+                  width={48}
+                  height={48}
+                  decoding="async"
                   className="size-12 shrink-0 rounded-xl border border-border object-cover"
                 />
               ) : (
                 <img
                   src={vendor.image}
-                  alt={vendor.name}
+                  alt={`${vendor.name} - ${vendor.category} in ${vendor.area}, ${vendor.city}`}
+                  width={48}
+                  height={48}
+                  decoding="async"
                   className="size-12 shrink-0 rounded-xl border border-border object-cover"
                 />
               )}
@@ -658,13 +668,64 @@ export function VendorWebsiteView({
       <section className="relative overflow-hidden border-b border-border bg-[#0A0A0A]">
         <img
           src={vendor.image}
-          alt={vendor.name}
+          alt={`${vendor.name} - ${vendor.category} in ${vendor.area}, ${vendor.city}`}
+          width={1200}
+          height={630}
+          fetchPriority="high"
+          decoding="async"
           referrerPolicy="no-referrer"
           className="absolute inset-0 h-full w-full object-cover opacity-50"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/60 to-black/35" />
 
-        <div className="relative mx-auto max-w-6xl px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
+        <div className="relative mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
+          {/* Semantic Breadcrumb Navigation (mirrors BreadcrumbList JSON-LD) */}
+          <nav
+            aria-label="Breadcrumb"
+            className="mb-4 flex flex-wrap items-center gap-1.5 text-xs text-white/75"
+          >
+            <a
+              href="/"
+              onClick={(e) => {
+                e.preventDefault();
+                onClose();
+              }}
+              className="font-semibold hover:text-white"
+            >
+              Home
+            </a>
+            <ChevronRight className="size-3.5 text-white/50" aria-hidden="true" />
+            <a
+              href={`/city/${slugifySeoSegment(vendor.city)}`}
+              onClick={(e) => {
+                if (onNavigateSeoPath) {
+                  e.preventDefault();
+                  onNavigateSeoPath(`/city/${slugifySeoSegment(vendor.city)}`);
+                }
+              }}
+              className="font-semibold hover:text-white"
+            >
+              {vendor.city}
+            </a>
+            <ChevronRight className="size-3.5 text-white/50" aria-hidden="true" />
+            <a
+              href={`/${slugifySeoSegment(vendor.city)}/${slugifySeoSegment(vendor.category)}`}
+              onClick={(e) => {
+                if (onNavigateSeoPath) {
+                  e.preventDefault();
+                  onNavigateSeoPath(
+                    `/${slugifySeoSegment(vendor.city)}/${slugifySeoSegment(vendor.category)}`
+                  );
+                }
+              }}
+              className="font-semibold hover:text-white"
+            >
+              {vendor.category}
+            </a>
+            <ChevronRight className="size-3.5 text-white/50" aria-hidden="true" />
+            <span className="font-bold text-white">{vendor.name}</span>
+          </nav>
+
           <div className="max-w-3xl">
             <div className="flex flex-wrap items-center gap-2 text-xs text-white/90">
               {isPaid && (
@@ -694,7 +755,10 @@ export function VendorWebsiteView({
               {vendor.logo && (
                 <img
                   src={vendor.logo}
-                  alt={`${vendor.name} logo`}
+                  alt={`${vendor.name} logo - ${vendor.category} in ${vendor.area}, ${vendor.city}`}
+                  width={64}
+                  height={64}
+                  decoding="async"
                   className="size-14 shrink-0 rounded-2xl border-2 border-white/30 bg-white object-cover shadow-lg sm:size-16"
                 />
               )}
@@ -916,7 +980,11 @@ export function VendorWebsiteView({
                 >
                   <img
                     src={photo}
-                    alt={`${vendor.name} portfolio ${idx + 1}`}
+                    alt={`${vendor.name} portfolio ${idx + 1} - ${vendor.category} in ${vendor.area}, ${vendor.city}`}
+                    width={320}
+                    height={320}
+                    loading="lazy"
+                    decoding="async"
                     referrerPolicy="no-referrer"
                     className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                   />
@@ -1180,7 +1248,11 @@ export function VendorWebsiteView({
                         <div className="relative flex aspect-[4/3] w-full items-center justify-center overflow-hidden border-b border-border/60 bg-white dark:bg-neutral-900">
                           <img
                             src={product.image}
-                            alt={product.name}
+                            alt={`${product.name} by ${vendor.name} - ${vendor.category} in ${vendor.area}, ${vendor.city}`}
+                            width={400}
+                            height={300}
+                            loading="lazy"
+                            decoding="async"
                             referrerPolicy="no-referrer"
                             className={`h-full w-full object-contain object-center ${isSoldOut ? 'grayscale-[60%]' : ''}`}
                           />
@@ -1711,6 +1783,25 @@ export function VendorWebsiteView({
           </div>
         </section>
         )}
+
+        <div className="flex flex-col items-center justify-between gap-3 rounded-2xl border border-border bg-card/70 px-5 py-4 text-center sm:flex-row sm:text-left">
+          <div>
+            <p className="text-sm font-bold text-foreground">
+              Want to explore more bakers, caterers &amp; live counters?
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Return to FindMyBites Home to compare more local stores near you.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-brand px-4 py-2.5 text-xs font-bold text-brand-foreground shadow-xs transition-colors hover:bg-brand-hover whitespace-nowrap"
+          >
+            <ArrowLeft className="size-4" aria-hidden="true" />
+            Back to Home · Browse More Stores
+          </button>
+        </div>
       </main>
 
       {/* Sticky Bottom WhatsApp Bar + Expandable Multi-Item Order Basket */}

@@ -80,7 +80,9 @@ export function VendorCard({
         {!imgFailed ? (
           <img
             src={vendor.image}
-            alt={`${vendor.name} — ${vendor.category} in ${vendor.city}`}
+            alt={`${vendor.name} - ${vendor.category} in ${vendor.area}, ${vendor.city}`}
+            width={640}
+            height={400}
             loading="lazy"
             decoding="async"
             referrerPolicy="no-referrer"
@@ -218,7 +220,9 @@ export function VendorCard({
               {vendor.logo && (
                 <img
                   src={vendor.logo}
-                  alt={`${vendor.name} logo`}
+                  alt={`${vendor.name} logo - ${vendor.category} in ${vendor.area}, ${vendor.city}`}
+                  width={28}
+                  height={28}
                   loading="lazy"
                   decoding="async"
                   className="size-7 shrink-0 rounded-lg border border-border object-cover"

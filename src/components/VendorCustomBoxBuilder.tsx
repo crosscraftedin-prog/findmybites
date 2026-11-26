@@ -561,8 +561,11 @@ export function VendorCustomBoxBuilder({
                       <div className="flex aspect-[4/3] w-full items-center justify-center overflow-hidden border-b border-border/60 bg-white p-1.5">
                         <img
                           src={product.image}
-                          alt={product.name}
+                          alt={`${product.name} by ${vendor.name} - ${vendor.category} in ${vendor.area}, ${vendor.city}`}
+                          width={400}
+                          height={300}
                           loading="lazy"
+                          decoding="async"
                           referrerPolicy="no-referrer"
                           className="h-full w-full object-contain object-center"
                         />
