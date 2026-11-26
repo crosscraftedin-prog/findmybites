@@ -72,19 +72,24 @@ export function VendorCustomBoxBuilder({
   const [customNote, setCustomNote] = useState('');
   const [formHint, setFormHint] = useState<string | null>(null);
 
-  const productsById = useMemo(() => {
-    const map = new Map<string, VendorProduct>();
-    for (const p of vendor.products) map.set(p.id, p);
-    return map;
-  }, [vendor.products]);
-
-  const vegCount = useMemo(
-    () => vendor.products.filter((p) => p.foodType === 'veg').length,
+  const builderProducts = useMemo(
+    () => vendor.products.filter((p) => !p.isPackage),
     [vendor.products]
   );
+
+  const productsById = useMemo(() => {
+    const map = new Map<string, VendorProduct>();
+    for (const p of builderProducts) map.set(p.id, p);
+    return map;
+  }, [builderProducts]);
+
+  const vegCount = useMemo(
+    () => builderProducts.filter((p) => p.foodType === 'veg').length,
+    [builderProducts]
+  );
   const nonVegCount = useMemo(
-    () => vendor.products.filter((p) => p.foodType === 'non-veg').length,
-    [vendor.products]
+    () => builderProducts.filter((p) => p.foodType === 'non-veg').length,
+    [builderProducts]
   );
   const hasFoodTags = vegCount > 0 || nonVegCount > 0;
 
@@ -95,7 +100,7 @@ export function VendorCustomBoxBuilder({
   const sectionTabs = useMemo(() => {
     const presentSections = new Set<string>();
     let hasUnassigned = false;
-    for (const p of vendor.products) {
+    for (const p of builderProducts) {
       const sec = resolveProductSection(p);
       if (sec) {
         presentSections.add(sec);
@@ -117,12 +122,12 @@ export function VendorCustomBoxBuilder({
       ordered.push('Other Items');
     }
     return ordered;
-  }, [vendor.products, modeConfig.sections]);
+  }, [builderProducts, modeConfig.sections]);
 
   // Preset cards (only show presets that have at least 1 item assigned by the vendor)
   const availablePresets = useMemo(() => {
     return BUILDER_PRESET_OPTIONS.map((opt) => {
-      const items = vendor.products.filter((p) => (p.builderPresets ?? []).includes(opt.id));
+      const items = builderProducts.filter((p) => (p.builderPresets ?? []).includes(opt.id));
       const itemsUsd = items.reduce((sum, p) => sum + p.priceUsd, 0);
       return {
         ...opt,
@@ -132,11 +137,11 @@ export function VendorCustomBoxBuilder({
         perUnitUsd: itemsUsd + packagingUsd,
       };
     }).filter((p) => p.items.length > 0);
-  }, [vendor.products, mode, packagingUsd]);
+  }, [builderProducts, mode, packagingUsd]);
 
   const filteredProducts = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    return vendor.products.filter((p) => {
+    return builderProducts.filter((p) => {
       if (foodFilter !== 'all' && p.foodType !== foodFilter) return false;
       const sec = resolveProductSection(p) || 'Other Items';
       if (activeSection !== 'all') {
@@ -430,7 +435,7 @@ export function VendorCustomBoxBuilder({
                       : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
-                  All ({vendor.products.length})
+                  All ({builderProducts.length})
                 </button>
                 {vegCount > 0 && (
                   <button

@@ -670,6 +670,21 @@ async function normalizeProductsForStorage(
       if (typeof p.advanceHours === 'number' && Number.isFinite(p.advanceHours) && p.advanceHours > 0) {
         out.advanceHours = Math.min(336, Math.round(p.advanceHours));
       }
+      if (p.isPackage === true) {
+        out.isPackage = true;
+      }
+      if (Array.isArray(p.includedItems)) {
+        const cleanedIncluded = p.includedItems
+          .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+          .map((item) => item.trim().slice(0, 80))
+          .slice(0, 40);
+        if (cleanedIncluded.length > 0) {
+          out.includedItems = cleanedIncluded;
+        }
+      }
+      if (typeof p.minOrderQty === 'number' && Number.isFinite(p.minOrderQty) && p.minOrderQty > 0) {
+        out.minOrderQty = Math.min(5000, Math.round(p.minOrderQty));
+      }
       return out;
     })
   );

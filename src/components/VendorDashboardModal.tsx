@@ -240,6 +240,11 @@ export function VendorDashboardModal({
   const [prodVariants, setProdVariants] = useState<
     Array<{ id: string; label: string; priceLocal: string; serves: string }>
   >([]);
+  const [prodIsPackage, setProdIsPackage] = useState(false);
+  const [prodIncludedItemsText, setProdIncludedItemsText] = useState('');
+  const [prodMinOrderQty, setProdMinOrderQty] = useState('');
+  const [prodDishPickerSearch, setProdDishPickerSearch] = useState('');
+  const [prodListFilter, setProdListFilter] = useState<'all' | 'packages' | 'items'>('all');
 
   // Storefront full editor state
   const [editName, setEditName] = useState('');
@@ -816,6 +821,10 @@ export function VendorDashboardModal({
     setProdBuilderSection('');
     setProdBuilderPresets([]);
     setProdVariants([]);
+    setProdIsPackage(false);
+    setProdIncludedItemsText('');
+    setProdMinOrderQty('');
+    setProdDishPickerSearch('');
     setEditingProductId(null);
     setAddingCustomSection(false);
     setNewSectionInput('');
@@ -828,13 +837,20 @@ export function VendorDashboardModal({
     });
   };
 
-  const openAddProductForm = (vendorId: string) => {
-    if (addingProductForId === vendorId && !editingProductId) {
+  const openAddProductForm = (vendorId: string, asPackage = false) => {
+    if (addingProductForId === vendorId && !editingProductId && prodIsPackage === asPackage) {
       setAddingProductForId(null);
       resetProductForm();
       return;
     }
     resetProductForm();
+    if (asPackage) {
+      setProdIsPackage(true);
+      setProdUnitType('custom');
+      setProdServes('Per Plate');
+      setProdPriceLocal(usdToLocal(3, currency)); // ~₹250 default in INR
+      setProdMinOrderQty('20');
+    }
     setAddingProductForId(vendorId);
     setConfirmDeleteProdKey(null);
     scrollToProductForm(vendorId);
@@ -864,6 +880,16 @@ export function VendorDashboardModal({
     );
     setProdBuilderSection(product.builderSection || '');
     setProdBuilderPresets(product.builderPresets ? [...product.builderPresets] : []);
+    setProdIsPackage(Boolean(product.isPackage));
+    setProdIncludedItemsText(
+      product.includedItems && product.includedItems.length > 0
+        ? product.includedItems.join('\n')
+        : ''
+    );
+    setProdMinOrderQty(
+      product.minOrderQty && product.minOrderQty > 0 ? String(product.minOrderQty) : ''
+    );
+    setProdDishPickerSearch('');
     setProdVariants(
       product.variants && product.variants.length > 0
         ? product.variants.map((v) => ({
@@ -1004,6 +1030,18 @@ export function VendorDashboardModal({
       }
 
       const parsedAdvanceHours = Math.max(0, Math.min(168, Math.round(Number(prodAdvanceHours) || 0)));
+      const parsedMinOrderQty = Math.max(0, Math.min(5000, Math.round(Number(prodMinOrderQty) || 0)));
+      const parsedIncludedItems = prodIsPackage
+        ? Array.from(
+            new Set(
+              prodIncludedItemsText
+                .split(/[\n,]+/)
+                .map((s) => s.replace(/^[-•*\d.)\s]+/, '').trim())
+                .filter(Boolean)
+                .map((s) => s.slice(0, 80))
+            )
+          ).slice(0, 40)
+        : [];
       const existingProduct = editingProductId
         ? vendor.products.find((p) => p.id === editingProductId)
         : undefined;
@@ -1019,11 +1057,24 @@ export function VendorDashboardModal({
         ...(prodMenuSection.trim() ? { menuSection: prodMenuSection.trim().slice(0, 48) } : {}),
         ...(parsedAdvanceHours > 0 ? { advanceHours: parsedAdvanceHours } : {}),
         ...(existingProduct?.inStock === false ? { inStock: false } : {}),
-        ...(prodBuilderSection.trim() ? { builderSection: prodBuilderSection.trim().slice(0, 60) } : {}),
-        ...(prodBuilderPresets.length > 0 ? { builderPresets: prodBuilderPresets } : {}),
-        ...(cleanedVariants.length > 0 ? { variants: cleanedVariants } : {}),
+        ...(!prodIsPackage && prodBuilderSection.trim()
+          ? { builderSection: prodBuilderSection.trim().slice(0, 60) }
+          : {}),
+        ...(!prodIsPackage && prodBuilderPresets.length > 0
+          ? { builderPresets: prodBuilderPresets }
+          : {}),
+        ...(!prodIsPackage && cleanedVariants.length > 0 ? { variants: cleanedVariants } : {}),
+        ...(prodIsPackage ? { isPackage: true } : {}),
+        ...(prodIsPackage && parsedIncludedItems.length > 0
+          ? { includedItems: parsedIncludedItems }
+          : {}),
+        ...(prodIsPackage && parsedMinOrderQty > 0 ? { minOrderQty: parsedMinOrderQty } : {}),
         priceUsd: resolvedPriceUsd,
-        description: prodDesc.trim().slice(0, 400) || prodName.trim(),
+        description:
+          prodDesc.trim().slice(0, 400) ||
+          (prodIsPackage && parsedIncludedItems.length > 0
+            ? `Includes ${parsedIncludedItems.slice(0, 4).join(', ')}${parsedIncludedItems.length > 4 ? ` + ${parsedIncludedItems.length - 4} more` : ''}`
+            : prodName.trim()),
         image: resolvedImage,
       };
       let updatedProducts = editingProductId
@@ -2557,19 +2608,57 @@ export function VendorDashboardModal({
                           {/* Live Product Catalog Editor */}
                           <div className="mt-4 border-t border-border pt-4">
                             <div className="flex items-center justify-between">
-                              <p className="text-xs font-bold text-foreground">
-                                Products &amp; Packages ({v.products.length})
-                              </p>
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <p className="text-xs font-bold text-foreground">
+                                  Products &amp; Ready Packages ({v.products.length})
+                                </p>
+                                {v.products.some((p) => p.isPackage) && (
+                                  <div className="inline-flex items-center gap-1 rounded-lg border border-border bg-background p-0.5 text-[11px] font-bold">
+                                    {(
+                                      [
+                                        { id: 'all', label: `All (${v.products.length})` },
+                                        {
+                                          id: 'packages',
+                                          label: `Ready Packages (${v.products.filter((p) => p.isPackage).length})`,
+                                        },
+                                        {
+                                          id: 'items',
+                                          label: `Dishes (${v.products.filter((p) => !p.isPackage).length})`,
+                                        },
+                                      ] as const
+                                    ).map((tabOpt) => (
+                                      <button
+                                        key={tabOpt.id}
+                                        type="button"
+                                        onClick={() => setProdListFilter(tabOpt.id)}
+                                        className={`cursor-pointer rounded-md px-2 py-0.5 transition-colors ${
+                                          prodListFilter === tabOpt.id
+                                            ? 'bg-brand text-brand-foreground'
+                                            : 'text-muted-foreground hover:text-foreground'
+                                        }`}
+                                      >
+                                        {tabOpt.label}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
                             </div>
 
                             {v.products.length === 0 ? (
                               <p className="mt-2 rounded-xl border border-dashed border-border px-3 py-4 text-center text-xs text-muted-foreground">
-                                No products listed yet. Click <strong>+ Add Product</strong> to add
-                                your cakes or packages.
+                                No products listed yet. Click <strong>+ Add Product</strong> or{' '}
+                                <strong>+ Add Ready-Made Package</strong> below.
                               </p>
                             ) : (
                               <div className="mt-2.5 grid gap-2 sm:grid-cols-2">
-                                {v.products.map((p) => {
+                                {v.products
+                                  .filter((p) => {
+                                    if (prodListFilter === 'packages') return Boolean(p.isPackage);
+                                    if (prodListFilter === 'items') return !p.isPackage;
+                                    return true;
+                                  })
+                                  .map((p) => {
                                   const delKey = `${v.id}:${p.id}`;
                                   const isEditingThis =
                                     addingProductForId === v.id && editingProductId === p.id;
@@ -2579,7 +2668,9 @@ export function VendorDashboardModal({
                                       className={`flex items-start justify-between gap-2.5 rounded-xl border px-3 py-2.5 text-xs transition-colors ${
                                         isEditingThis
                                           ? 'border-brand bg-brand-soft/30'
-                                          : 'border-border bg-card'
+                                          : p.isPackage
+                                            ? 'border-amber-500/40 bg-amber-500/5'
+                                            : 'border-border bg-card'
                                       }`}
                                     >
                                       <div className="flex min-w-0 flex-1 items-start gap-2.5">
@@ -2597,12 +2688,28 @@ export function VendorDashboardModal({
                                             <p className="truncate font-semibold text-foreground">
                                               {p.name}
                                             </p>
+                                            {p.isPackage && (
+                                              <span className="rounded border border-amber-500/40 bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-extrabold text-amber-800 dark:text-amber-300">
+                                                Ready Package
+                                              </span>
+                                            )}
                                             <FoodTypeBadge foodType={p.foodType} size="xs" />
                                           </div>
                                           <p className="font-mono text-[11px] tabular-nums text-muted-foreground">
                                             {p.variants && p.variants.length > 1 ? 'From ' : ''}
                                             {formatMoney(p.priceUsd, currency)} · {p.serves}
+                                            {p.minOrderQty ? ` · Min ${p.minOrderQty}` : ''}
                                           </p>
+                                          {p.isPackage &&
+                                            p.includedItems &&
+                                            p.includedItems.length > 0 && (
+                                              <p className="mt-1 line-clamp-2 text-[11px] text-foreground/80">
+                                                <strong className="text-brand">
+                                                  {p.includedItems.length} items:
+                                                </strong>{' '}
+                                                {p.includedItems.join(', ')}
+                                              </p>
+                                            )}
                                           {p.variants && p.variants.length > 0 && (
                                             <div className="mt-1 flex flex-wrap gap-1">
                                               {p.variants.map((variant) => (
@@ -2712,16 +2819,26 @@ export function VendorDashboardModal({
                               </div>
                             )}
 
-                            <div className="mt-3 flex items-center justify-end">
+                            <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
                               <button
                                 type="button"
-                                onClick={() => openAddProductForm(v.id)}
+                                onClick={() => openAddProductForm(v.id, true)}
+                                className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-amber-500/60 bg-amber-500/15 px-3.5 py-2 text-xs font-extrabold text-amber-900 transition-colors hover:bg-amber-500 hover:text-white dark:text-amber-200"
+                              >
+                                <Plus className="size-3.5" aria-hidden="true" />
+                                {addingProductForId === v.id && !editingProductId && prodIsPackage
+                                  ? 'Close Package Form'
+                                  : 'Add Ready-Made Package'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => openAddProductForm(v.id, false)}
                                 className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-brand bg-brand-soft/70 px-3.5 py-2 text-xs font-bold text-brand transition-colors hover:bg-brand hover:text-brand-foreground"
                               >
                                 <Plus className="size-3.5" aria-hidden="true" />
-                                {addingProductForId === v.id && !editingProductId
+                                {addingProductForId === v.id && !editingProductId && !prodIsPackage
                                   ? 'Close Form'
-                                  : 'Add Product'}
+                                  : 'Add Product / Dish'}
                               </button>
                             </div>
 
@@ -2731,10 +2848,48 @@ export function VendorDashboardModal({
                                 onSubmit={(e) => void handleSaveProduct(e, v)}
                                 className="mt-3 space-y-3 rounded-xl border border-brand-border bg-brand-soft/25 p-3.5"
                               >
-                                <div className="flex items-center justify-between gap-2">
-                                  <p className="text-xs font-extrabold text-foreground">
-                                    {editingProductId ? 'Edit Product Details' : 'Add New Product'}
-                                  </p>
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <p className="text-xs font-extrabold text-foreground">
+                                      {editingProductId
+                                        ? prodIsPackage
+                                          ? 'Edit Ready-Made Package'
+                                          : 'Edit Product Details'
+                                        : prodIsPackage
+                                          ? 'Add Ready-Made Per-Plate Package / Deal'
+                                          : 'Add New Product / Dish'}
+                                    </p>
+                                    <div className="inline-flex rounded-lg border border-border bg-background p-0.5 text-[11px] font-bold">
+                                      <button
+                                        type="button"
+                                        onClick={() => setProdIsPackage(false)}
+                                        className={`cursor-pointer rounded-md px-2.5 py-1 transition-colors ${
+                                          !prodIsPackage
+                                            ? 'bg-brand text-brand-foreground'
+                                            : 'text-muted-foreground hover:text-foreground'
+                                        }`}
+                                      >
+                                        Single Dish / Product
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setProdIsPackage(true);
+                                          if (prodUnitType !== 'custom') {
+                                            setProdUnitType('custom');
+                                            setProdServes('Per Plate');
+                                          }
+                                        }}
+                                        className={`cursor-pointer rounded-md px-2.5 py-1 transition-colors ${
+                                          prodIsPackage
+                                            ? 'bg-amber-600 text-white'
+                                            : 'text-muted-foreground hover:text-foreground'
+                                        }`}
+                                      >
+                                        Ready-Made Package (₹/plate)
+                                      </button>
+                                    </div>
+                                  </div>
                                   <button
                                     type="button"
                                     onClick={() => {
@@ -2753,7 +2908,11 @@ export function VendorDashboardModal({
                                     required
                                     value={prodName}
                                     onChange={(e) => setProdName(e.target.value)}
-                                    placeholder="Product Name (e.g. Belgian Truffle Cake)"
+                                    placeholder={
+                                      prodIsPackage
+                                        ? 'Package Name (e.g. ₹250 Classic Veg Catering Plate)'
+                                        : 'Product Name (e.g. Belgian Truffle Cake)'
+                                    }
                                     className="rounded-lg border border-border bg-background px-2.5 py-2 text-xs font-medium text-foreground focus:border-brand focus:outline-none sm:col-span-5"
                                   />
 
@@ -2814,6 +2973,112 @@ export function VendorDashboardModal({
                                   </div>
                                 </div>
 
+                                {prodIsPackage ? (
+                                  /* Ready-Made Package / Per-Plate Deal: Included Food List + Min Plates */
+                                  <div className="space-y-2.5 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3">
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                      <div>
+                                        <p className="text-xs font-extrabold text-foreground">
+                                          Included Food List in This Package
+                                        </p>
+                                        <p className="text-[11px] text-muted-foreground">
+                                          Type one dish per line (or separated by commas) — customers will see this exact menu under your Ready Packages tab.
+                                        </p>
+                                      </div>
+                                      <div className="flex items-center gap-1.5">
+                                        <label className="text-[11px] font-bold text-foreground">
+                                          Min Plates / Qty:
+                                        </label>
+                                        <input
+                                          type="number"
+                                          min={1}
+                                          max={5000}
+                                          value={prodMinOrderQty}
+                                          onChange={(e) => setProdMinOrderQty(e.target.value)}
+                                          placeholder="e.g. 20"
+                                          className="w-20 rounded-md border border-border bg-background px-2 py-1 font-mono text-xs text-foreground focus:border-brand focus:outline-none"
+                                        />
+                                      </div>
+                                    </div>
+
+                                    <textarea
+                                      rows={4}
+                                      value={prodIncludedItemsText}
+                                      onChange={(e) => setProdIncludedItemsText(e.target.value)}
+                                      placeholder={`Welcome Drink\nPaneer Tikka (Starter)\nVeg Dum Biryani\nPaneer Butter Masala\nRumali Roti & Dal Tadka\nGulab Jamun, Raita & Salad`}
+                                      className="w-full rounded-lg border border-border bg-background px-2.5 py-2 text-xs leading-relaxed text-foreground focus:border-brand focus:outline-none"
+                                    />
+
+                                    {/* 1-Tap Quick Picker from Vendor's Existing Individual Dishes */}
+                                    {v.products.some((p) => !p.isPackage) && (() => {
+                                      const existingDishes = v.products.filter((p) => !p.isPackage);
+                                      const currentList = prodIncludedItemsText
+                                        .split(/[\n,]+/)
+                                        .map((s) => s.trim().toLowerCase())
+                                        .filter(Boolean);
+                                      const q = prodDishPickerSearch.trim().toLowerCase();
+                                      const filteredDishes = existingDishes
+                                        .filter((d) => !q || d.name.toLowerCase().includes(q))
+                                        .slice(0, 24);
+
+                                      const toggleDishInPackage = (dishName: string) => {
+                                        const lines = prodIncludedItemsText
+                                          .split(/[\n,]+/)
+                                          .map((s) => s.trim())
+                                          .filter(Boolean);
+                                        const existsIdx = lines.findIndex(
+                                          (l) => l.toLowerCase() === dishName.toLowerCase()
+                                        );
+                                        if (existsIdx >= 0) {
+                                          lines.splice(existsIdx, 1);
+                                        } else {
+                                          lines.push(dishName);
+                                        }
+                                        setProdIncludedItemsText(lines.join('\n'));
+                                      };
+
+                                      return (
+                                        <div className="space-y-1.5 border-t border-amber-500/25 pt-2">
+                                          <div className="flex flex-wrap items-center justify-between gap-2">
+                                            <span className="text-[11px] font-bold text-foreground">
+                                              Quick-pick from your existing dishes ({existingDishes.length}):
+                                            </span>
+                                            <input
+                                              type="text"
+                                              value={prodDishPickerSearch}
+                                              onChange={(e) => setProdDishPickerSearch(e.target.value)}
+                                              placeholder="Search your dishes..."
+                                              className="w-44 rounded-md border border-border bg-background px-2 py-1 text-[11px] text-foreground focus:border-brand focus:outline-none"
+                                            />
+                                          </div>
+                                          <div className="flex max-h-28 flex-wrap gap-1 overflow-y-auto">
+                                            {filteredDishes.map((dish) => {
+                                              const isAdded = currentList.includes(
+                                                dish.name.toLowerCase()
+                                              );
+                                              return (
+                                                <button
+                                                  key={dish.id}
+                                                  type="button"
+                                                  onClick={() => toggleDishInPackage(dish.name)}
+                                                  className={`cursor-pointer rounded-md border px-2 py-0.5 text-[11px] font-semibold transition-colors ${
+                                                    isAdded
+                                                      ? 'border-emerald-600 bg-emerald-600 text-white'
+                                                      : 'border-border bg-background text-foreground hover:border-brand hover:text-brand'
+                                                  }`}
+                                                >
+                                                  {isAdded ? '✓ ' : '+ '}
+                                                  {dish.name}
+                                                </button>
+                                              );
+                                            })}
+                                          </div>
+                                        </div>
+                                      );
+                                    })()}
+                                  </div>
+                                ) : (
+                                  <>
                                 {/* 1-Tap Quick Weight / Pieces Presets */}
                                 <div className="flex flex-wrap items-center gap-1.5">
                                   <span className="text-[11px] font-semibold text-muted-foreground">
@@ -2970,6 +3235,8 @@ export function VendorDashboardModal({
                                     </div>
                                   )}
                                 </div>
+                                  </>
+                                )}
 
                                 {/* Veg / Non-Veg Food Type Selector */}
                                 <div className="flex flex-wrap items-center gap-1.5">
@@ -3043,8 +3310,9 @@ export function VendorDashboardModal({
                                   </div>
                                 </div>
 
-                                {/* Custom Builder Section & Quick-Start Presets (Business Plan Only) */}
-                                {isPaidPlanTier(v.planTier) &&
+                                {/* Custom Builder Section & Quick-Start Presets (Business Plan Only, Individual Dishes) */}
+                                {!prodIsPackage &&
+                                  isPaidPlanTier(v.planTier) &&
                                   (v.customBuilderEnabled ||
                                     prodBuilderSection ||
                                     prodBuilderPresets.length > 0) && (() => {

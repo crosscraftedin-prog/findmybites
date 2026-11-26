@@ -114,6 +114,7 @@ export function VendorWebsiteView({
   const [selectedProductId, setSelectedProductId] = useState<string>('');
   const [selectedVariants, setSelectedVariants] = useState<Record<string, string>>({});
   const [catalogView, setCatalogView] = useState<'builder' | 'catalog'>('catalog');
+  const [showIndividualInPackages, setShowIndividualInPackages] = useState(false);
   const [foodFilter, setFoodFilter] = useState<'all' | 'veg' | 'non-veg'>('all');
   const [selectedSection, setSelectedSection] = useState<string>('all');
   const [qrMenuMode, setQrMenuMode] = useState<boolean>(false);
@@ -158,12 +159,13 @@ export function VendorWebsiteView({
       setCatalogView(
         deepLinkedProduct || menuModeParam
           ? 'catalog'
-          : isCustomBuilderActive(vendor) && vendor.products.length > 0
+          : isCustomBuilderActive(vendor) && vendor.products.some((p) => !p.isPackage)
             ? 'builder'
             : 'catalog'
       );
       setFoodFilter('all');
       setSelectedSection('all');
+      setShowIndividualInPackages(Boolean(deepLinkedProduct && !deepLinkedProduct.isPackage));
       setQrMenuMode(menuModeParam);
       setCheckoutOpen(false);
       setSelectedVariants({});
@@ -997,25 +999,34 @@ export function VendorWebsiteView({
         {/* Full Product Catalog Grid & Optional Custom Plate / Snack Box Builder */}
         <section id="vendor-products">
           {(() => {
+            const readyPackages = vendor.products.filter((p) => p.isPackage);
+            const individualItems = vendor.products.filter((p) => !p.isPackage);
             const hasCustomBuilder = Boolean(
-              isCustomBuilderActive(vendor) && vendor.products.length > 0
+              isCustomBuilderActive(vendor) && individualItems.length > 0
             );
             const builderMode =
               vendor.customBuilderMode ?? suggestBuilderModeForCategory(vendor.category);
             const builderModeConfig = getCustomBuilderModeConfig(builderMode);
             const showBuilder = hasCustomBuilder && catalogView === 'builder';
 
-            const vegCount = vendor.products.filter((p) => p.foodType === 'veg').length;
-            const nonVegCount = vendor.products.filter((p) => p.foodType === 'non-veg').length;
+            // When Custom Builder is active, the "Ready Packages" tab shows ONLY Ready-Made Deals
+            // (so it doesn't duplicate all 200 individual builder dishes!) unless user explicitly expands individual items.
+            const catalogSourceProducts =
+              hasCustomBuilder && !showIndividualInPackages
+                ? readyPackages
+                : [...readyPackages, ...individualItems];
+
+            const vegCount = catalogSourceProducts.filter((p) => p.foodType === 'veg').length;
+            const nonVegCount = catalogSourceProducts.filter((p) => p.foodType === 'non-veg').length;
             const hasFoodTypeTags = vegCount > 0 || nonVegCount > 0;
             const menuSections = Array.from(
               new Set(
-                vendor.products
+                catalogSourceProducts
                   .map((p) => p.menuSection?.trim())
                   .filter((s): s is string => Boolean(s))
               )
             );
-            const displayedProducts = vendor.products.filter((p) => {
+            const displayedProducts = catalogSourceProducts.filter((p) => {
               if (foodFilter !== 'all' && p.foodType !== foodFilter) return false;
               if (
                 selectedSection !== 'all' &&
@@ -1028,7 +1039,7 @@ export function VendorWebsiteView({
 
             return (
               <>
-                {isCustomBuilderActive(vendor) && vendor.products.length === 0 && (
+                {isCustomBuilderActive(vendor) && individualItems.length === 0 && (
                   <div className="mb-6 rounded-2xl border border-brand-border bg-brand-soft/35 p-4 text-xs text-foreground">
                     <p className="inline-flex items-center gap-1.5 font-extrabold text-brand">
                       <Package className="size-4" aria-hidden="true" />
@@ -1057,11 +1068,14 @@ export function VendorWebsiteView({
                         ) : (
                           <Package className="size-3.5" aria-hidden="true" />
                         )}
-                        Build Your Own {builderModeConfig.label}
+                        Build Your Own {builderModeConfig.label} ({individualItems.length})
                       </button>
                       <button
                         type="button"
-                        onClick={() => setCatalogView('catalog')}
+                        onClick={() => {
+                          setCatalogView('catalog');
+                          setShowIndividualInPackages(false);
+                        }}
                         className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-bold transition-colors ${
                           !showBuilder
                             ? 'bg-foreground text-background shadow-xs'
@@ -1069,7 +1083,7 @@ export function VendorWebsiteView({
                         }`}
                       >
                         <ShoppingBag className="size-3.5" aria-hidden="true" />
-                        Full Catalog &amp; Ready Packages ({vendor.products.length})
+                        Ready-Made Packages ({readyPackages.length})
                       </button>
                     </div>
                     <p className="text-xs font-medium text-muted-foreground">
@@ -1093,10 +1107,14 @@ export function VendorWebsiteView({
                 <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
                   <div>
                     <p className="text-xs font-bold uppercase tracking-wide text-brand">
-                      One-Page Product Catalog &amp; WhatsApp Order Basket
+                      {hasCustomBuilder && !showIndividualInPackages
+                        ? 'Fixed Per-Plate Deals & Ready-Made Menus'
+                        : 'One-Page Product Catalog & WhatsApp Order Basket'}
                     </p>
                     <h2 className="mt-1 text-2xl font-extrabold tracking-tight text-foreground sm:text-3xl">
-                      Products, Counters &amp; Packages
+                      {hasCustomBuilder && !showIndividualInPackages
+                        ? 'Ready-Made Packages & Deals'
+                        : 'Products, Counters & Packages'}
                     </h2>
                   </div>
 
@@ -1115,7 +1133,7 @@ export function VendorWebsiteView({
                             : 'border-border bg-card text-muted-foreground hover:text-foreground'
                         }`}
                       >
-                        All ({vendor.products.length})
+                        All ({catalogSourceProducts.length})
                       </button>
                       {vegCount > 0 && (
                         <button
@@ -1168,10 +1186,10 @@ export function VendorWebsiteView({
                           : 'border-border bg-card text-muted-foreground hover:text-foreground'
                       }`}
                     >
-                      All Sections ({vendor.products.length})
+                      All Sections ({catalogSourceProducts.length})
                     </button>
                     {menuSections.map((sec) => {
-                      const secCount = vendor.products.filter(
+                      const secCount = catalogSourceProducts.filter(
                         (p) => (p.menuSection?.trim() || '') === sec
                       ).length;
                       return (
@@ -1192,7 +1210,71 @@ export function VendorWebsiteView({
                   </div>
                 )}
 
-                <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+                {hasCustomBuilder && !showIndividualInPackages && readyPackages.length === 0 ? (
+                  <div className="mt-6 rounded-2xl border border-dashed border-amber-500/45 bg-amber-500/5 p-8 text-center">
+                    <Package className="mx-auto size-8 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+                    <h3 className="mt-3 text-base font-extrabold text-foreground">
+                      {canEdit
+                        ? 'No Ready-Made Packages added yet'
+                        : `Build Your Own Custom ${builderModeConfig.unitSingular.charAt(0).toUpperCase() + builderModeConfig.unitSingular.slice(1)} or Enquire on WhatsApp`}
+                    </h3>
+                    <p className="mx-auto mt-1.5 max-w-lg text-xs leading-relaxed text-muted-foreground sm:text-sm">
+                      {canEdit
+                        ? 'Add fixed per-plate deals (for example, "₹250 Classic Veg Plate" with the exact list of dishes included) from Edit Storefront → + Add Ready-Made Package.'
+                        : `${vendor.name} lets you customize your own ${builderModeConfig.unitSingular} dish-by-dish in the builder, or message directly on WhatsApp for fixed per-plate quotes.`}
+                    </p>
+                    <div className="mt-5 flex flex-wrap items-center justify-center gap-2.5">
+                      {canEdit && onEditStorefront ? (
+                        <button
+                          type="button"
+                          onClick={() => onEditStorefront(vendor)}
+                          className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl bg-brand px-4 py-2.5 text-xs font-bold text-brand-foreground shadow-sm hover:bg-brand-hover"
+                        >
+                          <Edit3 className="size-3.5" aria-hidden="true" />
+                          Open Edit Storefront &amp; Add Package
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setCatalogView('builder')}
+                          className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl bg-brand px-4 py-2.5 text-xs font-bold text-brand-foreground shadow-sm hover:bg-brand-hover"
+                        >
+                          <UtensilsCrossed className="size-3.5" aria-hidden="true" />
+                          Open {builderModeConfig.label}
+                        </button>
+                      )}
+                      {individualItems.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setShowIndividualInPackages(true)}
+                          className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-border bg-card px-4 py-2.5 text-xs font-semibold text-foreground hover:border-brand hover:text-brand"
+                        >
+                          Browse All {individualItems.length} Individual Dishes
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {hasCustomBuilder && showIndividualInPackages && (
+                      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-muted/40 px-3.5 py-2 text-xs text-muted-foreground">
+                        <span>
+                          Showing all {catalogSourceProducts.length} individual dishes &amp; packages.
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowIndividualInPackages(false);
+                            setFoodFilter('all');
+                            setSelectedSection('all');
+                          }}
+                          className="cursor-pointer font-bold text-brand hover:underline"
+                        >
+                          Show Ready-Made Packages only ({readyPackages.length})
+                        </button>
+                      </div>
+                    )}
+                    <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
                   {displayedProducts.map((product) => {
                     const isSelected = activeProduct?.id === product.id;
                     const hasVariants = Boolean(product.variants && product.variants.length > 0);
@@ -1228,7 +1310,15 @@ export function VendorWebsiteView({
                     const waItemName = selectedVariant
                       ? `${product.name} (${selectedVariant.label})`
                       : product.name;
-                    const productWaText = `Hi ${vendor.name}, I saw "${waItemName}" (${formatMoney(activePriceUsd, currency)} · ${activeServesText}${foodTypeText}${dietarySuffix}${deliveryRegionSuffix}) on your FindMyBites page (${shareUrl}). Is it available for my upcoming event?`;
+                    const includedListSuffix =
+                      product.isPackage && product.includedItems && product.includedItems.length > 0
+                        ? ` | Includes: ${product.includedItems.join(', ')}`
+                        : '';
+                    const minQtySuffix =
+                      product.isPackage && product.minOrderQty && product.minOrderQty > 1
+                        ? ` (Min ${product.minOrderQty})`
+                        : '';
+                    const productWaText = `Hi ${vendor.name}, I saw "${waItemName}" (${formatMoney(activePriceUsd, currency)} · ${activeServesText}${minQtySuffix}${foodTypeText}${dietarySuffix}${includedListSuffix}${deliveryRegionSuffix}) on your FindMyBites page (${shareUrl}). Is it available for my upcoming event?`;
 
                     const isSoldOut = product.inStock === false;
                     return (
@@ -1242,7 +1332,9 @@ export function VendorWebsiteView({
                               ? 'border-[#25D366] ring-2 ring-[#25D366]/20'
                               : isSelected
                                 ? 'border-brand ring-2 ring-brand/20'
-                                : 'border-border'
+                                : product.isPackage
+                                  ? 'border-amber-500/50 shadow-sm'
+                                  : 'border-border'
                         }`}
                       >
                         <div className="relative flex aspect-[4/3] w-full items-center justify-center overflow-hidden border-b border-border/60 bg-white dark:bg-neutral-900">
@@ -1259,6 +1351,10 @@ export function VendorWebsiteView({
                           {isSoldOut ? (
                             <span className="absolute left-3 top-3 rounded-full bg-rose-600 px-2.5 py-1 text-[11px] font-bold text-white shadow-sm">
                               Sold Out
+                            </span>
+                          ) : product.isPackage ? (
+                            <span className="absolute left-3 top-3 rounded-full bg-amber-600 px-2.5 py-1 text-[11px] font-extrabold text-white shadow-sm">
+                              Ready-Made Deal
                             </span>
                           ) : product.tag ? (
                             <span className="absolute left-3 top-3 rounded-full bg-black/75 px-2.5 py-1 text-[11px] font-semibold text-white backdrop-blur-md">
@@ -1346,6 +1442,33 @@ export function VendorWebsiteView({
                             </div>
                           )}
 
+                          {product.isPackage && product.minOrderQty && product.minOrderQty > 1 && (
+                            <p className="mt-1 text-xs font-bold text-amber-700 dark:text-amber-300">
+                              Min order: {product.minOrderQty} {product.serves.toLowerCase().includes('box') ? 'boxes' : 'plates / guests'}
+                            </p>
+                          )}
+
+                          {product.isPackage &&
+                            product.includedItems &&
+                            product.includedItems.length > 0 && (
+                              <div className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3">
+                                <p className="text-[11px] font-extrabold uppercase tracking-wider text-amber-800 dark:text-amber-300">
+                                  What&apos;s Included ({product.includedItems.length} items)
+                                </p>
+                                <ul className="mt-2 space-y-1 text-xs text-foreground">
+                                  {product.includedItems.map((item, idx) => (
+                                    <li key={`${product.id}-inc-${idx}`} className="flex items-start gap-1.5">
+                                      <Check
+                                        className="mt-0.5 size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400"
+                                        aria-hidden="true"
+                                      />
+                                      <span>{item}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+
                           {product.dietaryTags && product.dietaryTags.length > 0 && (
                             <div className="mt-2 flex flex-wrap gap-1.5">
                               {product.dietaryTags.map((tag) => (
@@ -1406,13 +1529,19 @@ export function VendorWebsiteView({
                         <button
                           type="button"
                           onClick={() => {
-                            updateBasketQty(basketKey, 1);
+                            const startQty =
+                              product.isPackage && product.minOrderQty && product.minOrderQty > 1
+                                ? product.minOrderQty
+                                : 1;
+                            updateBasketQty(basketKey, startQty);
                             setSelectedProductId(product.id);
                           }}
                           className="inline-flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-border bg-background px-3 py-2 text-xs font-semibold text-foreground transition-colors hover:border-brand hover:text-brand whitespace-nowrap"
                         >
                           <Plus className="size-3.5" aria-hidden="true" />
-                          Add{selectedVariant ? ` ${selectedVariant.label}` : ' to Order'}
+                          {product.isPackage && product.minOrderQty && product.minOrderQty > 1
+                            ? `Add (${product.minOrderQty} min)`
+                            : `Add${selectedVariant ? ` ${selectedVariant.label}` : ' to Order'}`}
                         </button>
                       )}
 
@@ -1447,6 +1576,8 @@ export function VendorWebsiteView({
                     );
                   })}
                 </div>
+                  </>
+                )}
                   </>
                 )}
               </>

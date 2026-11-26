@@ -422,6 +422,9 @@ export interface VendorProduct {
   inStock?: boolean;
   menuSection?: string;
   advanceHours?: number;
+  isPackage?: boolean;
+  includedItems?: string[];
+  minOrderQty?: number;
 }
 
 export interface VendorReview {
