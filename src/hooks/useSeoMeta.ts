@@ -117,15 +117,26 @@ export function useSeoMeta({
     let canonical = baseUrl;
 
     if (activeVendor) {
+      const isPartyVendor = activeVendor.marketplace === 'party';
+      const isBakerVendor =
+        !isPartyVendor &&
+        (activeVendor.category.toLowerCase().includes('baker') ||
+          activeVendor.category.toLowerCase().includes('cake') ||
+          activeVendor.category.toLowerCase().includes('dessert'));
+      const brandLabel = isPartyVendor ? 'PimpMyParty by FindMyBites' : 'FindMyBites';
       title =
         activeVendor.seoTitle?.trim() ||
-        `${activeVendor.name} – ${activeVendor.category} in ${activeVendor.area}, ${activeVendor.city} | FindMyBites`;
+        `${activeVendor.name} – ${activeVendor.category} in ${activeVendor.area}, ${activeVendor.city} | ${brandLabel}`;
       description =
         activeVendor.seoDescription?.trim() ||
-        `${activeVendor.tagline} Order from ${activeVendor.name} in ${activeVendor.area}, ${activeVendor.city}, ${activeVendor.state} directly on WhatsApp with 0% commission via FindMyBites.`;
+        `${activeVendor.tagline} ${isPartyVendor ? 'Book' : 'Order from'} ${activeVendor.name} in ${activeVendor.area}, ${activeVendor.city}, ${activeVendor.state} directly on WhatsApp with 0% commission via ${brandLabel}.`;
       keywords =
         activeVendor.seoKeywords?.trim() ||
-        `${activeVendor.name}, ${activeVendor.category} in ${activeVendor.city}, ${activeVendor.area} ${activeVendor.category.toLowerCase()}, home bakers in ${activeVendor.city}`;
+        (isPartyVendor
+          ? `${activeVendor.name}, ${activeVendor.category} in ${activeVendor.city}, ${activeVendor.area} ${activeVendor.category.toLowerCase()}, event vendors in ${activeVendor.city}, PimpMyParty`
+          : isBakerVendor
+            ? `${activeVendor.name}, ${activeVendor.category} in ${activeVendor.city}, ${activeVendor.area} ${activeVendor.category.toLowerCase()}, home bakers in ${activeVendor.city}`
+            : `${activeVendor.name}, ${activeVendor.category} in ${activeVendor.city}, ${activeVendor.area} ${activeVendor.category.toLowerCase()}, party catering in ${activeVendor.city}`);
       canonical = `${origin}/v/${activeVendor.slug}`;
     } else if (seoDirectoryRoute) {
       title = seoDirectoryRoute.title;
@@ -133,19 +144,24 @@ export function useSeoMeta({
       keywords = seoDirectoryRoute.keywords;
       canonical = `${origin}${seoDirectoryRoute.canonicalPath}`;
     } else if (selectedCategory !== 'All' || selectedState !== 'All' || ecosystem === 'PIMPMYPARTY') {
+      const isPartyMode = ecosystem === 'PIMPMYPARTY';
       const subject =
         selectedCategory !== 'All'
           ? selectedCategory
           : ecosystem === 'FINDMYBITES'
             ? 'Home Bakers, Custom Cakes & Catering'
-            : 'Wedding Decor, DJs & Event Vendors';
+            : 'Wedding Decor, Event Planners, DJs & Party Vendors';
       const placeParts = [
         selectedState !== 'All' ? selectedState : '',
         selectedCountry !== 'All' ? selectedCountry : '',
       ].filter(Boolean);
       const place = placeParts.length > 0 ? ` in ${placeParts.join(', ')}` : ' in India';
-      title = `Best ${subject}${place} | Order Direct – FindMyBites`;
-      description = `Compare verified ${subject.toLowerCase()}${place}. View real INR product menus, starting prices, reviews & order directly on WhatsApp with 0% commission.`;
+      title = isPartyMode
+        ? `Best ${subject}${place} | Book Direct – PimpMyParty`
+        : `Best ${subject}${place} | Order Direct – FindMyBites`;
+      description = isPartyMode
+        ? `Compare verified ${subject.toLowerCase()}${place}. View transparent INR event packages, starting prices, reviews & book directly on WhatsApp with 0% commission.`
+        : `Compare verified ${subject.toLowerCase()}${place}. View real INR product menus, starting prices, reviews & order directly on WhatsApp with 0% commission.`;
     } else {
       // Preserve exact homepage SEO title, description & canonical when on root homepage
       canonical = `${origin}/`;
@@ -173,13 +189,15 @@ export function useSeoMeta({
 
     // 1. Vendor Bakery / LocalBusiness + Product Offers (INR) + BreadcrumbList JSON-LD
     if (activeVendor) {
+      const isParty = activeVendor.marketplace === 'party';
       const isBaker =
-        activeVendor.category.toLowerCase().includes('baker') ||
-        activeVendor.category.toLowerCase().includes('cake') ||
-        activeVendor.category.toLowerCase().includes('dessert');
+        !isParty &&
+        (activeVendor.category.toLowerCase().includes('baker') ||
+          activeVendor.category.toLowerCase().includes('cake') ||
+          activeVendor.category.toLowerCase().includes('dessert'));
       const schemaType = isBaker
         ? 'Bakery'
-        : activeVendor.marketplace === 'food'
+        : !isParty && activeVendor.marketplace === 'food'
           ? 'FoodEstablishment'
           : 'LocalBusiness';
       const currencyCode = COUNTRY_DEFAULT_CURRENCY[activeVendor.country] || 'INR';
@@ -190,16 +208,15 @@ export function useSeoMeta({
       const signatureProducts = activeVendor.products.slice(0, 12).map((p) => {
         const localPrice = usdToLocal(p.priceUsd, currencyCode);
         return {
-          '@type': 'Product',
+          '@type': isParty ? 'Service' : 'Product',
           name: p.name,
           description:
             p.description ||
             `${p.name} by ${activeVendor.name} in ${activeVendor.area}, ${activeVendor.city}`,
           image: resolvePublicImage(p.image),
-          brand: {
-            '@type': 'Brand',
-            name: activeVendor.name,
-          },
+          ...(isParty
+            ? { provider: { '@type': 'LocalBusiness', name: activeVendor.name } }
+            : { brand: { '@type': 'Brand', name: activeVendor.name } }),
           offers: {
             '@type': 'Offer',
             price: localPrice,
@@ -213,55 +230,64 @@ export function useSeoMeta({
         };
       });
 
+      const businessNode: Record<string, unknown> = {
+        '@type': schemaType,
+        '@id': `${canonical}#business`,
+        name: activeVendor.name,
+        description: activeVendor.description,
+        url: canonical,
+        image: ogImage,
+        telephone: `+${activeVendor.whatsappNumber}`,
+        priceRange: formatPriceRangeForCountry(activeVendor.priceTier, activeVendor.country),
+        sameAs: [
+          activeVendor.googleMapsUrl,
+          activeVendor.instagramHandle
+            ? activeVendor.instagramHandle.startsWith('http')
+              ? activeVendor.instagramHandle
+              : `https://instagram.com/${activeVendor.instagramHandle.replace(/^@/, '')}`
+            : undefined,
+        ].filter(Boolean),
+        geo: {
+          '@type': 'GeoCoordinates',
+          latitude: activeVendor.lat,
+          longitude: activeVendor.lng,
+        },
+        address: {
+          '@type': 'PostalAddress',
+          streetAddress: activeVendor.area,
+          addressLocality: activeVendor.city,
+          addressRegion: activeVendor.state,
+          addressCountry: isoCountry,
+        },
+        aggregateRating: {
+          '@type': 'AggregateRating',
+          ratingValue: activeVendor.rating,
+          reviewCount: Math.max(1, activeVendor.reviewCount),
+        },
+        hasOfferCatalog: {
+          '@type': 'OfferCatalog',
+          name: isParty
+            ? `${activeVendor.name} Event Packages & Services`
+            : isBaker
+              ? `${activeVendor.name} Signature Cakes & Menu`
+              : `${activeVendor.name} Menu & Catering Packages`,
+          itemListElement: signatureProducts.map((prod) => ({
+            '@type': 'Offer',
+            itemOffered: prod,
+            price: prod.offers.price,
+            priceCurrency: currencyCode,
+          })),
+        },
+      };
+
+      if (!isParty) {
+        businessNode.servesCuisine = buildServesCuisine(activeVendor);
+      }
+
       upsertJsonLd('dynamic-vendor-jsonld', {
         '@context': 'https://schema.org',
         '@graph': [
-          {
-            '@type': schemaType,
-            '@id': `${canonical}#business`,
-            name: activeVendor.name,
-            description: activeVendor.description,
-            url: canonical,
-            image: ogImage,
-            telephone: `+${activeVendor.whatsappNumber}`,
-            priceRange: formatPriceRangeForCountry(activeVendor.priceTier, activeVendor.country),
-            servesCuisine: buildServesCuisine(activeVendor),
-            sameAs: [
-              activeVendor.googleMapsUrl,
-              activeVendor.instagramHandle
-                ? activeVendor.instagramHandle.startsWith('http')
-                  ? activeVendor.instagramHandle
-                  : `https://instagram.com/${activeVendor.instagramHandle.replace(/^@/, '')}`
-                : undefined,
-            ].filter(Boolean),
-            geo: {
-              '@type': 'GeoCoordinates',
-              latitude: activeVendor.lat,
-              longitude: activeVendor.lng,
-            },
-            address: {
-              '@type': 'PostalAddress',
-              streetAddress: activeVendor.area,
-              addressLocality: activeVendor.city,
-              addressRegion: activeVendor.state,
-              addressCountry: isoCountry,
-            },
-            aggregateRating: {
-              '@type': 'AggregateRating',
-              ratingValue: activeVendor.rating,
-              reviewCount: Math.max(1, activeVendor.reviewCount),
-            },
-            hasOfferCatalog: {
-              '@type': 'OfferCatalog',
-              name: `${activeVendor.name} Signature Cakes & Menu`,
-              itemListElement: signatureProducts.map((prod) => ({
-                '@type': 'Offer',
-                itemOffered: prod,
-                price: prod.offers.price,
-                priceCurrency: currencyCode,
-              })),
-            },
-          },
+          businessNode,
           {
             '@type': 'BreadcrumbList',
             itemListElement: [

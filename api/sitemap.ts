@@ -67,15 +67,31 @@ const CORE_CATEGORIES = [
   'gifting-hampers-and-return-favors',
   'wedding-and-party-decor',
   'balloon-and-theme-birthday-decor',
+  'event-and-wedding-planners',
   'djs-sound-and-live-bands',
   'photographers-and-videographers',
   'venues-farmhouses-and-villas',
   'photo-booths-and-360-spinners',
+  'kids-entertainment-and-mascots',
+  'anchors-emcees-and-performers',
+  'makeup-hair-and-mehendi-artists',
+  'event-rentals-furniture-and-tents',
+  'lighting-av-and-cold-fireworks',
   'christmas-cakes',
   'christmas-plum-cakes',
 ];
 
-const LOCALITY_CATEGORIES = ['home-bakers', 'custom-cakes', 'eggless-cakes', 'birthday-cakes'];
+const LOCALITY_CATEGORIES = [
+  'home-bakers',
+  'custom-cakes',
+  'eggless-cakes',
+  'birthday-cakes',
+  'catering-services',
+  'event-and-wedding-planners',
+  'wedding-and-party-decor',
+  'balloon-and-theme-birthday-decor',
+  'photographers-and-videographers',
+];
 
 const BUILTIN_VENDOR_SLUGS = [
   { slug: 'saffron-crumb-atelier-mumbai', bio: 'saffron-crumb' },
@@ -255,7 +271,7 @@ export async function buildDynamicSitemapXml(origin = DEFAULT_SITE_ORIGIN): Prom
           v.categorySlug?.includes('cake') ||
           v.categorySlug?.includes('dessert')
         ) {
-          for (const cat of LOCALITY_CATEGORIES) {
+          for (const cat of ['home-bakers', 'custom-cakes', 'eggless-cakes', 'birthday-cakes']) {
             pushUrl(
               `${siteOrigin}/${encodeURIComponent(v.citySlug)}/${encodeURIComponent(loc)}/${cat}`,
               '0.8',

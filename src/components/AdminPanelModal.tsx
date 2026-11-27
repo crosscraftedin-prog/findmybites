@@ -18,25 +18,20 @@ import {
   MessageSquareWarning,
   Navigation,
   Package,
+  PartyPopper,
   Plus,
   RefreshCw,
   Send,
   Settings2,
   ShieldCheck,
   Snowflake,
-  Sparkles,
-  Trash2,
   Upload,
   UtensilsCrossed,
   X,
 } from 'lucide-react';
 import {
-  ALL_CATEGORIES,
   AdminTransferRecord,
-  BUILDER_PRESET_OPTIONS,
   BookingEnquiry,
-  BuilderPresetId,
-  CAKE_WEIGHT_PRESETS,
   CATEGORY_CARDS,
   COUNTRY_DEFAULT_CURRENCY,
   COUNTRY_REGION_LABEL,
@@ -50,15 +45,14 @@ import {
   IMG_CAKE,
   LAUNCH_COUNTRIES,
   LaunchCountry,
+  PARTY_CATEGORIES,
   PASSCODE_LOCK_DAYS,
   PlanTier,
-  ProductFoodType,
+  STARTING_PRICE_UNIT_OPTIONS,
   STATES_BY_COUNTRY,
   SiteSettings,
   StoreClaim,
   Vendor,
-  VendorProduct,
-  VendorProductVariant,
   formatDisplayPasscode,
   generateTransferPasscode,
   getCustomBuilderModeConfig,
@@ -68,6 +62,7 @@ import {
   normalizePasscode,
   normalizePhoneDigits,
   suggestBuilderModeForCategory,
+  suggestStartingPriceUnitForCategory,
 } from '../data/vendors';
 import {
   AdminReviewRecord,
@@ -76,7 +71,6 @@ import {
   adminRevokeTransfer,
 } from '../services/firestoreService';
 import { compressImageFile } from '../utils/imageUpload';
-import { FoodTypeIcon } from './FoodTypeBadge';
 import { StateCoveragePicker } from './StateCoveragePicker';
 import {
   AdminApprovalsTab,
@@ -129,20 +123,6 @@ type AdminTab =
   | 'moderation'
   | 'campaigns';
 
-interface DraftProductRow {
-  id: string;
-  name: string;
-  priceLocal: string;
-  serves: string;
-  foodType: ProductFoodType | '';
-  builderSection?: string;
-  builderPresets?: BuilderPresetId[];
-  variants?: Array<{ id: string; label: string; priceLocal: string; serves: string }>;
-  tag: string;
-  description: string;
-  image: string;
-}
-
 const COUNTRY_PHONE_CODES: Record<Exclude<LaunchCountry, 'All'>, string> = {
   India: '91',
   'Dubai / UAE': '971',
@@ -152,59 +132,13 @@ const COUNTRY_PHONE_CODES: Record<Exclude<LaunchCountry, 'All'>, string> = {
   Nepal: '977',
 };
 
-const BIRTHDAY_CAKE_PRESETS: Array<Omit<DraftProductRow, 'id' | 'image'>> = [
-  {
-    name: 'Belgian Chocolate Truffle Cake',
-    priceLocal: '1450',
-    serves: '1 kg · Serves 8–10',
-    foodType: 'veg',
-    tag: 'Bestseller',
-    description: 'Rich dark Belgian chocolate ganache layered over moist sponge, customizable with name topper.',
-  },
-  {
-    name: 'Custom Theme Birthday Cake',
-    priceLocal: '2200',
-    serves: '1.5 kg · Serves 14–16',
-    foodType: 'veg',
-    tag: 'Eggless Available',
-    description: 'Hand-piped buttercream or fondant birthday cake crafted to your party colors and flavor choice.',
-  },
-  {
-    name: 'Assorted Gourmet Cupcake Box (12 pcs)',
-    priceLocal: '950',
-    serves: 'Box of 12',
-    foodType: 'veg',
-    tag: 'Party Favorite',
-    description: 'Red velvet, lotus biscoff, Nutella hazelnut & vanilla berry swirl cupcakes freshly baked to order.',
-  },
-];
-
-const CHRISTMAS_CAKE_PRESETS: Array<Omit<DraftProductRow, 'id' | 'image'>> = [
-  {
-    name: 'Rich Spiced Christmas Plum Cake',
-    priceLocal: '1250',
-    serves: '1 kg · Gift Tin',
-    foodType: 'veg',
-    tag: 'Christmas Special',
-    description: 'Traditional slow-matured dry fruit & warm spice plum cake (rum-soaked & alcohol-free options).',
-  },
-  {
-    name: 'Chocolate Hazelnut Yule Log (Bûche de Noël)',
-    priceLocal: '1850',
-    serves: '1.2 kg · Serves 10',
-    foodType: 'veg',
-    tag: 'Limited Edition',
-    description: 'Rolled cocoa sponge filled with praline cream and textured dark chocolate bark.',
-  },
-  {
-    name: 'Festive Christmas Hamper Box',
-    priceLocal: '1600',
-    serves: 'Gift Box · 6 Treats',
-    foodType: 'veg',
-    tag: 'Corporate & Gifting',
-    description: 'Mini plum cake, gingerbread cookies, fudge brownies, spiced nuts & festive ribbon packaging.',
-  },
-];
+const FOOD_DEFAULT_TAGLINE = 'Handcrafted custom cakes, plum cakes & party desserts';
+const FOOD_DEFAULT_DESCRIPTION =
+  'Freshly baked to order with premium ingredients. Message us on WhatsApp for custom birthday cakes, wedding tiers, and festive hampers.';
+const PARTY_DEFAULT_TAGLINE =
+  'Complete event planning, custom decor & seamless celebration management';
+const PARTY_DEFAULT_DESCRIPTION =
+  'End-to-end event setup, theme styling, and on-site coordination for weddings, birthdays, corporate events & private celebrations. Message us on WhatsApp for custom packages.';
 
 function getSiteOrigin(): string {
   if (typeof window !== 'undefined') {
@@ -287,21 +221,6 @@ function getPasscodeLockInfo(t: AdminTransferRecord): {
   };
 }
 
-function makeEmptyProduct(defaultImg: string): DraftProductRow {
-  return {
-    id: `prod-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-    name: '',
-    priceLocal: '',
-    serves: '1 kg · Serves 8',
-    foodType: '',
-    builderSection: '',
-    builderPresets: [],
-    tag: 'Bestseller',
-    description: '',
-    image: defaultImg,
-  };
-}
-
 export function AdminPanelModal({
   open,
   onClose,
@@ -336,8 +255,9 @@ export function AdminPanelModal({
   );
 
   // --- Create & Transfer Store Form State ---
+  const [marketplace, setMarketplace] = useState<'food' | 'party'>('food');
   const [name, setName] = useState('');
-  const [category, setCategory] = useState<string>('Bakers & Cakes');
+  const [category, setCategory] = useState<string>(FOOD_CATEGORIES[0]);
   const [country, setCountry] = useState<Exclude<LaunchCountry, 'All'>>('India');
   const [stateName, setStateName] = useState('Maharashtra');
   const [city, setCity] = useState('Mumbai');
@@ -353,10 +273,8 @@ export function AdminPanelModal({
   const [bioHandle, setBioHandle] = useState('');
   const [googleMapsUrl, setGoogleMapsUrl] = useState('');
   const [googleReviewUrl, setGoogleReviewUrl] = useState('');
-  const [tagline, setTagline] = useState('Handcrafted custom cakes, plum cakes & party desserts');
-  const [description, setDescription] = useState(
-    'Freshly baked to order with premium ingredients. Message us on WhatsApp for custom birthday cakes, wedding tiers, and festive hampers.'
-  );
+  const [tagline, setTagline] = useState(FOOD_DEFAULT_TAGLINE);
+  const [description, setDescription] = useState(FOOD_DEFAULT_DESCRIPTION);
   const [planTier, setPlanTier] = useState<PlanTier>('free');
   const [verified, setVerified] = useState(true);
   const [christmasSpecial, setChristmasSpecial] = useState(true);
@@ -367,23 +285,19 @@ export function AdminPanelModal({
   const [customBuilderMode, setCustomBuilderMode] = useState<CustomBuilderMode>('snackbox');
   const [customBuilderMinQty, setCustomBuilderMinQty] = useState(10);
   const [customBuilderPackagingLocal, setCustomBuilderPackagingLocal] = useState(0);
-  const [customBuilderSections, setCustomBuilderSections] = useState<string[]>([]);
-  const [addingSectionForProdId, setAddingSectionForProdId] = useState<string | null>(null);
-  const [newBuilderSectionInput, setNewBuilderSectionInput] = useState('');
+  const [startingPriceLocal, setStartingPriceLocal] = useState('');
+  const [startingPriceUnit, setStartingPriceUnit] = useState('per kg');
+  const [startingPriceLabel, setStartingPriceLabel] = useState('');
+  const [secondaryPriceLocal, setSecondaryPriceLocal] = useState('');
+  const [secondaryPriceUnit, setSecondaryPriceUnit] = useState('per plate');
+  const [secondaryPriceLabel, setSecondaryPriceLabel] = useState('');
+  const [showSecondaryPrice, setShowSecondaryPrice] = useState(false);
   const [coverImage, setCoverImage] = useState(IMG_CAKE);
   const [passcode, setPasscode] = useState(() => generateTransferPasscode());
-  const [products, setProducts] = useState<DraftProductRow[]>([
-    {
-      ...BIRTHDAY_CAKE_PRESETS[0],
-      id: 'preset-1',
-      image: IMG_CAKE,
-    },
-  ]);
 
   const [submitting, setSubmitting] = useState(false);
   const [locating, setLocating] = useState(false);
   const [uploadingCover, setUploadingCover] = useState(false);
-  const [uploadingProdId, setUploadingProdId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [createdHandover, setCreatedHandover] = useState<{
     vendor: Vendor;
@@ -399,6 +313,9 @@ export function AdminPanelModal({
   const statesForCountry = STATES_BY_COUNTRY[country] || [];
   const activeStateObj =
     statesForCountry.find((s) => s.name === stateName) || statesForCountry[0];
+
+  const isParty = marketplace === 'party';
+  const availableCategories = isParty ? PARTY_CATEGORIES : FOOD_CATEGORIES;
 
   const categoryDefaultImg = useMemo(() => {
     const meta = CATEGORY_CARDS.find((c) => c.label === category);
@@ -509,39 +426,40 @@ export function AdminPanelModal({
     }
   };
 
-  const handleProductPhotoUpload = async (prodId: string, file: File | null) => {
-    if (!file) return;
-    setUploadingProdId(prodId);
-    setError(null);
-    try {
-      const dataUrl = await compressImageFile(file, {
-        maxWidth: 640,
-        maxHeight: 480,
-        quality: 0.7,
-        maxChars: 85000,
-      });
-      setProducts((prev) => prev.map((p) => (p.id === prodId ? { ...p, image: dataUrl } : p)));
-    } catch {
-      setError('Could not compress product photo. Try a smaller image.');
-    } finally {
-      setUploadingProdId(null);
-    }
-  };
+  const handleMarketplaceChange = (nextMarket: 'food' | 'party') => {
+    if (nextMarket === marketplace) return;
+    setMarketplace(nextMarket);
+    const nextIsParty = nextMarket === 'party';
+    const nextCat = nextIsParty ? PARTY_CATEGORIES[0] : FOOD_CATEGORIES[0];
+    setCategory(nextCat);
+    const nextUnit = suggestStartingPriceUnitForCategory(nextCat, nextMarket);
+    setStartingPriceUnit(nextUnit);
+    setSecondaryPriceUnit(nextUnit);
+    const nextMeta = CATEGORY_CARDS.find((c) => c.label === nextCat);
+    const nextImg = nextMeta?.image || IMG_CAKE;
 
-  const loadPresets = (kind: 'birthday' | 'christmas') => {
-    const src = kind === 'christmas' ? CHRISTMAS_CAKE_PRESETS : BIRTHDAY_CAKE_PRESETS;
-    const rate = CURRENCIES[formCurrency].rate / CURRENCIES.INR.rate;
-    const mapped: DraftProductRow[] = src.map((item, idx) => ({
-      ...item,
-      id: `${kind}-${Date.now()}-${idx}`,
-      priceLocal: String(Math.max(10, Math.round(Number(item.priceLocal) * rate))),
-      image: categoryDefaultImg,
-    }));
-    setProducts(mapped);
-    if (kind === 'christmas') {
+    if (!coverImage || !coverImage.startsWith('data:image/')) {
+      setCoverImage(nextImg);
+    }
+
+    if (nextIsParty) {
+      if (!tagline.trim() || tagline.trim() === FOOD_DEFAULT_TAGLINE) {
+        setTagline(PARTY_DEFAULT_TAGLINE);
+      }
+      if (!description.trim() || description.trim() === FOOD_DEFAULT_DESCRIPTION) {
+        setDescription(PARTY_DEFAULT_DESCRIPTION);
+      }
+      setChristmasSpecial(false);
+      setCustomBuilderEnabled(false);
+    } else {
+      if (!tagline.trim() || tagline.trim() === PARTY_DEFAULT_TAGLINE) {
+        setTagline(FOOD_DEFAULT_TAGLINE);
+      }
+      if (!description.trim() || description.trim() === PARTY_DEFAULT_DESCRIPTION) {
+        setDescription(FOOD_DEFAULT_DESCRIPTION);
+      }
       setChristmasSpecial(true);
     }
-    onToast(`Loaded ${mapped.length} ${kind} cake products — edit names & prices as needed!`);
   };
 
   const copyText = (text: string, key: string, label: string) => {
@@ -564,15 +482,19 @@ export function AdminPanelModal({
     setBioHandle('');
     setGoogleMapsUrl('');
     setGoogleReviewUrl('');
+    setTagline(isParty ? PARTY_DEFAULT_TAGLINE : FOOD_DEFAULT_TAGLINE);
+    setDescription(isParty ? PARTY_DEFAULT_DESCRIPTION : FOOD_DEFAULT_DESCRIPTION);
+    setChristmasSpecial(!isParty);
+    setStartingPriceLocal('');
+    const defaultUnit = suggestStartingPriceUnitForCategory(category, marketplace);
+    setStartingPriceUnit(defaultUnit);
+    setStartingPriceLabel('');
+    setSecondaryPriceLocal('');
+    setSecondaryPriceUnit(defaultUnit);
+    setSecondaryPriceLabel('');
+    setShowSecondaryPrice(false);
     setCoverImage(categoryDefaultImg);
     setPasscode(generateTransferPasscode());
-    setProducts([
-      {
-        ...BIRTHDAY_CAKE_PRESETS[0],
-        id: `preset-${Date.now()}`,
-        image: categoryDefaultImg,
-      },
-    ]);
     setCreatedHandover(null);
     setError(null);
   };
@@ -583,7 +505,7 @@ export function AdminPanelModal({
 
     const trimmedName = name.trim();
     if (trimmedName.length < 2) {
-      setError('Please enter the bakery / vendor name.');
+      setError('Please enter the business / vendor name.');
       return;
     }
 
@@ -593,7 +515,7 @@ export function AdminPanelModal({
         : `${phoneCode}${phoneLocal}`
     );
     if (fullPhone.length < 8) {
-      setError('Please enter the baker’s full mobile / WhatsApp number.');
+      setError('Please enter the business owner’s full mobile / WhatsApp number.');
       return;
     }
 
@@ -603,77 +525,29 @@ export function AdminPanelModal({
       return;
     }
 
-    const validProducts: VendorProduct[] = products
-      .filter((p) => p.name.trim().length >= 2)
-      .map((p, idx) => {
-        const localNum = Number(p.priceLocal) || 0;
-        const cleanedVariants: VendorProductVariant[] = (p.variants || [])
-          .map((v, vIdx) => {
-            const label = v.label.trim().slice(0, 32);
-            const vLocal = Number(v.priceLocal);
-            if (!label || !Number.isFinite(vLocal) || vLocal <= 0) return null;
-            return {
-              id: v.id || `var-${vIdx + 1}`,
-              label,
-              priceUsd: Math.max(0.5, localToUsd(vLocal, formCurrency)),
-              ...(v.serves.trim() ? { serves: v.serves.trim().slice(0, 40) } : {}),
-            };
-          })
-          .filter((v): v is VendorProductVariant => Boolean(v))
-          .slice(0, 12);
-
-        const resolvedServes =
-          cleanedVariants.length >= 2
-            ? `${cleanedVariants[0].label} – ${cleanedVariants[cleanedVariants.length - 1].label}`
-            : cleanedVariants.length === 1
-              ? cleanedVariants[0].label
-              : p.serves.trim().slice(0, 60) || 'Custom';
-
-        const resolvedPriceUsd =
-          cleanedVariants.length > 0
-            ? Math.min(...cleanedVariants.map((v) => v.priceUsd))
-            : Math.max(1, localToUsd(localNum > 0 ? localNum : 500, formCurrency));
-
-        return {
-          id: p.id || `prod-${idx + 1}`,
-          name: p.name.trim().slice(0, 100),
-          serves: resolvedServes,
-          ...(p.foodType ? { foodType: p.foodType } : {}),
-          ...(planTier !== 'free' && customBuilderEnabled && p.builderSection?.trim()
-            ? { builderSection: p.builderSection.trim().slice(0, 60) }
-            : {}),
-          ...(planTier !== 'free' && customBuilderEnabled && p.builderPresets && p.builderPresets.length > 0
-            ? { builderPresets: p.builderPresets }
-            : {}),
-          ...(cleanedVariants.length > 0 ? { variants: cleanedVariants } : {}),
-          priceUsd: resolvedPriceUsd,
-          description:
-            p.description.trim().slice(0, 400) ||
-            `${p.name.trim()} freshly handcrafted to order.`,
-          image: p.image || categoryDefaultImg,
-          ...(p.tag.trim() ? { tag: p.tag.trim().slice(0, 40) } : {}),
-        };
-      });
-
-    if (validProducts.length === 0) {
-      setError('Please add at least 1 product or cake to the baker’s menu.');
-      return;
-    }
-
-    const isFood = (FOOD_CATEGORIES as readonly string[]).includes(category);
-    const minPriceUsd = Math.min(...validProducts.map((p) => p.priceUsd));
+    const isFood = !isParty;
+    const parsedStartingLocal = Number(startingPriceLocal);
+    const hasCustomStartingPrice = Number.isFinite(parsedStartingLocal) && parsedStartingLocal > 0;
+    const resolvedStartingPriceUsd = hasCustomStartingPrice
+      ? Math.max(0.5, localToUsd(parsedStartingLocal, formCurrency))
+      : 0;
+    const parsedSecondaryLocal = Number(secondaryPriceLocal);
+    const secondaryStartingPriceUsd =
+      showSecondaryPrice && Number.isFinite(parsedSecondaryLocal) && parsedSecondaryLocal > 0
+        ? Math.max(0.5, localToUsd(parsedSecondaryLocal, formCurrency))
+        : undefined;
     const slugBase = trimmedName
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '')
       .slice(0, 60);
-    const slug = `${slugBase || 'bakery'}-${city.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 20)}`;
+    const slug = `${slugBase || (isParty ? 'events' : 'bakery')}-${city.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 20)}`;
 
     const draftVendor: Vendor = {
       id: `${slug}-${Date.now().toString().slice(-4)}`,
       slug,
       name: trimmedName,
-      marketplace: isFood ? 'food' : 'party',
+      marketplace: isParty ? 'party' : 'food',
       category,
       country,
       state: stateName,
@@ -684,17 +558,54 @@ export function AdminPanelModal({
       whatsappNumber: fullPhone,
       planTier,
       monthlyAutoPay: planTier !== 'free',
-      priceTier: minPriceUsd < 25 ? '$' : minPriceUsd < 75 ? '$$' : '$$$',
-      startingPriceUsd: minPriceUsd,
+      priceTier:
+        resolvedStartingPriceUsd <= 0
+          ? '$$'
+          : resolvedStartingPriceUsd < 25
+            ? '$'
+            : resolvedStartingPriceUsd < 75
+              ? '$$'
+              : '$$$',
+      startingPriceUsd: resolvedStartingPriceUsd,
+      orderingConfig: {
+        enabled: true,
+        acceptingOrders: true,
+        deliveryEnabled: true,
+        pickupEnabled: true,
+        codEnabled: true,
+        startingPriceUnit:
+          startingPriceUnit.trim() || suggestStartingPriceUnitForCategory(category, marketplace),
+        ...(startingPriceLabel.trim()
+          ? { startingPriceLabel: startingPriceLabel.trim().slice(0, 40) }
+          : {}),
+        ...(hasCustomStartingPrice ? { customStartingPrice: true } : {}),
+        ...(secondaryStartingPriceUsd
+          ? {
+              secondaryStartingPriceUsd,
+              secondaryStartingPriceUnit:
+                secondaryPriceUnit.trim() ||
+                startingPriceUnit.trim() ||
+                suggestStartingPriceUnitForCategory(category, marketplace),
+              ...(secondaryPriceLabel.trim()
+                ? { secondaryStartingPriceLabel: secondaryPriceLabel.trim().slice(0, 40) }
+                : {}),
+            }
+          : {}),
+      },
       rating: 5.0,
       reviewCount: 0,
       responseTime: 'Replies within 15 mins on WhatsApp',
       verified,
-      tagline: tagline.trim() || `Artisan ${category} in ${city}`,
+      tagline:
+        tagline.trim() ||
+        (isParty ? `Premier ${category} in ${city}` : `Artisan ${category} in ${city}`),
       description:
-        description.trim() || `Handcrafted ${category} serving ${area.trim() || city}, ${city}.`,
-      christmasSpecial,
-      christmasOffer: christmasSpecial ? christmasOffer.trim() : undefined,
+        description.trim() ||
+        (isParty
+          ? `Professional ${category} serving ${area.trim() || city}, ${city}.`
+          : `Handcrafted ${category} serving ${area.trim() || city}, ${city}.`),
+      christmasSpecial: isFood && christmasSpecial,
+      christmasOffer: isFood && christmasSpecial ? christmasOffer.trim() : undefined,
       customBuilderEnabled: isFood && planTier !== 'free' && customBuilderEnabled,
       customBuilderMode:
         isFood && planTier !== 'free' && customBuilderEnabled ? customBuilderMode : undefined,
@@ -707,6 +618,7 @@ export function AdminPanelModal({
           ? Math.max(0, Math.min(500, localToUsd(customBuilderPackagingLocal, formCurrency)))
           : undefined,
       bioHandle: bioHandle.trim() || slugBase,
+      bioTheme: isParty ? 'party' : 'saffron',
       ...(googleMapsUrl.trim() ? { googleMapsUrl: googleMapsUrl.trim() } : {}),
       ...(googleReviewUrl.trim() ? { googleReviewUrl: googleReviewUrl.trim() } : {}),
       serviceAreas: [
@@ -721,9 +633,9 @@ export function AdminPanelModal({
       serviceStates: allStatesCoverage
         ? []
         : serviceStates.filter((s) => s && s !== stateName),
-      specialties: [category, ...validProducts.slice(0, 3).map((p) => p.name)],
+      specialties: [category],
       image: coverImage || categoryDefaultImg,
-      products: validProducts,
+      products: [],
       reviews: [],
       status: 'active',
       claimStatus: 'pending',
@@ -1136,7 +1048,7 @@ export function AdminPanelModal({
                           className="inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-brand px-3 py-2.5 text-xs font-bold text-brand-foreground hover:bg-brand-hover"
                         >
                           <Plus className="size-3.5" aria-hidden="true" />
-                          Build Next Baker Store
+                          {isParty ? 'Build Next Event Store' : 'Build Next Food Store'}
                         </button>
                       </div>
                     </div>
@@ -1144,17 +1056,68 @@ export function AdminPanelModal({
                 })()}
               </div>
             ) : (
-              /* FAST BAKER STORE BUILDER FORM */
+              /* FAST STOREFRONT BUILDER FORM (FindMyBites OR PimpMyParty) */
               <form onSubmit={(e) => void handleCreateAndGenerateTransfer(e)} className="space-y-6">
-                {/* Section 1: Baker Details & Transfer Phone */}
+                {/* Marketplace Selector: FindMyBites vs PimpMyParty */}
+                <div className="rounded-2xl border border-border bg-card p-4 sm:p-5">
+                  <p className="text-xs font-extrabold uppercase tracking-wider text-muted-foreground">
+                    Choose Platform / Listing Type *
+                  </p>
+                  <div className="mt-2.5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      onClick={() => handleMarketplaceChange('food')}
+                      className={`flex cursor-pointer items-center gap-3 rounded-xl border-2 p-3.5 text-left transition-all ${
+                        !isParty
+                          ? 'border-[#ef6c22] bg-[#ef6c22]/10 shadow-xs'
+                          : 'border-border bg-background hover:border-foreground/30'
+                      }`}
+                    >
+                      <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#ef6c22] text-white">
+                        <UtensilsCrossed className="size-5" aria-hidden="true" />
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-sm font-extrabold text-foreground">FindMyBites</p>
+                        <p className="text-[11px] text-muted-foreground">
+                          Home Bakers, Cakes, Catering, Live Counters &amp; Food
+                        </p>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleMarketplaceChange('party')}
+                      className={`flex cursor-pointer items-center gap-3 rounded-xl border-2 p-3.5 text-left transition-all ${
+                        isParty
+                          ? 'border-[#db2777] bg-[#db2777]/10 shadow-xs'
+                          : 'border-border bg-background hover:border-foreground/30'
+                      }`}
+                    >
+                      <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#db2777] text-white">
+                        <PartyPopper className="size-5" aria-hidden="true" />
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-sm font-extrabold text-foreground">PimpMyParty</p>
+                        <p className="text-[11px] text-muted-foreground">
+                          Event Planners, Decor, DJs, Venues, Photography &amp; Rentals
+                        </p>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Section 1: Vendor Details & Transfer Phone */}
                 <div className="rounded-2xl border border-border bg-card p-4 sm:p-5">
                   <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <h3 className="text-sm font-extrabold text-foreground">
-                        1. Baker / Store Details &amp; Phone Number
+                        {isParty
+                          ? '1. Event / Party Vendor Details & Phone Number'
+                          : '1. Baker / Food Store Details & Phone Number'}
                       </h3>
                       <p className="text-xs text-muted-foreground">
-                        The store will be assigned to this phone number so the baker can claim it with her passcode.
+                        The store will be assigned to this phone number so the{' '}
+                        {isParty ? 'event vendor' : 'baker / vendor'} can claim it with their passcode.
                       </p>
                     </div>
                     <span className="rounded-full bg-brand-soft px-2.5 py-1 text-[11px] font-bold text-brand">
@@ -1165,40 +1128,48 @@ export function AdminPanelModal({
                   <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
                     <div>
                       <label className="mb-1 block text-xs font-bold text-foreground">
-                        Bakery / Store Name *
+                        {isParty ? 'Event / Business Name *' : 'Bakery / Store Name *'}
                       </label>
                       <input
                         type="text"
                         required
                         value={name}
                         onChange={(e) => setName(e.target.value)}
-                        placeholder="e.g. Riya's Cake Studio"
+                        placeholder={isParty ? 'e.g. Thanusri Event Management' : "e.g. Riya's Cake Studio"}
                         className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-brand focus:outline-none"
                       />
                     </div>
 
                     <div>
                       <label className="mb-1 block text-xs font-bold text-foreground">
-                        Category *
+                        {isParty ? 'Event Category *' : 'Food Category *'}
                       </label>
                       <select
                         value={category}
                         onChange={(e) => {
                           const nextCat = e.target.value;
                           setCategory(nextCat);
-                          const suggestedMode = suggestBuilderModeForCategory(nextCat);
-                          setCustomBuilderMode(suggestedMode);
-                          setCustomBuilderMinQty(
-                            getCustomBuilderModeConfig(suggestedMode).defaultMinQty
+                          const suggestedUnit = suggestStartingPriceUnitForCategory(
+                            nextCat,
+                            marketplace
                           );
+                          setStartingPriceUnit(suggestedUnit);
+                          setSecondaryPriceUnit(suggestedUnit);
+                          if (!isParty) {
+                            const suggestedMode = suggestBuilderModeForCategory(nextCat);
+                            setCustomBuilderMode(suggestedMode);
+                            setCustomBuilderMinQty(
+                              getCustomBuilderModeConfig(suggestedMode).defaultMinQty
+                            );
+                          }
                           const nextMeta = CATEGORY_CARDS.find((c) => c.label === nextCat);
-                          if (nextMeta && coverImage.startsWith('/src/assets/images/')) {
+                          if (nextMeta && (!coverImage || !coverImage.startsWith('data:image/'))) {
                             setCoverImage(nextMeta.image);
                           }
                         }}
                         className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-brand focus:outline-none"
                       >
-                        {ALL_CATEGORIES.map((c) => (
+                        {availableCategories.map((c) => (
                           <option key={c} value={c}>
                             {c}
                           </option>
@@ -1208,7 +1179,9 @@ export function AdminPanelModal({
 
                     <div>
                       <label className="mb-1 block text-xs font-bold text-emerald-700 dark:text-emerald-400">
-                        Baker Phone / WhatsApp (Transfer Target) *
+                        {isParty
+                          ? 'Vendor Phone / WhatsApp (Transfer Target) *'
+                          : 'Baker Phone / WhatsApp (Transfer Target) *'}
                       </label>
                       <div className="flex gap-1.5">
                         <input
@@ -1344,6 +1317,119 @@ export function AdminPanelModal({
                       />
                     </div>
 
+                    {/* Starting Price Card Display Settings */}
+                    <div className="sm:col-span-2 lg:col-span-3 rounded-xl border border-brand-border/70 bg-brand-soft/30 p-3.5">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <p className="text-xs font-extrabold text-foreground">
+                            Storefront Starting Price Box (Shown at Top Right)
+                          </p>
+                          <p className="text-[11px] text-muted-foreground">
+                            Leave blank to auto-use the lowest package/item price, or enter an exact starting price (e.g. {currencySymbol.trim()}200 per plate · Veg Price).
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setShowSecondaryPrice((prev) => !prev)}
+                          className="cursor-pointer rounded-lg border border-border bg-background px-2.5 py-1 text-[11px] font-bold text-foreground hover:border-brand hover:text-brand"
+                        >
+                          {showSecondaryPrice ? 'Hide 2nd Price Row' : '+ Add 2nd Price Row'}
+                        </button>
+                      </div>
+
+                      <div className="mt-3 grid gap-2.5 sm:grid-cols-3">
+                        <div>
+                          <label className="mb-1 block text-[11px] font-bold text-foreground">
+                            Starting Price ({currencySymbol.trim()})
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            value={startingPriceLocal}
+                            onChange={(e) => setStartingPriceLocal(e.target.value)}
+                            placeholder={isParty ? 'e.g. 15000' : 'e.g. 200'}
+                            className="w-full rounded-lg border border-border bg-background px-2.5 py-2 font-mono text-xs font-semibold text-foreground focus:border-brand focus:outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-[11px] font-bold text-foreground">
+                            Price Unit
+                          </label>
+                          <select
+                            value={startingPriceUnit}
+                            onChange={(e) => setStartingPriceUnit(e.target.value)}
+                            className="w-full rounded-lg border border-border bg-background px-2.5 py-2 text-xs text-foreground focus:border-brand focus:outline-none"
+                          >
+                            {STARTING_PRICE_UNIT_OPTIONS.map((unit) => (
+                              <option key={unit} value={unit}>
+                                {unit}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-[11px] font-bold text-foreground">
+                            Right-Side Label (Optional)
+                          </label>
+                          <input
+                            type="text"
+                            maxLength={40}
+                            value={startingPriceLabel}
+                            onChange={(e) => setStartingPriceLabel(e.target.value)}
+                            placeholder={isParty ? 'e.g. Starting Package' : 'e.g. Veg Price'}
+                            className="w-full rounded-lg border border-border bg-background px-2.5 py-2 text-xs text-foreground focus:border-brand focus:outline-none"
+                          />
+                        </div>
+                      </div>
+
+                      {showSecondaryPrice && (
+                        <div className="mt-2.5 grid gap-2.5 border-t border-border/60 pt-2.5 sm:grid-cols-3">
+                          <div>
+                            <label className="mb-1 block text-[11px] font-bold text-foreground">
+                              2nd Price ({currencySymbol.trim()})
+                            </label>
+                            <input
+                              type="number"
+                              min={0}
+                              value={secondaryPriceLocal}
+                              onChange={(e) => setSecondaryPriceLocal(e.target.value)}
+                              placeholder={isParty ? 'e.g. 50000' : 'e.g. 350'}
+                              className="w-full rounded-lg border border-border bg-background px-2.5 py-2 font-mono text-xs font-semibold text-foreground focus:border-brand focus:outline-none"
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-[11px] font-bold text-foreground">
+                              2nd Unit
+                            </label>
+                            <select
+                              value={secondaryPriceUnit}
+                              onChange={(e) => setSecondaryPriceUnit(e.target.value)}
+                              className="w-full rounded-lg border border-border bg-background px-2.5 py-2 text-xs text-foreground focus:border-brand focus:outline-none"
+                            >
+                              {STARTING_PRICE_UNIT_OPTIONS.map((unit) => (
+                                <option key={unit} value={unit}>
+                                  {unit}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-[11px] font-bold text-foreground">
+                              2nd Label
+                            </label>
+                            <input
+                              type="text"
+                              maxLength={40}
+                              value={secondaryPriceLabel}
+                              onChange={(e) => setSecondaryPriceLabel(e.target.value)}
+                              placeholder={isParty ? 'e.g. Wedding Package' : 'e.g. Non-Veg Price'}
+                              className="w-full rounded-lg border border-border bg-background px-2.5 py-2 text-xs text-foreground focus:border-brand focus:outline-none"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
                     <div>
                       <label className="mb-1 block text-xs font-bold text-foreground">
                         Short Bio-Link Handle (/fmb/...)
@@ -1354,7 +1440,7 @@ export function AdminPanelModal({
                         onChange={(e) =>
                           setBioHandle(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))
                         }
-                        placeholder="e.g. riyas-cakes"
+                        placeholder={isParty ? 'e.g. thanusri-events' : 'e.g. riyas-cakes'}
                         className="w-full rounded-xl border border-border bg-background px-3 py-2 font-mono text-sm text-foreground focus:border-brand focus:outline-none"
                       />
                     </div>
@@ -1435,7 +1521,7 @@ export function AdminPanelModal({
                       </div>
                       <div>
                         <label className="mb-1 block text-xs font-bold text-foreground">
-                          About the Baker
+                          {isParty ? 'About the Event Business' : 'About the Baker / Store'}
                         </label>
                         <textarea
                           rows={2}
@@ -1457,7 +1543,9 @@ export function AdminPanelModal({
                         <div className="min-w-0 flex-1">
                           <p className="text-xs font-bold text-foreground">Storefront Cover Photo</p>
                           <p className="text-[11px] text-muted-foreground">
-                            Upload baker&apos;s best cake photo or keep the default.
+                            {isParty
+                              ? 'Upload event setup or portfolio cover photo or keep the default.'
+                              : "Upload baker's best cake photo or keep the default."}
                           </p>
                           <label className="mt-1.5 inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1 text-[11px] font-bold hover:border-brand">
                             {uploadingCover ? (
@@ -1487,16 +1575,18 @@ export function AdminPanelModal({
                           <BadgeCheck className="size-3.5 text-sky-500" />
                           Verified Badge
                         </label>
-                        <label className="inline-flex cursor-pointer items-center gap-1.5 font-semibold text-emerald-700 dark:text-emerald-400">
-                          <input
-                            type="checkbox"
-                            checked={christmasSpecial}
-                            onChange={(e) => setChristmasSpecial(e.target.checked)}
-                            className="size-4 accent-emerald-600"
-                          />
-                          <Snowflake className="size-3.5" />
-                          Feature in Christmas 2026
-                        </label>
+                        {!isParty && (
+                          <label className="inline-flex cursor-pointer items-center gap-1.5 font-semibold text-emerald-700 dark:text-emerald-400">
+                            <input
+                              type="checkbox"
+                              checked={christmasSpecial}
+                              onChange={(e) => setChristmasSpecial(e.target.checked)}
+                              className="size-4 accent-emerald-600"
+                            />
+                            <Snowflake className="size-3.5" />
+                            Feature in Christmas 2026
+                          </label>
+                        )}
                         <select
                           value={planTier === 'pro' ? 'business' : planTier}
                           onChange={(e) => {
@@ -1513,7 +1603,7 @@ export function AdminPanelModal({
                     </div>
                   </div>
 
-                  {christmasSpecial && (
+                  {!isParty && christmasSpecial && (
                     <div className="mt-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3">
                       <label className="mb-1 block text-xs font-bold text-emerald-800 dark:text-emerald-300">
                         Christmas &amp; New Year Offer Banner
@@ -1529,8 +1619,8 @@ export function AdminPanelModal({
                     </div>
                   )}
 
-                  {/* Custom Plate / Snack Box / Meal Box Builder Setup (Business Plan Only) */}
-                  {(FOOD_CATEGORIES as readonly string[]).includes(category) && (
+                  {/* Custom Plate / Snack Box / Meal Box Builder Setup (Business Plan Only, Food Only) */}
+                  {!isParty && (FOOD_CATEGORIES as readonly string[]).includes(category) && (
                     <div className="mt-3 rounded-xl border border-brand-border bg-brand-soft/25 p-3">
                       {planTier === 'free' ? (
                         <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
@@ -1540,7 +1630,7 @@ export function AdminPanelModal({
                               Custom Menu Builder · Business Plan Only
                             </p>
                             <p className="mt-0.5 text-[11px] text-muted-foreground">
-                              Free stores list per-plate packages &amp; catering offerings in Section 2. Switch plan above to Business to unlock the interactive builder.
+                              Free stores list ready-made packages &amp; menu items once claimed. Switch plan above to Business to unlock the interactive builder.
                             </p>
                           </div>
                           <button
@@ -1575,7 +1665,7 @@ export function AdminPanelModal({
                               )}
                             </div>
                             <p className="mt-0.5 text-[11px] text-muted-foreground">
-                              Customers can add individual items from Section 2 below to build their own custom Snack Box, Meal Box, or Catering Plate and order on WhatsApp.
+                              Once claimed, the business owner can add individual menu items in Edit Storefront so customers can build their own custom Snack Box, Meal Box, or Catering Plate.
                             </p>
                           </div>
                         </label>
@@ -1646,618 +1736,16 @@ export function AdminPanelModal({
                   )}
                 </div>
 
-                {/* Section 2: Products / Cakes Menu Builder */}
-                <div className="rounded-2xl border border-border bg-card p-4 sm:p-5">
-                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <h3 className="text-sm font-extrabold text-foreground">
-                        2. Add Baker&apos;s Cakes &amp; Products ({products.length}/300)
-                      </h3>
-                      <p className="text-xs text-muted-foreground">
-                        Pre-fill their menu so their storefront looks complete the moment you send the link!
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => loadPresets('christmas')}
-                        className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1.5 text-[11px] font-bold text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300"
-                      >
-                        <Snowflake className="size-3" />
-                        3 Christmas Presets
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => loadPresets('birthday')}
-                        className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-brand-border bg-brand-soft px-2.5 py-1.5 text-[11px] font-bold text-brand hover:opacity-90"
-                      >
-                        <Sparkles className="size-3" />
-                        3 Cake Presets
-                      </button>
-                      <button
-                        type="button"
-                        disabled={products.length >= 300}
-                        onClick={() =>
-                          setProducts((prev) => [...prev, makeEmptyProduct(categoryDefaultImg)])
-                        }
-                        className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-foreground px-2.5 py-1.5 text-[11px] font-bold text-background hover:opacity-90 disabled:opacity-50"
-                      >
-                        <Plus className="size-3" />
-                        Add Product
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="space-y-3">
-                    {products.map((prod, idx) => (
-                      <div
-                        key={prod.id}
-                        className="rounded-xl border border-border bg-background p-3 shadow-2xs"
-                      >
-                        <div className="flex flex-wrap items-start gap-3">
-                          {/* Product Thumbnail + Upload */}
-                          <div className="flex flex-col items-center gap-1.5">
-                            <div className="flex aspect-[4/3] w-20 items-center justify-center overflow-hidden rounded-lg bg-white ring-1 ring-border dark:bg-neutral-900">
-                              <img
-                                src={prod.image || categoryDefaultImg}
-                                alt={prod.name || `Product ${idx + 1}`}
-                                className="h-full w-full object-contain object-center"
-                              />
-                            </div>
-                            <label className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-border px-2 py-0.5 text-[10px] font-bold hover:border-brand">
-                              {uploadingProdId === prod.id ? (
-                                <Loader2 className="size-2.5 animate-spin" />
-                              ) : (
-                                <Upload className="size-2.5" />
-                              )}
-                              Photo
-                              <input
-                                type="file"
-                                accept="image/*"
-                                className="hidden"
-                                onChange={(e) =>
-                                  void handleProductPhotoUpload(prod.id, e.target.files?.[0] || null)
-                                }
-                              />
-                            </label>
-                          </div>
-
-                          {/* Product Fields */}
-                          <div className="grid flex-1 gap-2 sm:grid-cols-4">
-                            <div className="sm:col-span-2">
-                              <input
-                                type="text"
-                                required
-                                value={prod.name}
-                                onChange={(e) =>
-                                  setProducts((prev) =>
-                                    prev.map((p) =>
-                                      p.id === prod.id ? { ...p, name: e.target.value } : p
-                                    )
-                                  )
-                                }
-                                placeholder="Cake / Product Name *"
-                                className="w-full rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs font-semibold text-foreground focus:border-brand focus:outline-none"
-                              />
-                            </div>
-
-                            <div>
-                              <div className="relative">
-                                <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[11px] font-bold text-muted-foreground">
-                                  {currencySymbol.trim()}
-                                </span>
-                                <input
-                                  type="number"
-                                  min="1"
-                                  required
-                                  value={prod.priceLocal}
-                                  onChange={(e) =>
-                                    setProducts((prev) =>
-                                      prev.map((p) =>
-                                        p.id === prod.id ? { ...p, priceLocal: e.target.value } : p
-                                      )
-                                    )
-                                  }
-                                  placeholder="Price"
-                                  className="w-full rounded-lg border border-border bg-card py-1.5 pl-8 pr-2 text-xs font-bold text-foreground focus:border-brand focus:outline-none"
-                                />
-                              </div>
-                            </div>
-
-                            <div className="flex gap-1.5">
-                              <input
-                                type="text"
-                                value={prod.serves}
-                                onChange={(e) =>
-                                  setProducts((prev) =>
-                                    prev.map((p) =>
-                                      p.id === prod.id ? { ...p, serves: e.target.value } : p
-                                    )
-                                  )
-                                }
-                                placeholder="1 kg · Serves 8"
-                                className="min-w-0 flex-1 rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs text-foreground focus:border-brand focus:outline-none"
-                              />
-                              {products.length > 1 && (
-                                <button
-                                  type="button"
-                                  aria-label="Remove product"
-                                  onClick={() =>
-                                    setProducts((prev) => prev.filter((p) => p.id !== prod.id))
-                                  }
-                                  className="grid size-8 shrink-0 cursor-pointer place-items-center rounded-lg border border-rose-500/30 text-rose-600 hover:bg-rose-500/10"
-                                >
-                                  <Trash2 className="size-3.5" />
-                                </button>
-                              )}
-                            </div>
-
-                            <div className="sm:col-span-3">
-                              <input
-                                type="text"
-                                value={prod.description}
-                                onChange={(e) =>
-                                  setProducts((prev) =>
-                                    prev.map((p) =>
-                                      p.id === prod.id ? { ...p, description: e.target.value } : p
-                                    )
-                                  )
-                                }
-                                placeholder="Short description (flavors, eggless option, delivery info)..."
-                                className="w-full rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs text-foreground focus:border-brand focus:outline-none"
-                              />
-                            </div>
-
-                            <div>
-                              <input
-                                type="text"
-                                value={prod.tag}
-                                onChange={(e) =>
-                                  setProducts((prev) =>
-                                    prev.map((p) =>
-                                      p.id === prod.id ? { ...p, tag: e.target.value } : p
-                                    )
-                                  )
-                                }
-                                placeholder="Badge (e.g. Eggless)"
-                                className="w-full rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs text-foreground focus:border-brand focus:outline-none"
-                              />
-                            </div>
-
-                            {/* Multi-Weight / Size Options (250g to 5 kg & custom grams/sizes on same product) */}
-                            <div className="space-y-1.5 rounded-lg border border-border/80 bg-muted/30 p-2 sm:col-span-4">
-                              <div className="flex flex-wrap items-center justify-between gap-1.5">
-                                <span className="text-[11px] font-bold text-foreground">
-                                  Weight / Size Options (Same Product):
-                                </span>
-                                <div className="flex flex-wrap items-center gap-1.5">
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const base = Number(prod.priceLocal) || 1000;
-                                      const isQuarterKg = /250\s*g|0\.25\s*kg/i.test(prod.serves);
-                                      const isHalfKg = /500\s*g|0\.5\s*kg/i.test(prod.serves);
-                                      const base1Kg = isQuarterKg
-                                        ? base * 3.35
-                                        : isHalfKg
-                                          ? base * 1.85
-                                          : base;
-                                      const std = new Set([
-                                        'w-250g',
-                                        'w-500g',
-                                        'w-1kg',
-                                        'w-2kg',
-                                        'w-3kg',
-                                        'w-5kg',
-                                      ]);
-                                      const autoRows = CAKE_WEIGHT_PRESETS.filter((w) =>
-                                        std.has(w.id)
-                                      ).map((w) => ({
-                                        id: w.id,
-                                        label: w.label,
-                                        priceLocal: String(
-                                          Math.max(10, Math.round((base1Kg * w.kgRatio) / 10) * 10)
-                                        ),
-                                        serves: w.serves,
-                                      }));
-                                      setProducts((prev) =>
-                                        prev.map((p) =>
-                                          p.id === prod.id ? { ...p, variants: autoRows } : p
-                                        )
-                                      );
-                                    }}
-                                    className="cursor-pointer rounded bg-brand/15 px-2 py-0.5 text-[10px] font-extrabold text-brand hover:bg-brand hover:text-brand-foreground"
-                                  >
-                                    Auto-fill 250g – 5 kg
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setProducts((prev) =>
-                                        prev.map((p) => {
-                                          if (p.id !== prod.id) return p;
-                                          const existing = p.variants || [];
-                                          if (existing.length >= 12) return p;
-                                          return {
-                                            ...p,
-                                            variants: [
-                                              ...existing,
-                                              {
-                                                id: `var-${Date.now()}-${existing.length + 1}`,
-                                                label: '',
-                                                priceLocal: prod.priceLocal || '350',
-                                                serves: '',
-                                              },
-                                            ],
-                                          };
-                                        })
-                                      );
-                                    }}
-                                    className="cursor-pointer rounded border border-border bg-card px-2 py-0.5 text-[10px] font-bold text-foreground hover:border-brand hover:text-brand"
-                                  >
-                                    + Custom Size / Gram
-                                  </button>
-                                </div>
-                              </div>
-                              <div className="flex flex-wrap items-center gap-1">
-                                {CAKE_WEIGHT_PRESETS.map((preset) => {
-                                  const active = (prod.variants || []).some(
-                                    (v) =>
-                                      v.id === preset.id ||
-                                      v.label.toLowerCase() === preset.label.toLowerCase()
-                                  );
-                                  return (
-                                    <button
-                                      key={preset.id}
-                                      type="button"
-                                      onClick={() => {
-                                        const base = Number(prod.priceLocal) || 1000;
-                                        const isQuarterKg = /250\s*g|0\.25\s*kg/i.test(prod.serves);
-                                        const isHalfKg = /500\s*g|0\.5\s*kg/i.test(prod.serves);
-                                        const base1Kg = isQuarterKg
-                                          ? base * 3.35
-                                          : isHalfKg
-                                            ? base * 1.85
-                                            : base;
-                                        setProducts((prev) =>
-                                          prev.map((p) => {
-                                            if (p.id !== prod.id) return p;
-                                            const existing = p.variants || [];
-                                            if (active) {
-                                              return {
-                                                ...p,
-                                                variants: existing.filter(
-                                                  (v) =>
-                                                    v.id !== preset.id &&
-                                                    v.label.toLowerCase() !==
-                                                      preset.label.toLowerCase()
-                                                ),
-                                              };
-                                            }
-                                            const orderMap = new Map(
-                                              CAKE_WEIGHT_PRESETS.map((w, i) => [w.id, i])
-                                            );
-                                            const next = [
-                                              ...existing,
-                                              {
-                                                id: preset.id,
-                                                label: preset.label,
-                                                priceLocal: String(
-                                                  Math.max(
-                                                    10,
-                                                    Math.round((base1Kg * preset.kgRatio) / 10) * 10
-                                                  )
-                                                ),
-                                                serves: preset.serves,
-                                              },
-                                            ].sort(
-                                              (a, b) =>
-                                                (orderMap.get(a.id) ?? 99) -
-                                                (orderMap.get(b.id) ?? 99)
-                                            );
-                                            return { ...p, variants: next };
-                                          })
-                                        );
-                                      }}
-                                      className={`cursor-pointer rounded border px-1.5 py-0.5 font-mono text-[10px] font-bold transition-colors ${
-                                        active
-                                          ? 'border-brand bg-brand text-brand-foreground'
-                                          : 'border-border bg-card text-muted-foreground hover:text-foreground'
-                                      }`}
-                                    >
-                                      {active ? '✓ ' : '+ '}
-                                      {preset.label}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                              {prod.variants && prod.variants.length > 0 && (
-                                <div className="grid grid-cols-1 gap-1.5 pt-1 sm:grid-cols-2 lg:grid-cols-3">
-                                  {prod.variants.map((v) => (
-                                    <div
-                                      key={v.id}
-                                      className="flex items-center gap-1 rounded border border-border bg-card px-1.5 py-1"
-                                    >
-                                      <input
-                                        type="text"
-                                        value={v.label}
-                                        placeholder="e.g. 250g / Box of 6"
-                                        aria-label="Weight or custom size label"
-                                        onChange={(e) =>
-                                          setProducts((prev) =>
-                                            prev.map((p) =>
-                                              p.id === prod.id
-                                                ? {
-                                                    ...p,
-                                                    variants: (p.variants || []).map((row) =>
-                                                      row.id === v.id
-                                                        ? { ...row, label: e.target.value }
-                                                        : row
-                                                    ),
-                                                  }
-                                                : p
-                                            )
-                                          )
-                                        }
-                                        className="w-24 min-w-0 rounded border border-border bg-background px-1.5 py-0.5 font-mono text-[10px] font-bold text-foreground placeholder:font-sans placeholder:font-normal placeholder:text-muted-foreground focus:border-brand focus:outline-none"
-                                      />
-                                      <input
-                                        type="number"
-                                        min="1"
-                                        placeholder="Price"
-                                        aria-label={`Price for ${v.label || 'custom size'}`}
-                                        value={v.priceLocal}
-                                        onChange={(e) =>
-                                          setProducts((prev) =>
-                                            prev.map((p) =>
-                                              p.id === prod.id
-                                                ? {
-                                                    ...p,
-                                                    variants: (p.variants || []).map((row) =>
-                                                      row.id === v.id
-                                                        ? { ...row, priceLocal: e.target.value }
-                                                        : row
-                                                    ),
-                                                  }
-                                                : p
-                                            )
-                                          )
-                                        }
-                                        className="min-w-0 flex-1 rounded border border-border bg-background px-1.5 py-0.5 font-mono text-[10px] font-bold text-foreground focus:border-brand focus:outline-none"
-                                      />
-                                      <button
-                                        type="button"
-                                        aria-label={`Remove ${v.label || 'size'}`}
-                                        onClick={() =>
-                                          setProducts((prev) =>
-                                            prev.map((p) =>
-                                              p.id === prod.id
-                                                ? {
-                                                    ...p,
-                                                    variants: (p.variants || []).filter(
-                                                      (row) => row.id !== v.id
-                                                    ),
-                                                  }
-                                                : p
-                                            )
-                                          )
-                                        }
-                                        className="cursor-pointer text-muted-foreground hover:text-rose-600"
-                                      >
-                                        <X className="size-3" />
-                                      </button>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-
-                            <div className="flex flex-wrap items-center gap-1.5 sm:col-span-4">
-                              <span className="text-[11px] font-semibold text-muted-foreground">
-                                Food Type:
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setProducts((prev) =>
-                                    prev.map((p) =>
-                                      p.id === prod.id
-                                        ? { ...p, foodType: p.foodType === 'veg' ? '' : 'veg' }
-                                        : p
-                                    )
-                                  )
-                                }
-                                className={`inline-flex cursor-pointer items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-bold transition-colors ${
-                                  prod.foodType === 'veg'
-                                    ? 'border-emerald-600 bg-emerald-600 text-white'
-                                    : 'border-emerald-600/35 bg-card text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-950/40'
-                                }`}
-                              >
-                                <FoodTypeIcon foodType="veg" size="xs" />
-                                Veg
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setProducts((prev) =>
-                                    prev.map((p) =>
-                                      p.id === prod.id
-                                        ? {
-                                            ...p,
-                                            foodType: p.foodType === 'non-veg' ? '' : 'non-veg',
-                                          }
-                                        : p
-                                    )
-                                  )
-                                }
-                                className={`inline-flex cursor-pointer items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-bold transition-colors ${
-                                  prod.foodType === 'non-veg'
-                                    ? 'border-red-600 bg-red-600 text-white'
-                                    : 'border-red-600/35 bg-card text-red-700 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-950/40'
-                                }`}
-                              >
-                                <FoodTypeIcon foodType="non-veg" size="xs" />
-                                Non-Veg
-                              </button>
-                            </div>
-
-                            {planTier !== 'free' && customBuilderEnabled && (() => {
-                              const modeCfg = getCustomBuilderModeConfig(customBuilderMode);
-                              const sectionChoices = Array.from(
-                                new Set([
-                                  ...modeCfg.sections,
-                                  ...products
-                                    .map((item) => item.builderSection?.trim() || '')
-                                    .filter(Boolean),
-                                  ...customBuilderSections,
-                                ])
-                              );
-                              const isAddingHere = addingSectionForProdId === prod.id;
-                              const commitAdminSection = () => {
-                                const cleaned = newBuilderSectionInput.trim().slice(0, 60);
-                                if (!cleaned) return;
-                                setCustomBuilderSections((prev) =>
-                                  prev.includes(cleaned) ? prev : [...prev, cleaned]
-                                );
-                                setProducts((prev) =>
-                                  prev.map((p) =>
-                                    p.id === prod.id ? { ...p, builderSection: cleaned } : p
-                                  )
-                                );
-                                setNewBuilderSectionInput('');
-                                setAddingSectionForProdId(null);
-                              };
-                              return (
-                              <div className="flex flex-wrap items-center gap-2 rounded-lg border border-brand-border/60 bg-brand-soft/20 px-2.5 py-1.5 sm:col-span-4">
-                                <select
-                                  aria-label="Builder Section"
-                                  value={prod.builderSection || ''}
-                                  onChange={(e) => {
-                                    if (e.target.value === '__add_new__') {
-                                      setAddingSectionForProdId(prod.id);
-                                      return;
-                                    }
-                                    setProducts((prev) =>
-                                      prev.map((p) =>
-                                        p.id === prod.id
-                                          ? { ...p, builderSection: e.target.value }
-                                          : p
-                                      )
-                                    );
-                                  }}
-                                  className="rounded-md border border-border bg-card px-2 py-1 text-[11px] font-semibold text-foreground"
-                                >
-                                  <option value="">{modeCfg.label} Section</option>
-                                  {sectionChoices.map((sec) => (
-                                    <option key={sec} value={sec}>
-                                      {sec}
-                                    </option>
-                                  ))}
-                                  <option value="__add_new__">+ Add New Category...</option>
-                                </select>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setAddingSectionForProdId((prev) =>
-                                      prev === prod.id ? null : prod.id
-                                    )
-                                  }
-                                  className="inline-flex cursor-pointer items-center gap-0.5 rounded-md border border-brand-border bg-card px-2 py-1 text-[10px] font-bold text-brand hover:bg-brand hover:text-brand-foreground"
-                                >
-                                  <Plus className="size-3" aria-hidden="true" />
-                                  Category
-                                </button>
-                                {isAddingHere && (
-                                  <div className="flex w-full flex-wrap items-center gap-1.5 pt-1">
-                                    <input
-                                      type="text"
-                                      value={newBuilderSectionInput}
-                                      onChange={(e) => setNewBuilderSectionInput(e.target.value)}
-                                      onKeyDown={(e) => {
-                                        if (e.key === 'Enter') {
-                                          e.preventDefault();
-                                          commitAdminSection();
-                                        }
-                                      }}
-                                      maxLength={60}
-                                      placeholder="New category (e.g. Live Counters, Chaat, Salads)"
-                                      className="min-w-[160px] flex-1 rounded-md border border-border bg-background px-2 py-1 text-[11px] text-foreground focus:border-brand focus:outline-none"
-                                    />
-                                    <button
-                                      type="button"
-                                      onClick={commitAdminSection}
-                                      disabled={!newBuilderSectionInput.trim()}
-                                      className="cursor-pointer rounded-md bg-brand px-2.5 py-1 text-[10px] font-bold text-brand-foreground hover:bg-brand-hover disabled:opacity-50"
-                                    >
-                                      Add
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setAddingSectionForProdId(null);
-                                        setNewBuilderSectionInput('');
-                                      }}
-                                      className="cursor-pointer rounded-md px-2 py-1 text-[10px] font-semibold text-muted-foreground hover:text-foreground"
-                                    >
-                                      Cancel
-                                    </button>
-                                  </div>
-                                )}
-                                <span className="text-[10px] font-semibold text-muted-foreground">
-                                  Presets:
-                                </span>
-                                {BUILDER_PRESET_OPTIONS.map((preset) => {
-                                  const active = (prod.builderPresets || []).includes(preset.id);
-                                  return (
-                                    <button
-                                      key={preset.id}
-                                      type="button"
-                                      onClick={() =>
-                                        setProducts((prev) =>
-                                          prev.map((p) => {
-                                            if (p.id !== prod.id) return p;
-                                            const curr = p.builderPresets || [];
-                                            return {
-                                              ...p,
-                                              builderPresets: curr.includes(preset.id)
-                                                ? curr.filter((x) => x !== preset.id)
-                                                : [...curr, preset.id],
-                                            };
-                                          })
-                                        )
-                                      }
-                                      className={`cursor-pointer rounded-md border px-2 py-0.5 text-[10px] font-bold transition-colors ${
-                                        active
-                                          ? 'border-brand bg-brand text-brand-foreground'
-                                          : 'border-border bg-card text-muted-foreground hover:border-brand hover:text-foreground'
-                                      }`}
-                                    >
-                                      {active
-                                        ? `✓ ${preset.modeLabels[customBuilderMode]}`
-                                        : preset.modeLabels[customBuilderMode]}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                              );
-                            })()}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Section 3: Secret Claim Passcode & Publish */}
+                {/* Section 2: Secret Claim Passcode & Publish */}
                 <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4 sm:p-5">
                   <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
                     <div className="flex-1">
                       <label className="mb-1 flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wider text-amber-900 dark:text-amber-300">
                         <KeyRound className="size-3.5" aria-hidden="true" />
-                        3. Secret Transfer Key (Letters &amp; Numbers, Min 6 chars)
+                        2. Secret Transfer Key (Letters &amp; Numbers, Min 6 chars)
                       </label>
                       <p className="mb-2 text-xs text-amber-900/80 dark:text-amber-200/80">
-                        Give this secret key to the vendor on WhatsApp. They enter their phone + this key to claim the store &amp; set their own password.
+                        Give this secret key to the vendor on WhatsApp. Once they claim the storefront with their phone + key, they can add their own {isParty ? 'event packages, photos & prices' : 'products, menu items & prices'} directly from Edit Storefront.
                       </p>
                       <div className="flex max-w-md gap-2">
                         <input

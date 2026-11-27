@@ -113,9 +113,9 @@ function createInitialMessages(country?: LaunchCountry, locationLabel?: string):
     locationLabel || (country && country !== 'All' ? country : 'your city');
   return [
     {
-      id: 'welcome-josh',
+      id: 'welcome-planner',
       role: 'assistant',
-      text: `Hi! I'm **Josh**, your FindMyBites × PimpMyParty AI Concierge. I know every live baker, menu item, eggless/sugar-free option, party vendor, BOX & BITE corporate box, and Christmas special in **${locText}**! Tell me what you're craving or planning (occasion, area, guests & budget) and I'll match you with real local stores + a full checklist.`,
+      text: `Hi! Welcome to **Plan your Event** on FindMyBites × PimpMyParty. Tell me what you're celebrating or craving in **${locText}** (occasion, area, guests & budget) and I'll match you with real local bakers, caterers, party vendors & a complete checklist.`,
     },
   ];
 }
@@ -267,11 +267,11 @@ export function JoshPlannerDrawer({
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || 'Could not reach Josh AI right now.');
+        throw new Error(data.error || 'Could not reach the Event Planner right now.');
       }
 
       const aiMsg: ChatMessage = {
-        id: `josh-${Date.now()}`,
+        id: `planner-${Date.now()}`,
         role: 'assistant',
         text: data.reply || 'Here is your personalized plan!',
         recommendedVendorIds: Array.isArray(data.recommendedVendorIds)
@@ -292,7 +292,7 @@ export function JoshPlannerDrawer({
           text:
             err instanceof Error
               ? `${err.message} Please try again in a moment.`
-              : 'Something went wrong connecting to Josh AI. Please try again.',
+              : 'Something went wrong connecting to the Event Planner. Please try again.',
         },
       ]);
     } finally {
@@ -312,12 +312,12 @@ export function JoshPlannerDrawer({
         <button
           type="button"
           onClick={() => onOpenChange(true)}
-          aria-label="Open Josh AI Event Planner"
+          aria-label="Open Plan your Event"
           className="fixed bottom-20 right-3 z-40 inline-flex cursor-pointer items-center gap-2 rounded-full bg-gradient-to-r from-[#FF6B35] to-[#EC4899] px-3.5 py-2.5 text-xs font-semibold text-white shadow-lg transition-transform hover:scale-105 sm:px-4 sm:py-3 sm:text-sm lg:bottom-6 lg:right-6"
         >
           <Sparkles className="size-4" aria-hidden="true" />
-          <span className="hidden sm:inline">Ask Josh AI</span>
-          <span className="sm:hidden">Josh AI</span>
+          <span className="hidden sm:inline">Plan your Event</span>
+          <span className="sm:hidden">Plan Event</span>
         </button>
       )}
 
@@ -330,7 +330,7 @@ export function JoshPlannerDrawer({
           <aside
             role="dialog"
             aria-modal="true"
-            aria-label="Josh AI Event Planner"
+            aria-label="Plan your Event"
             onClick={(e) => e.stopPropagation()}
             className="flex h-[100dvh] w-full max-w-full flex-col border-l border-border bg-card text-card-foreground shadow-2xl sm:max-w-lg md:max-w-xl"
           >
@@ -343,7 +343,7 @@ export function JoshPlannerDrawer({
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <h2 className="truncate text-sm font-bold text-foreground sm:text-base">
-                      Josh · AI Food &amp; Event Planner
+                      Plan your Event
                     </h2>
                     <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:text-emerald-300">
                       <span className="size-1.5 rounded-full bg-emerald-500" />
@@ -372,7 +372,7 @@ export function JoshPlannerDrawer({
                 <button
                   type="button"
                   onClick={() => onOpenChange(false)}
-                  aria-label="Close Josh AI Planner"
+                  aria-label="Close Plan your Event"
                   className="grid size-8 cursor-pointer place-items-center rounded-lg border border-border text-muted-foreground hover:bg-accent hover:text-foreground"
                 >
                   <X className="size-4" aria-hidden="true" />
@@ -473,7 +473,7 @@ export function JoshPlannerDrawer({
                               <a
                                 href={buildWhatsAppUrl(
                                   v,
-                                  `Hi ${v.name}! Josh AI on FindMyBites recommended you for my celebration. Could you share availability & pricing?`
+                                  `Hi ${v.name}! FindMyBites Event Planner recommended you for my celebration. Could you share availability & pricing?`
                                 )}
                                 target="_blank"
                                 rel="noopener noreferrer"
@@ -561,7 +561,7 @@ export function JoshPlannerDrawer({
               {loading && (
                 <div className="flex items-center gap-2 rounded-xl border border-border bg-muted/50 px-3.5 py-2.5 text-xs text-muted-foreground">
                   <Loader2 className="size-4 animate-spin text-brand" aria-hidden="true" />
-                  <span>Josh is checking live menus, local bakers &amp; event packages…</span>
+                  <span>Checking live menus, local bakers &amp; event packages…</span>
                 </div>
               )}
 
@@ -569,7 +569,7 @@ export function JoshPlannerDrawer({
               {messages.length <= 1 && !loading && (
                 <div className="space-y-2 pt-2">
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    Try asking Josh
+                    Quick Ideas to Get Started
                   </p>
                   <div className="flex flex-col gap-1.5">
                     {quickPrompts.map((prompt) => (
@@ -604,7 +604,7 @@ export function JoshPlannerDrawer({
                 <button
                   type="submit"
                   disabled={loading || !input.trim()}
-                  aria-label="Send message to Josh AI"
+                  aria-label="Send message to Event Planner"
                   className="grid size-11 shrink-0 cursor-pointer place-items-center rounded-xl bg-brand text-brand-foreground shadow-sm transition-colors hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Send className="size-4" aria-hidden="true" />

@@ -172,6 +172,19 @@ export const TOP_CAKE_SEO_CATEGORY_SLUGS = [
   'custom-cakes',
 ] as const;
 
+// Top PimpMyParty event & celebration categories for internal linking
+export const TOP_PARTY_SEO_CATEGORY_SLUGS = [
+  'event-and-wedding-planners',
+  'wedding-and-party-decor',
+  'balloon-and-theme-birthday-decor',
+  'photographers-and-videographers',
+  'djs-sound-and-live-bands',
+  'venues-farmhouses-and-villas',
+  'makeup-hair-and-mehendi-artists',
+  'photo-booths-and-360-spinners',
+  'anchors-emcees-and-performers',
+] as const;
+
 // Build full deduplicated index of all supported cities across all 6 launch countries
 export const SEO_CITIES: SeoCityEntry[] = (() => {
   const seen = new Set<string>();
@@ -199,14 +212,19 @@ export const SEO_CITIES: SeoCityEntry[] = (() => {
 })();
 
 export const SEO_CATEGORIES: SeoCategoryEntry[] = [
-  ...ALL_CATEGORIES.map((category) => ({
-    slug: slugifySeoSegment(category),
-    category,
-    marketplace: ((FOOD_CATEGORIES as readonly string[]).includes(category)
-      ? 'food'
-      : 'party') as 'food' | 'party',
-    startingPriceInr: category.toLowerCase().includes('baker') ? '₹450' : '₹1,499',
-  })),
+  ...ALL_CATEGORIES.map((category) => {
+    const isFood = (FOOD_CATEGORIES as readonly string[]).includes(category);
+    return {
+      slug: slugifySeoSegment(category),
+      category,
+      marketplace: (isFood ? 'food' : 'party') as 'food' | 'party',
+      startingPriceInr: !isFood
+        ? '₹2,500'
+        : category.toLowerCase().includes('baker')
+          ? '₹450'
+          : '₹999',
+    };
+  }),
   {
     slug: 'cakes-near-me',
     category: 'Bakers & Cakes',
@@ -369,17 +387,49 @@ export function buildCityLocalityCategoryPath(
   return `/${slugifySeoSegment(cityName)}/${slugifySeoSegment(localityName)}/${slugifySeoSegment(categoryName)}`;
 }
 
+const NON_BAKER_FOOD_SLUGS = new Set([
+  'catering-services',
+  'live-counters-and-food-stalls',
+  'bar-mocktails-and-beverage-carts',
+  'snack-boxes-and-party-platters',
+  'mithai-chocolatiers-and-dates',
+  'gifting-hampers-and-return-favors',
+]);
+
 export function buildLocalFaqs(
   cityName: string | null,
   localityName: string | null,
   categoryLabel: string,
   startingPriceInr = '₹550',
-  isChristmasHub?: boolean
+  isChristmasHub?: boolean,
+  marketplace: 'food' | 'party' = 'food',
+  categorySlug = ''
 ): Array<{ question: string; answer: string }> {
   const areaLabel = localityName
     ? `${localityName}${cityName ? `, ${cityName}` : ''}`
     : cityName || 'your area';
   const cityLabel = cityName || 'your city';
+
+  if (marketplace === 'party') {
+    return [
+      {
+        question: `Who are the best ${categoryLabel.toLowerCase()} in ${areaLabel}?`,
+        answer: `PimpMyParty by FindMyBites lists verified local ${categoryLabel.toLowerCase()} in ${areaLabel} for weddings, birthdays, corporate events, and private celebrations—with transparent INR packages and direct WhatsApp booking.`,
+      },
+      {
+        question: `How do I book ${categoryLabel.toLowerCase()} in ${cityLabel} without broker commissions?`,
+        answer: `Compare portfolios, packages, and reviews for ${categoryLabel.toLowerCase()} in ${areaLabel} on PimpMyParty, then message the vendor directly on WhatsApp with 0% middleman commission.`,
+      },
+      {
+        question: `What is the starting price for ${categoryLabel.toLowerCase()} in ${areaLabel}?`,
+        answer: `Verified ${categoryLabel.toLowerCase()} in ${areaLabel} typically start around ${startingPriceInr}, with tailored wedding, birthday, and corporate quotes shared directly on WhatsApp.`,
+      },
+      {
+        question: `How far in advance should I book ${categoryLabel.toLowerCase()} in ${areaLabel}?`,
+        answer: `For birthdays and home celebrations in ${areaLabel}, booking 1–2 weeks in advance works best; for weddings and peak weekends in ${cityLabel}, booking 4–8 weeks ahead is recommended.`,
+      },
+    ];
+  }
 
   if (isChristmasHub) {
     return [
@@ -394,6 +444,27 @@ export function buildLocalFaqs(
       {
         question: `Do bakers in ${areaLabel} offer doorstep delivery and bulk corporate Christmas hampers?`,
         answer: `Yes! Most local home bakers in ${areaLabel} provide scheduled doorstep delivery and custom-ribbon corporate gifting boxes across ${cityLabel}.`,
+      },
+    ];
+  }
+
+  if (NON_BAKER_FOOD_SLUGS.has(categorySlug)) {
+    return [
+      {
+        question: `Who are the best ${categoryLabel.toLowerCase()} in ${areaLabel}?`,
+        answer: `FindMyBites features verified local ${categoryLabel.toLowerCase()} in ${areaLabel} for house parties, weddings, and corporate gatherings—with transparent INR per-plate menus and direct WhatsApp ordering.`,
+      },
+      {
+        question: `How do I book ${categoryLabel.toLowerCase()} in ${cityLabel} with 0% commission?`,
+        answer: `Browse ready-made packages or build a custom menu from ${categoryLabel.toLowerCase()} in ${areaLabel}, then confirm directly on WhatsApp with zero platform markup.`,
+      },
+      {
+        question: `What is the starting price for ${categoryLabel.toLowerCase()} in ${areaLabel}?`,
+        answer: `Local ${categoryLabel.toLowerCase()} in ${areaLabel} typically start around ${startingPriceInr}, with custom guest counts and Veg/Non-Veg packages quoted directly on WhatsApp.`,
+      },
+      {
+        question: `Do ${categoryLabel.toLowerCase()} in ${areaLabel} serve small parties as well as large weddings?`,
+        answer: `Yes! Listed vendors in ${areaLabel} cater both intimate 15-guest gatherings and large wedding or corporate events across ${cityLabel}.`,
       },
     ];
   }
@@ -506,29 +577,73 @@ export function resolveSeoDirectoryRoute(pathname: string): ResolvedSeoDirectory
     ? `Top ${subject} in ${placeHeading}`
     : `Top ${subject} Across India`;
 
-  const title = cityEntry
-    ? `Best ${subject} in ${placeHeading} | Order Direct from Home Bakers – FindMyBites`
-    : `Best ${subject} Near You in India | Order Direct from Home Bakers – FindMyBites`;
+  const isParty = categoryEntry?.marketplace === 'party';
+  const isNonBakerFood = !isParty && Boolean(categoryEntry && NON_BAKER_FOOD_SLUGS.has(categoryEntry.slug));
 
-  const introParagraph = cityEntry
-    ? `Looking for fresh ${subject.toLowerCase()} in ${placeHeading}? Browse verified local home bakers, eggless cake artists, and party food makers delivering across ${localityName ? `${localityName} and nearby ${cityEntry.city} neighbourhoods` : `${cityEntry.city}, ${cityEntry.state}`}. Compare transparent INR menus starting from ${startingPriceInr}, check doorstep delivery or kitchen pickup slots, and order directly on WhatsApp with 0% middleman commission.`
-    : `Discover top-rated ${subject.toLowerCase()} across Hyderabad, Secunderabad, Bengaluru, Mumbai, Delhi NCR, Chennai, Pune, Kolkata & beyond. View freshly baked menus starting from ${startingPriceInr} and order directly from local home bakers on WhatsApp with 0% commission.`;
+  const title = isParty
+    ? cityEntry
+      ? `Best ${subject} in ${placeHeading} | Book Direct – PimpMyParty`
+      : `Best ${subject} in India | Book Direct – PimpMyParty`
+    : isNonBakerFood
+      ? cityEntry
+        ? `Best ${subject} in ${placeHeading} | Order Direct – FindMyBites`
+        : `Best ${subject} Near You in India | Order Direct – FindMyBites`
+      : cityEntry
+        ? `Best ${subject} in ${placeHeading} | Order Direct from Home Bakers – FindMyBites`
+        : `Best ${subject} Near You in India | Order Direct from Home Bakers – FindMyBites`;
+
+  const introParagraph = isParty
+    ? cityEntry
+      ? `Looking for verified ${subject.toLowerCase()} in ${placeHeading}? Browse local wedding planners, party decorators, DJs, photographers, and celebration specialists serving ${localityName ? `${localityName} and nearby ${cityEntry.city} neighbourhoods` : `${cityEntry.city}, ${cityEntry.state}`}. Compare transparent INR packages starting from ${startingPriceInr}, view real portfolios, and book directly on WhatsApp with 0% middleman commission.`
+      : `Discover verified ${subject.toLowerCase()} across Hyderabad, Secunderabad, Bengaluru, Mumbai, Delhi NCR, Chennai, Pune, Kolkata & beyond. Compare transparent INR event packages starting from ${startingPriceInr} and book directly on WhatsApp with 0% commission on PimpMyParty.`
+    : isNonBakerFood
+      ? cityEntry
+        ? `Looking for reliable ${subject.toLowerCase()} in ${placeHeading}? Compare verified local caterers, live counters, mocktail bars, and party platter makers serving ${localityName ? `${localityName} and nearby ${cityEntry.city} neighbourhoods` : `${cityEntry.city}, ${cityEntry.state}`}. View transparent INR per-plate menus starting from ${startingPriceInr} and book directly on WhatsApp with 0% commission.`
+        : `Discover verified ${subject.toLowerCase()} across Hyderabad, Secunderabad, Bengaluru, Mumbai, Delhi NCR, Chennai, Pune, Kolkata & beyond. View per-plate menus starting from ${startingPriceInr} and book directly on WhatsApp with 0% commission.`
+      : cityEntry
+        ? `Looking for fresh ${subject.toLowerCase()} in ${placeHeading}? Browse verified local home bakers, eggless cake artists, and party food makers delivering across ${localityName ? `${localityName} and nearby ${cityEntry.city} neighbourhoods` : `${cityEntry.city}, ${cityEntry.state}`}. Compare transparent INR menus starting from ${startingPriceInr}, check doorstep delivery or kitchen pickup slots, and order directly on WhatsApp with 0% middleman commission.`
+        : `Discover top-rated ${subject.toLowerCase()} across Hyderabad, Secunderabad, Bengaluru, Mumbai, Delhi NCR, Chennai, Pune, Kolkata & beyond. View freshly baked menus starting from ${startingPriceInr} and order directly from local home bakers on WhatsApp with 0% commission.`;
 
   const description = introParagraph.slice(0, 210);
 
-  const keywords = cityEntry
-    ? [
-        `${subject.toLowerCase()} in ${placeHeading.toLowerCase()}`,
-        `best ${subject.toLowerCase()} ${cityEntry.city.toLowerCase()}`,
-        localityName ? `eggless cakes ${localityName.toLowerCase()}` : '',
-        localityName ? `home bakers in ${localityName.toLowerCase()}` : '',
-        `home bakers in ${cityEntry.city.toLowerCase()}`,
-        `cakes near me ${cityEntry.city.toLowerCase()}`,
-        'FindMyBites',
-      ]
-        .filter(Boolean)
-        .join(', ')
-    : `${subject.toLowerCase()} near me, eggless cakes india, home bakers india, custom birthday cakes, FindMyBites`;
+  const keywords = isParty
+    ? cityEntry
+      ? [
+          `${subject.toLowerCase()} in ${placeHeading.toLowerCase()}`,
+          `best ${subject.toLowerCase()} ${cityEntry.city.toLowerCase()}`,
+          localityName ? `event planners in ${localityName.toLowerCase()}` : '',
+          `event vendors in ${cityEntry.city.toLowerCase()}`,
+          `wedding vendors ${cityEntry.city.toLowerCase()}`,
+          'PimpMyParty',
+          'FindMyBites',
+        ]
+          .filter(Boolean)
+          .join(', ')
+      : `${subject.toLowerCase()} near me, event planners india, wedding and party decor india, PimpMyParty, FindMyBites`
+    : isNonBakerFood
+      ? cityEntry
+        ? [
+            `${subject.toLowerCase()} in ${placeHeading.toLowerCase()}`,
+            `best ${subject.toLowerCase()} ${cityEntry.city.toLowerCase()}`,
+            `party catering in ${cityEntry.city.toLowerCase()}`,
+            'FindMyBites',
+          ]
+            .filter(Boolean)
+            .join(', ')
+        : `${subject.toLowerCase()} near me, party catering india, live food counters india, FindMyBites`
+      : cityEntry
+        ? [
+            `${subject.toLowerCase()} in ${placeHeading.toLowerCase()}`,
+            `best ${subject.toLowerCase()} ${cityEntry.city.toLowerCase()}`,
+            localityName ? `eggless cakes ${localityName.toLowerCase()}` : '',
+            localityName ? `home bakers in ${localityName.toLowerCase()}` : '',
+            `home bakers in ${cityEntry.city.toLowerCase()}`,
+            `cakes near me ${cityEntry.city.toLowerCase()}`,
+            'FindMyBites',
+          ]
+            .filter(Boolean)
+            .join(', ')
+        : `${subject.toLowerCase()} near me, eggless cakes india, home bakers india, custom birthday cakes, FindMyBites`;
 
   return {
     cityEntry,
@@ -546,7 +661,9 @@ export function resolveSeoDirectoryRoute(pathname: string): ResolvedSeoDirectory
       localityName,
       subject,
       startingPriceInr,
-      categoryEntry?.isChristmasHub
+      categoryEntry?.isChristmasHub,
+      isParty ? 'party' : 'food',
+      categoryEntry?.slug || ''
     ),
   };
 }
@@ -560,6 +677,41 @@ export function generateAutoStoreSeo(vendor: Vendor): {
     .slice(0, 3)
     .map((p) => p.name)
     .join(', ');
+  const isParty = vendor.marketplace === 'party';
+  const isBaker =
+    !isParty &&
+    (vendor.category.toLowerCase().includes('baker') ||
+      vendor.category.toLowerCase().includes('cake') ||
+      vendor.category.toLowerCase().includes('dessert'));
+
+  if (isParty) {
+    const seoTitle = `${vendor.name} – ${vendor.category} in ${vendor.area}, ${vendor.city} | PimpMyParty`.slice(
+      0,
+      98
+    );
+    const seoDescription =
+      `Book ${vendor.name} in ${vendor.area}, ${vendor.city}, ${vendor.state}. ${
+        topProds ? `Packages: ${topProds}. ` : ''
+      }View transparent INR event packages, photos & chat directly on WhatsApp with 0% commission on PimpMyParty.`.slice(
+        0,
+        215
+      );
+    const seoKeywords = [
+      vendor.name,
+      `${vendor.category} in ${vendor.city}`,
+      `${vendor.category} in ${vendor.area}`,
+      `event vendors in ${vendor.area}`,
+      `party planners in ${vendor.city}`,
+      'PimpMyParty',
+      ...vendor.specialties.slice(0, 4),
+    ]
+      .filter(Boolean)
+      .join(', ')
+      .slice(0, 235);
+
+    return { seoTitle, seoDescription, seoKeywords };
+  }
+
   const seasonal = vendor.christmasSpecial ? ' · Christmas Cakes' : '';
   const seoTitle = `${vendor.name} – ${vendor.category} in ${vendor.area}, ${vendor.city}${seasonal} | FindMyBites`.slice(
     0,
@@ -568,7 +720,7 @@ export function generateAutoStoreSeo(vendor: Vendor): {
   const seoDescription =
     `Order from ${vendor.name} in ${vendor.area}, ${vendor.city}, ${vendor.state}. ${
       topProds ? `Popular: ${topProds}. ` : ''
-    }View INR menu prices, cake photos & chat directly on WhatsApp with 0% commission on FindMyBites.`.slice(
+    }View INR menu prices, ${isBaker ? 'cake photos' : 'package menus'} & chat directly on WhatsApp with 0% commission on FindMyBites.`.slice(
       0,
       215
     );
@@ -576,8 +728,8 @@ export function generateAutoStoreSeo(vendor: Vendor): {
     vendor.name,
     `${vendor.category} in ${vendor.city}`,
     `${vendor.category} in ${vendor.area}`,
-    `home bakers in ${vendor.area}`,
-    `cakes in ${vendor.city}`,
+    isBaker ? `home bakers in ${vendor.area}` : `catering in ${vendor.area}`,
+    isBaker ? `cakes in ${vendor.city}` : `party food in ${vendor.city}`,
     vendor.christmasSpecial ? `Christmas plum cakes ${vendor.city}` : '',
     ...vendor.specialties.slice(0, 4),
   ]
@@ -622,11 +774,15 @@ export function generateLiveSitemapXml(
   const priorityCities = SEO_CITIES.filter((c) => PRIORITY_SEO_CITY_SLUGS.includes(c.slug));
   const topCategorySlugs = new Set<string>([
     ...TOP_CAKE_SEO_CATEGORY_SLUGS,
+    ...TOP_PARTY_SEO_CATEGORY_SLUGS,
     'cakes-near-me',
     'birthday-cakes',
     'catering-services',
     'live-counters-and-food-stalls',
     'bar-mocktails-and-beverage-carts',
+    'kids-entertainment-and-mascots',
+    'event-rentals-furniture-and-tents',
+    'lighting-av-and-cold-fireworks',
     'christmas-cakes',
   ]);
   const topCategories = SEO_CATEGORIES.filter((c) => topCategorySlugs.has(c.slug));
@@ -641,7 +797,17 @@ export function generateLiveSitemapXml(
     for (const loc of localities) {
       const locSlug = slugifySeoSegment(loc);
       if (!locSlug) continue;
-      for (const catSlug of ['home-bakers', 'custom-cakes', 'eggless-cakes', 'birthday-cakes']) {
+      for (const catSlug of [
+        'home-bakers',
+        'custom-cakes',
+        'eggless-cakes',
+        'birthday-cakes',
+        'catering-services',
+        'event-and-wedding-planners',
+        'wedding-and-party-decor',
+        'balloon-and-theme-birthday-decor',
+        'photographers-and-videographers',
+      ]) {
         pushUrl(`${origin}/${city.slug}/${locSlug}/${catSlug}`, '0.8', 'weekly');
       }
     }

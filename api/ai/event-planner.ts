@@ -29,7 +29,7 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
   } catch (err) {
     console.error('[/api/ai/event-planner] Error:', err);
     return res.status(500).json({
-      error: err instanceof Error ? err.message : 'Josh AI failed to generate a plan.',
+      error: err instanceof Error ? err.message : 'Event Planner failed to generate a plan.',
     });
   }
 }

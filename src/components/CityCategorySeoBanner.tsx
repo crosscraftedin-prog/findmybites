@@ -17,6 +17,7 @@ import {
   SEO_CATEGORIES,
   SEO_CITIES,
   TOP_CAKE_SEO_CATEGORY_SLUGS,
+  TOP_PARTY_SEO_CATEGORY_SLUGS,
   slugifySeoSegment,
 } from '../utils/seoDirectory';
 
@@ -47,16 +48,24 @@ export function CityCategorySeoBanner({
   const activeCategory = route.categoryEntry;
   const activeLocalityName = route.localityName;
   const activeLocalitySlug = route.localitySlug;
+  const isPartyRoute = activeCategory?.marketplace === 'party';
 
-  const relatedCategories = SEO_CATEGORIES.filter(
-    (c) =>
-      c.slug !== activeCategory?.slug &&
-      !c.isChristmasHub &&
-      (TOP_CAKE_SEO_CATEGORY_SLUGS.includes(c.slug as (typeof TOP_CAKE_SEO_CATEGORY_SLUGS)[number]) ||
-        c.slug === 'catering-services' ||
-        c.slug === 'live-counters-and-food-stalls' ||
-        c.slug === 'bar-mocktails-and-beverage-carts')
-  ).slice(0, 9);
+  const relatedCategories = SEO_CATEGORIES.filter((c) => {
+    if (c.slug === activeCategory?.slug || c.isChristmasHub) return false;
+    if (isPartyRoute) {
+      return TOP_PARTY_SEO_CATEGORY_SLUGS.includes(
+        c.slug as (typeof TOP_PARTY_SEO_CATEGORY_SLUGS)[number]
+      );
+    }
+    return (
+      TOP_CAKE_SEO_CATEGORY_SLUGS.includes(
+        c.slug as (typeof TOP_CAKE_SEO_CATEGORY_SLUGS)[number]
+      ) ||
+      c.slug === 'catering-services' ||
+      c.slug === 'live-counters-and-food-stalls' ||
+      c.slug === 'bar-mocktails-and-beverage-carts'
+    );
+  }).slice(0, 9);
 
   const relatedCities = SEO_CITIES.filter(
     (c) => PRIORITY_SEO_CITY_SLUGS.includes(c.slug) && c.slug !== activeCity?.slug
@@ -238,9 +247,13 @@ export function CityCategorySeoBanner({
           <div className="rounded-2xl border border-border bg-card p-4">
             <p className="flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wider text-muted-foreground">
               <Sparkles className="size-3.5 text-brand" aria-hidden="true" />
-              {activeCity
-                ? `More Cake & Food Categories in ${activeLocalityName ? `${activeLocalityName}, ` : ''}${activeCity.city}`
-                : 'Popular Cake & Baker Categories'}
+              {isPartyRoute
+                ? activeCity
+                  ? `More Event & Party Categories in ${activeLocalityName ? `${activeLocalityName}, ` : ''}${activeCity.city}`
+                  : 'Popular Event & Party Categories'
+                : activeCity
+                  ? `More Cake & Food Categories in ${activeLocalityName ? `${activeLocalityName}, ` : ''}${activeCity.city}`
+                  : 'Popular Cake & Baker Categories'}
             </p>
             <div className="mt-2.5 flex flex-wrap gap-1.5">
               {relatedCategories.map((cat) => {
@@ -300,7 +313,9 @@ export function CityCategorySeoBanner({
               ? `${activeLocalityName}, ${activeCity.city}`
               : activeCity
                 ? activeCity.city
-                : 'FindMyBites India'}
+                : isPartyRoute
+                  ? 'PimpMyParty India'
+                  : 'FindMyBites India'}
           </h2>
           <div className="mt-2.5 divide-y divide-border">
             {route.faqs.map((faq, idx) => {

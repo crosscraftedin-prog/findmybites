@@ -22,6 +22,7 @@ import {
   formatMoney,
   getCustomBuilderModeConfig,
   getVendorCoverageLabel,
+  getVendorStartingPriceUnit,
   isCustomBuilderActive,
   suggestBuilderModeForCategory,
 } from '../data/vendors';
@@ -198,7 +199,21 @@ export function VendorCard({
         ) : null}
 
         <div className="absolute bottom-3 right-3 rounded-full bg-black/65 px-2.5 py-1 font-mono text-xs font-semibold tabular-nums text-white backdrop-blur-md">
-          from {formatMoney(vendor.startingPriceUsd, currency)}
+          {vendor.startingPriceUsd > 0 ? (
+            <>
+              from {formatMoney(vendor.startingPriceUsd, currency)}
+              {(() => {
+                const unit = getVendorStartingPriceUnit(vendor);
+                return unit && unit !== 'onwards' ? (
+                  <span className="ml-1 font-sans text-[10px] font-medium text-white/80">
+                    {unit}
+                  </span>
+                ) : null;
+              })()}
+            </>
+          ) : (
+            <span className="font-sans text-[11px] font-semibold">Ask for Quote</span>
+          )}
         </div>
       </div>
 
@@ -265,7 +280,18 @@ export function VendorCard({
 
           <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
             <span className="truncate font-medium text-foreground">
-              {vendor.category} · {vendor.products.length} products
+              {vendor.category}
+              {vendor.products.length > 0
+                ? ` · ${vendor.products.length} ${
+                    vendor.marketplace === 'party'
+                      ? vendor.products.length === 1
+                        ? 'package'
+                        : 'packages'
+                      : vendor.products.length === 1
+                        ? 'product'
+                        : 'products'
+                  }`
+                : ''}
             </span>
             <span className="inline-flex items-center gap-1 shrink-0">
               <Star className="size-3.5 fill-amber-400 text-amber-400" aria-hidden="true" />

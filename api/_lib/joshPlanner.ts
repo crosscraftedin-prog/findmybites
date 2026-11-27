@@ -373,7 +373,7 @@ export async function runJoshEventPlanner(body: JoshPlannerRequest): Promise<Jos
           .join(' | ')
       : 'BOX & BITE Corporate Food Gifting: Custom branded dessert boxes, brownie hampers, healthy dry-fruit & artisan treat boxes with company logo sleeves, GST billing, pan-India dispatch.';
 
-  const systemInstruction = `You are **Josh**, the super-helpful AI Food, Cake & Event Concierge for **FindMyBites × PimpMyParty** (www.findmybites.com).
+  const systemInstruction = `You are the super-helpful **Plan your Event** Concierge for **FindMyBites × PimpMyParty** (www.findmybites.com).
 
 ## PLATFORM KNOWLEDGE (YOU KNOW EVERYTHING ABOUT FINDMYBITES × PIMPMYPARTY):
 1. **FindMyBites (Food Marketplace)**: Verified Home Bakers, Custom Birthday/Wedding Cakes, Eggless & Sugar-Free Cakes, Brownies, Cupcakes, Cheesecakes, Cloud Kitchens, Catering, Live Food Counters, Mocktail & Bartending Bars, Snack Boxes, Mithai & Gifting Hampers.
@@ -410,7 +410,7 @@ ${vendorContext || 'No vendors loaded for this region yet.'}`;
 
   const conversationLines = history
     .slice(-8)
-    .map((h) => `${h.role === 'user' ? 'Customer' : 'Josh'}: ${h.text}`)
+    .map((h) => `${h.role === 'user' ? 'Customer' : 'Event Planner'}: ${h.text}`)
     .join('\n');
 
   const userPrompt = `${conversationLines ? `Recent conversation:\n${conversationLines}\n\n` : ''}Customer's latest message: ${trimmedMessage}`;

@@ -325,9 +325,9 @@ const SEO_FAQS = [
       'Phase 1 covers India, Dubai / UAE, Sri Lanka, Pakistan, Bangladesh, and Nepal across all major states, emirates, provinces, and cities, with global expansion planned next.',
   },
   {
-    question: 'How does the AI Event Planner chatbot work?',
+    question: 'How does Plan your Event work?',
     answer:
-      'Click Plan My Event with AI to chat with Josh AI. Share your occasion, city, guest count, and budget to receive a structured budget split, menu, live counter and decor ideas, an action checklist, and matched local vendors with direct WhatsApp links.',
+      'Click Plan your Event to share your occasion, city, guest count, and budget — you will receive a structured budget split, menu, live counter and decor ideas, an action checklist, and matched local vendors with direct WhatsApp links.',
   },
 ];
 
@@ -366,8 +366,8 @@ const VENDOR_BENEFITS = [
   },
   {
     icon: Sparkles,
-    title: 'AI Event Planner matching',
-    desc: 'Josh AI recommends paid verified partners directly inside custom event plans.',
+    title: 'Smart Event Planner matching',
+    desc: 'Plan your Event recommends paid verified partners directly inside custom event plans.',
   },
   {
     icon: TrendingUp,
@@ -384,9 +384,9 @@ const VENDOR_BENEFITS = [
 const HOW_IT_WORKS_STEPS = [
   {
     icon: Navigation,
-    title: 'Press Near Me or Ask AI',
+    title: 'Press Near Me or Plan your Event',
     description:
-      'Tap Near Me to see bakers, live counters, caterers, bars, gifting & decor around your area — or let Josh AI build a complete event plan.',
+      'Tap Near Me to see bakers, live counters, caterers, bars, gifting & decor around your area — or use Plan your Event to build a complete celebration plan.',
     accent: 'from-amber-400 to-orange-500',
   },
   {
@@ -2916,8 +2916,8 @@ export default function App() {
                       No vendors found within these filters
                     </h3>
                     <p className="mt-1 max-w-md text-sm text-muted-foreground">
-                      Expand your Near Me radius to All, switch cities, or ask Josh AI to plan your
-                      event and suggest nearby options.
+                      Expand your Near Me radius to All, switch cities, or click Plan your Event to
+                      get matched with nearby options.
                     </p>
                     <div className="mt-5 flex flex-wrap justify-center gap-3">
                       <button
@@ -2932,7 +2932,7 @@ export default function App() {
                         onClick={() => setAiPlannerOpen(true)}
                         className="cursor-pointer rounded-full bg-[#FF6B35] px-5 py-2 text-xs font-semibold text-white"
                       >
-                        Ask AI Event Planner
+                        Plan your Event
                       </button>
                       <button
                         type="button"
@@ -3480,7 +3480,7 @@ export default function App() {
                     onClick={() => setAiPlannerOpen(true)}
                     className="cursor-pointer transition-colors hover:text-brand"
                   >
-                    Josh AI Event Planner
+                    Plan your Event
                   </button>
                 </li>
                 <li>

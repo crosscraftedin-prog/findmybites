@@ -60,6 +60,7 @@ import {
   ProductFoodType,
   ProductUnitType,
   SAAS_PLANS,
+  STARTING_PRICE_UNIT_OPTIONS,
   STATES_BY_COUNTRY,
   Vendor,
   VendorBioLink,
@@ -73,6 +74,7 @@ import {
   getBusinessPlan,
   getCustomBuilderModeConfig,
   getVendorBioHandle,
+  getVendorStartingPriceUnit,
   isPaidPlanTier,
   localToUsd,
   parseProductUnitFromServes,
@@ -279,6 +281,13 @@ export function VendorDashboardModal({
   const [editExtraCities, setEditExtraCities] = useState('');
   const [editAllStatesCoverage, setEditAllStatesCoverage] = useState(false);
   const [editServiceStates, setEditServiceStates] = useState<string[]>([]);
+  const [editStartingPriceLocal, setEditStartingPriceLocal] = useState('');
+  const [editStartingPriceUnit, setEditStartingPriceUnit] = useState('per plate');
+  const [editStartingPriceLabel, setEditStartingPriceLabel] = useState('');
+  const [editSecondaryPriceLocal, setEditSecondaryPriceLocal] = useState('');
+  const [editSecondaryPriceUnit, setEditSecondaryPriceUnit] = useState('per plate');
+  const [editSecondaryPriceLabel, setEditSecondaryPriceLabel] = useState('');
+  const [editShowSecondaryPrice, setEditShowSecondaryPrice] = useState(false);
 
   // Direct Online Ordering & UPI editor state
   const [editOrderAccepting, setEditOrderAccepting] = useState(true);
@@ -401,6 +410,21 @@ export function VendorDashboardModal({
       setEditServiceStates(Array.isArray(v.serviceStates) ? [...v.serviceStates] : []);
 
       const oc = v.orderingConfig;
+      const resolvedUnit = getVendorStartingPriceUnit(v);
+      setEditStartingPriceLocal(
+        v.startingPriceUsd > 0 ? String(usdToLocal(v.startingPriceUsd, currency)) : ''
+      );
+      setEditStartingPriceUnit(resolvedUnit);
+      setEditStartingPriceLabel(oc?.startingPriceLabel || '');
+      const hasSec = Boolean(oc?.secondaryStartingPriceUsd && oc.secondaryStartingPriceUsd > 0);
+      setEditShowSecondaryPrice(hasSec);
+      setEditSecondaryPriceLocal(
+        hasSec && oc?.secondaryStartingPriceUsd
+          ? String(usdToLocal(oc.secondaryStartingPriceUsd, currency))
+          : ''
+      );
+      setEditSecondaryPriceUnit(oc?.secondaryStartingPriceUnit || resolvedUnit);
+      setEditSecondaryPriceLabel(oc?.secondaryStartingPriceLabel || '');
       setEditOrderAccepting(oc?.acceptingOrders !== false);
       setEditOrderDelivery(oc?.deliveryEnabled !== false);
       setEditOrderPickup(oc?.pickupEnabled !== false);
@@ -576,6 +600,17 @@ export function VendorDashboardModal({
         .filter(Boolean)
         .slice(0, 12);
 
+      const parsedStartLocal = Number(editStartingPriceLocal);
+      const hasValidStartPrice = Number.isFinite(parsedStartLocal) && parsedStartLocal > 0;
+      const nextStartingPriceUsd = hasValidStartPrice
+        ? Math.max(0.5, Number(localToUsd(parsedStartLocal, currency).toFixed(2)))
+        : vendor.startingPriceUsd;
+      const parsedSecLocal = Number(editSecondaryPriceLocal);
+      const nextSecondaryUsd =
+        editShowSecondaryPrice && Number.isFinite(parsedSecLocal) && parsedSecLocal > 0
+          ? Math.max(0.5, Number(localToUsd(parsedSecLocal, currency).toFixed(2)))
+          : undefined;
+
       const orderingConfig: VendorOrderingConfig = {
         enabled: true,
         acceptingOrders: editOrderAccepting,
@@ -599,6 +634,23 @@ export function VendorDashboardModal({
           : {}),
         promoCodes: editOrderPromoCodes,
         billingCycle: editBillingCycle,
+        startingPriceUnit: editStartingPriceUnit.trim() || getVendorStartingPriceUnit(vendor),
+        ...(editStartingPriceLabel.trim()
+          ? { startingPriceLabel: editStartingPriceLabel.trim().slice(0, 40) }
+          : {}),
+        ...(hasValidStartPrice ? { customStartingPrice: true } : {}),
+        ...(nextSecondaryUsd
+          ? {
+              secondaryStartingPriceUsd: nextSecondaryUsd,
+              secondaryStartingPriceUnit:
+                editSecondaryPriceUnit.trim() ||
+                editStartingPriceUnit.trim() ||
+                getVendorStartingPriceUnit(vendor),
+              ...(editSecondaryPriceLabel.trim()
+                ? { secondaryStartingPriceLabel: editSecondaryPriceLabel.trim().slice(0, 40) }
+                : {}),
+            }
+          : {}),
       };
 
       await updateVendorInCloud(vendor.id, {
@@ -607,6 +659,7 @@ export function VendorDashboardModal({
         description: editDescription,
         whatsappNumber: editWhatsapp,
         promoBanner: editPromoBanner,
+        startingPriceUsd: nextStartingPriceUsd,
         christmasSpecial: editChristmasSpecial,
         christmasOffer: editChristmasOffer,
         customBuilderEnabled: isPaidPlanTier(editPlanTier) && editCustomBuilderEnabled,
@@ -811,7 +864,12 @@ export function VendorDashboardModal({
       return;
     }
     resetProductForm();
-    if (asPackage) {
+    const targetVendor = myVendors.find((item) => item.id === vendorId);
+    const isPartyVendor = targetVendor?.marketplace === 'party';
+    if (isPartyVendor) {
+      setProdUnitType('custom');
+      setProdServes('Full Event · Custom');
+    } else if (asPackage) {
       setProdIsPackage(true);
       setProdUnitType('custom');
       setProdServes('Per Plate');
@@ -1013,33 +1071,34 @@ export function VendorDashboardModal({
         ? vendor.products.find((p) => p.id === editingProductId)
         : undefined;
 
+      const isPartyStore = vendor.marketplace === 'party';
       const nextProd: VendorProduct = {
         id: editingProductId || `prod-${Date.now()}`,
         name: prodName.trim().slice(0, 100),
         serves: formattedServes.slice(0, 60),
-        ...(prodUnitType !== 'custom' ? { unitQuantity: prodUnitQty.trim() || '1' } : {}),
-        unitType: prodUnitType,
-        ...(prodFoodType ? { foodType: prodFoodType } : {}),
-        ...(prodDietaryTags.length > 0 ? { dietaryTags: prodDietaryTags } : {}),
+        ...(!isPartyStore && prodUnitType !== 'custom' ? { unitQuantity: prodUnitQty.trim() || '1' } : {}),
+        unitType: isPartyStore ? 'custom' : prodUnitType,
+        ...(!isPartyStore && prodFoodType ? { foodType: prodFoodType } : {}),
+        ...(!isPartyStore && prodDietaryTags.length > 0 ? { dietaryTags: prodDietaryTags } : {}),
         ...(prodMenuSection.trim() ? { menuSection: prodMenuSection.trim().slice(0, 48) } : {}),
         ...(parsedAdvanceHours > 0 ? { advanceHours: parsedAdvanceHours } : {}),
         ...(existingProduct?.inStock === false ? { inStock: false } : {}),
-        ...(!prodIsPackage && prodBuilderSection.trim()
+        ...(!isPartyStore && !prodIsPackage && prodBuilderSection.trim()
           ? { builderSection: prodBuilderSection.trim().slice(0, 60) }
           : {}),
-        ...(!prodIsPackage && prodBuilderPresets.length > 0
+        ...(!isPartyStore && !prodIsPackage && prodBuilderPresets.length > 0
           ? { builderPresets: prodBuilderPresets }
           : {}),
-        ...(!prodIsPackage && cleanedVariants.length > 0 ? { variants: cleanedVariants } : {}),
-        ...(prodIsPackage ? { isPackage: true } : {}),
-        ...(prodIsPackage && parsedIncludedItems.length > 0
+        ...(!isPartyStore && !prodIsPackage && cleanedVariants.length > 0 ? { variants: cleanedVariants } : {}),
+        ...(!isPartyStore && prodIsPackage ? { isPackage: true } : {}),
+        ...(!isPartyStore && prodIsPackage && parsedIncludedItems.length > 0
           ? { includedItems: parsedIncludedItems }
           : {}),
-        ...(prodIsPackage && parsedMinOrderQty > 0 ? { minOrderQty: parsedMinOrderQty } : {}),
+        ...(!isPartyStore && prodIsPackage && parsedMinOrderQty > 0 ? { minOrderQty: parsedMinOrderQty } : {}),
         priceUsd: resolvedPriceUsd,
         description:
           prodDesc.trim().slice(0, 400) ||
-          (prodIsPackage && parsedIncludedItems.length > 0
+          (!isPartyStore && prodIsPackage && parsedIncludedItems.length > 0
             ? `Includes ${parsedIncludedItems.slice(0, 4).join(', ')}${parsedIncludedItems.length > 4 ? ` + ${parsedIncludedItems.length - 4} more` : ''}`
             : prodName.trim()),
         image: resolvedImage,
@@ -1081,8 +1140,9 @@ export function VendorDashboardModal({
         );
       }
 
-      const nextStartingUsd =
-        updatedProducts.length > 0
+      const nextStartingUsd = vendor.orderingConfig?.customStartingPrice
+        ? vendor.startingPriceUsd
+        : updatedProducts.length > 0
           ? Math.min(...updatedProducts.map((p) => p.priceUsd))
           : vendor.startingPriceUsd;
 
@@ -1121,7 +1181,7 @@ export function VendorDashboardModal({
       const remaining = vendor.products.filter((p) => p.id !== productId);
       await updateVendorInCloud(vendor.id, {
         products: remaining,
-        ...(remaining.length > 0
+        ...(!vendor.orderingConfig?.customStartingPrice && remaining.length > 0
           ? { startingPriceUsd: Math.min(...remaining.map((p) => p.priceUsd)) }
           : {}),
       });
@@ -1737,6 +1797,112 @@ export function VendorDashboardModal({
                                 />
                               </div>
 
+                              {/* Starting Price Box Editor */}
+                              <div className="space-y-2.5 rounded-xl border border-brand-border/70 bg-brand-soft/30 p-3">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <p className="text-[11px] font-extrabold uppercase tracking-wide text-foreground">
+                                    Starting Price Card (Shown at Top Right of Storefront)
+                                  </p>
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditShowSecondaryPrice((prev) => !prev)}
+                                    className="cursor-pointer rounded-md border border-border bg-background px-2 py-0.5 text-[10px] font-bold text-foreground hover:border-brand hover:text-brand"
+                                  >
+                                    {editShowSecondaryPrice ? 'Hide 2nd Row' : '+ Add 2nd Price Row'}
+                                  </button>
+                                </div>
+                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                                  <div>
+                                    <label className="block text-[10px] font-semibold text-foreground">
+                                      Starting Price ({CURRENCIES[currency].symbol.trim()})
+                                    </label>
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      value={editStartingPriceLocal}
+                                      onChange={(e) => setEditStartingPriceLocal(e.target.value)}
+                                      placeholder={v.marketplace === 'party' ? 'e.g. 15000' : 'e.g. 200'}
+                                      className="mt-1 w-full rounded-lg border border-border bg-background px-2.5 py-1.5 font-mono text-xs font-semibold text-foreground"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[10px] font-semibold text-foreground">
+                                      Price Unit
+                                    </label>
+                                    <select
+                                      value={editStartingPriceUnit}
+                                      onChange={(e) => setEditStartingPriceUnit(e.target.value)}
+                                      className="mt-1 w-full rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs text-foreground"
+                                    >
+                                      {STARTING_PRICE_UNIT_OPTIONS.map((unit) => (
+                                        <option key={unit} value={unit}>
+                                          {unit}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="block text-[10px] font-semibold text-foreground">
+                                      Right-Side Label
+                                    </label>
+                                    <input
+                                      type="text"
+                                      maxLength={40}
+                                      value={editStartingPriceLabel}
+                                      onChange={(e) => setEditStartingPriceLabel(e.target.value)}
+                                      placeholder={v.marketplace === 'party' ? 'e.g. Starting Package' : 'e.g. Veg Price'}
+                                      className="mt-1 w-full rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs text-foreground"
+                                    />
+                                  </div>
+                                </div>
+                                {editShowSecondaryPrice && (
+                                  <div className="grid grid-cols-1 gap-2 border-t border-border/60 pt-2 sm:grid-cols-3">
+                                    <div>
+                                      <label className="block text-[10px] font-semibold text-foreground">
+                                        2nd Price ({CURRENCIES[currency].symbol.trim()})
+                                      </label>
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        value={editSecondaryPriceLocal}
+                                        onChange={(e) => setEditSecondaryPriceLocal(e.target.value)}
+                                        placeholder={v.marketplace === 'party' ? 'e.g. 50000' : 'e.g. 350'}
+                                        className="mt-1 w-full rounded-lg border border-border bg-background px-2.5 py-1.5 font-mono text-xs font-semibold text-foreground"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-[10px] font-semibold text-foreground">
+                                        2nd Unit
+                                      </label>
+                                      <select
+                                        value={editSecondaryPriceUnit}
+                                        onChange={(e) => setEditSecondaryPriceUnit(e.target.value)}
+                                        className="mt-1 w-full rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs text-foreground"
+                                      >
+                                        {STARTING_PRICE_UNIT_OPTIONS.map((unit) => (
+                                          <option key={unit} value={unit}>
+                                            {unit}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                    <div>
+                                      <label className="block text-[10px] font-semibold text-foreground">
+                                        2nd Label
+                                      </label>
+                                      <input
+                                        type="text"
+                                        maxLength={40}
+                                        value={editSecondaryPriceLabel}
+                                        onChange={(e) => setEditSecondaryPriceLabel(e.target.value)}
+                                        placeholder={v.marketplace === 'party' ? 'e.g. Wedding Package' : 'e.g. Non-Veg Price'}
+                                        className="mt-1 w-full rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs text-foreground"
+                                      />
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+
                               {/* Location, Custom City & Pan-India / Multi-State Delivery Coverage */}
                               {(() => {
                                 const editRegions = STATES_BY_COUNTRY[v.country] || [];
@@ -1886,7 +2052,8 @@ export function VendorDashboardModal({
                                 );
                               })()}
 
-                              {/* Christmas & New Year Spotlight Controls */}
+                              {/* Christmas & New Year Spotlight Controls (Food / FindMyBites Only) */}
+                              {v.marketplace !== 'party' && (
                               <div className="rounded-xl border border-emerald-500/35 bg-emerald-950/85 p-3 text-white">
                                 <label className="flex cursor-pointer items-center gap-2 text-xs font-bold text-amber-200">
                                   <input
@@ -1909,8 +2076,10 @@ export function VendorDashboardModal({
                                   />
                                 )}
                               </div>
+                              )}
 
-                              {/* Custom Plate / Snack Box / Meal Box Builder Controls (Business Plan Only) */}
+                              {/* Custom Plate / Snack Box / Meal Box Builder Controls (Food Only, Business Plan) */}
+                              {v.marketplace !== 'party' && (
                               <div className="rounded-xl border border-brand-border bg-card p-3">
                                 {!isPaidPlanTier(editPlanTier) ? (
                                   <div className="flex flex-wrap items-start justify-between gap-2.5">
@@ -2023,6 +2192,7 @@ export function VendorDashboardModal({
                                   </div>
                                 )}
                               </div>
+                              )}
 
                               {/* Direct Online Ordering, UPI, Time Slots & Promo Codes */}
                               <div className="space-y-3 rounded-xl border border-emerald-500/35 bg-card p-3.5">
@@ -2798,16 +2968,18 @@ export function VendorDashboardModal({
                             )}
 
                             <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
-                              <button
-                                type="button"
-                                onClick={() => openAddProductForm(v.id, true)}
-                                className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-amber-500/60 bg-amber-500/15 px-3.5 py-2 text-xs font-extrabold text-amber-900 transition-colors hover:bg-amber-500 hover:text-white dark:text-amber-200"
-                              >
-                                <Plus className="size-3.5" aria-hidden="true" />
-                                {addingProductForId === v.id && !editingProductId && prodIsPackage
-                                  ? 'Close Package Form'
-                                  : 'Add Ready-Made Package'}
-                              </button>
+                              {v.marketplace !== 'party' && (
+                                <button
+                                  type="button"
+                                  onClick={() => openAddProductForm(v.id, true)}
+                                  className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-amber-500/60 bg-amber-500/15 px-3.5 py-2 text-xs font-extrabold text-amber-900 transition-colors hover:bg-amber-500 hover:text-white dark:text-amber-200"
+                                >
+                                  <Plus className="size-3.5" aria-hidden="true" />
+                                  {addingProductForId === v.id && !editingProductId && prodIsPackage
+                                    ? 'Close Package Form'
+                                    : 'Add Ready-Made Package'}
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 onClick={() => openAddProductForm(v.id, false)}
@@ -2816,7 +2988,9 @@ export function VendorDashboardModal({
                                 <Plus className="size-3.5" aria-hidden="true" />
                                 {addingProductForId === v.id && !editingProductId && !prodIsPackage
                                   ? 'Close Form'
-                                  : 'Add Product / Dish'}
+                                  : v.marketplace === 'party'
+                                    ? 'Add Event Package / Service'
+                                    : 'Add Product / Dish'}
                               </button>
                             </div>
 
@@ -2829,44 +3003,50 @@ export function VendorDashboardModal({
                                 <div className="flex flex-wrap items-center justify-between gap-2">
                                   <div className="flex flex-wrap items-center gap-2">
                                     <p className="text-xs font-extrabold text-foreground">
-                                      {editingProductId
-                                        ? prodIsPackage
-                                          ? 'Edit Ready-Made Package'
-                                          : 'Edit Product Details'
-                                        : prodIsPackage
-                                          ? 'Add Ready-Made Per-Plate Package / Deal'
-                                          : 'Add New Product / Dish'}
+                                      {v.marketplace === 'party'
+                                        ? editingProductId
+                                          ? 'Edit Event Package / Service'
+                                          : 'Add New Event Package / Service'
+                                        : editingProductId
+                                          ? prodIsPackage
+                                            ? 'Edit Ready-Made Package'
+                                            : 'Edit Product Details'
+                                          : prodIsPackage
+                                            ? 'Add Ready-Made Per-Plate Package / Deal'
+                                            : 'Add New Product / Dish'}
                                     </p>
-                                    <div className="inline-flex rounded-lg border border-border bg-background p-0.5 text-[11px] font-bold">
-                                      <button
-                                        type="button"
-                                        onClick={() => setProdIsPackage(false)}
-                                        className={`cursor-pointer rounded-md px-2.5 py-1 transition-colors ${
-                                          !prodIsPackage
-                                            ? 'bg-brand text-brand-foreground'
-                                            : 'text-muted-foreground hover:text-foreground'
-                                        }`}
-                                      >
-                                        Single Dish / Product
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setProdIsPackage(true);
-                                          if (prodUnitType !== 'custom') {
-                                            setProdUnitType('custom');
-                                            setProdServes('Per Plate');
-                                          }
-                                        }}
-                                        className={`cursor-pointer rounded-md px-2.5 py-1 transition-colors ${
-                                          prodIsPackage
-                                            ? 'bg-amber-600 text-white'
-                                            : 'text-muted-foreground hover:text-foreground'
-                                        }`}
-                                      >
-                                        Ready-Made Package (₹/plate)
-                                      </button>
-                                    </div>
+                                    {v.marketplace !== 'party' && (
+                                      <div className="inline-flex rounded-lg border border-border bg-background p-0.5 text-[11px] font-bold">
+                                        <button
+                                          type="button"
+                                          onClick={() => setProdIsPackage(false)}
+                                          className={`cursor-pointer rounded-md px-2.5 py-1 transition-colors ${
+                                            !prodIsPackage
+                                              ? 'bg-brand text-brand-foreground'
+                                              : 'text-muted-foreground hover:text-foreground'
+                                          }`}
+                                        >
+                                          Single Dish / Product
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setProdIsPackage(true);
+                                            if (prodUnitType !== 'custom') {
+                                              setProdUnitType('custom');
+                                              setProdServes('Per Plate');
+                                            }
+                                          }}
+                                          className={`cursor-pointer rounded-md px-2.5 py-1 transition-colors ${
+                                            prodIsPackage
+                                              ? 'bg-amber-600 text-white'
+                                              : 'text-muted-foreground hover:text-foreground'
+                                          }`}
+                                        >
+                                          Ready-Made Package (₹/plate)
+                                        </button>
+                                      </div>
+                                    )}
                                   </div>
                                   <button
                                     type="button"
@@ -2887,49 +3067,63 @@ export function VendorDashboardModal({
                                     value={prodName}
                                     onChange={(e) => setProdName(e.target.value)}
                                     placeholder={
-                                      prodIsPackage
-                                        ? 'Package Name (e.g. ₹250 Classic Veg Catering Plate)'
-                                        : 'Product Name (e.g. Belgian Truffle Cake)'
+                                      v.marketplace === 'party'
+                                        ? 'Package / Service Name (e.g. Wedding Stage Decor)'
+                                        : prodIsPackage
+                                          ? 'Package Name (e.g. ₹250 Classic Veg Catering Plate)'
+                                          : 'Product Name (e.g. Belgian Truffle Cake)'
                                     }
                                     className="rounded-lg border border-border bg-background px-2.5 py-2 text-xs font-medium text-foreground focus:border-brand focus:outline-none sm:col-span-5"
                                   />
 
-                                  {/* Quantity + Unit (kg / g / pcs / box / dozen / pax / custom) */}
+                                  {/* Scope / Duration (Party) OR Quantity + Unit (Food) */}
                                   <div className="flex items-center gap-1.5 sm:col-span-4">
-                                    {prodUnitType === 'custom' ? (
+                                    {v.marketplace === 'party' ? (
                                       <input
                                         type="text"
                                         value={prodServes}
                                         onChange={(e) => setProdServes(e.target.value)}
-                                        placeholder="e.g. Serves 10-12"
+                                        placeholder="e.g. Full Event / 4 Hours / Up to 150 Guests"
                                         className="min-w-0 flex-1 rounded-lg border border-border bg-background px-2.5 py-2 text-xs text-foreground focus:border-brand focus:outline-none"
                                       />
                                     ) : (
-                                      <input
-                                        type="number"
-                                        step="any"
-                                        min="0.1"
-                                        value={prodUnitQty}
-                                        onChange={(e) => setProdUnitQty(e.target.value)}
-                                        placeholder="Qty"
-                                        aria-label="Quantity"
-                                        className="w-20 rounded-lg border border-border bg-background px-2.5 py-2 font-mono text-xs tabular-nums text-foreground focus:border-brand focus:outline-none"
-                                      />
+                                      <>
+                                        {prodUnitType === 'custom' ? (
+                                          <input
+                                            type="text"
+                                            value={prodServes}
+                                            onChange={(e) => setProdServes(e.target.value)}
+                                            placeholder="e.g. Serves 10-12"
+                                            className="min-w-0 flex-1 rounded-lg border border-border bg-background px-2.5 py-2 text-xs text-foreground focus:border-brand focus:outline-none"
+                                          />
+                                        ) : (
+                                          <input
+                                            type="number"
+                                            step="any"
+                                            min="0.1"
+                                            value={prodUnitQty}
+                                            onChange={(e) => setProdUnitQty(e.target.value)}
+                                            placeholder="Qty"
+                                            aria-label="Quantity"
+                                            className="w-20 rounded-lg border border-border bg-background px-2.5 py-2 font-mono text-xs tabular-nums text-foreground focus:border-brand focus:outline-none"
+                                          />
+                                        )}
+                                        <select
+                                          aria-label="Product Unit"
+                                          value={prodUnitType}
+                                          onChange={(e) =>
+                                            setProdUnitType(e.target.value as ProductUnitType)
+                                          }
+                                          className="min-w-0 flex-1 rounded-lg border border-border bg-background px-2 py-2 text-xs font-semibold text-foreground focus:border-brand focus:outline-none"
+                                        >
+                                          {PRODUCT_UNIT_OPTIONS.map((opt) => (
+                                            <option key={opt.value} value={opt.value}>
+                                              {opt.label}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      </>
                                     )}
-                                    <select
-                                      aria-label="Product Unit"
-                                      value={prodUnitType}
-                                      onChange={(e) =>
-                                        setProdUnitType(e.target.value as ProductUnitType)
-                                      }
-                                      className="min-w-0 flex-1 rounded-lg border border-border bg-background px-2 py-2 text-xs font-semibold text-foreground focus:border-brand focus:outline-none"
-                                    >
-                                      {PRODUCT_UNIT_OPTIONS.map((opt) => (
-                                        <option key={opt.value} value={opt.value}>
-                                          {opt.label}
-                                        </option>
-                                      ))}
-                                    </select>
                                   </div>
 
                                   <div className="relative sm:col-span-3">
@@ -2951,7 +3145,8 @@ export function VendorDashboardModal({
                                   </div>
                                 </div>
 
-                                {prodIsPackage ? (
+                                {v.marketplace !== 'party' && (
+                                  prodIsPackage ? (
                                   /* Ready-Made Package / Per-Plate Deal: Included Food List + Min Plates */
                                   <div className="space-y-2.5 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3">
                                     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -3214,9 +3409,12 @@ export function VendorDashboardModal({
                                   )}
                                 </div>
                                   </>
+                                  )
                                 )}
 
-                                {/* Veg / Non-Veg Food Type Selector */}
+                                {/* Veg / Non-Veg Food Type Selector (Food Stores Only) */}
+                                {v.marketplace !== 'party' && (
+                                  <>
                                 <div className="flex flex-wrap items-center gap-1.5">
                                   <span className="text-[11px] font-semibold text-muted-foreground">
                                     Food Type:
@@ -3287,9 +3485,12 @@ export function VendorDashboardModal({
                                     })}
                                   </div>
                                 </div>
+                                  </>
+                                )}
 
-                                {/* Custom Builder Section & Quick-Start Presets (Business Plan Only, Individual Dishes) */}
-                                {!prodIsPackage &&
+                                {/* Custom Builder Section & Quick-Start Presets (Business Plan Only, Food Individual Dishes) */}
+                                {v.marketplace !== 'party' &&
+                                  !prodIsPackage &&
                                   isPaidPlanTier(v.planTier) &&
                                   (v.customBuilderEnabled ||
                                     prodBuilderSection ||

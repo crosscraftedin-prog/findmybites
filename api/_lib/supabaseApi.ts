@@ -715,6 +715,12 @@ interface StoredOrderingConfig {
     active?: boolean;
   }>;
   billingCycle?: 'monthly' | 'annual';
+  startingPriceUnit?: string;
+  startingPriceLabel?: string;
+  customStartingPrice?: boolean;
+  secondaryStartingPriceUsd?: number;
+  secondaryStartingPriceUnit?: string;
+  secondaryStartingPriceLabel?: string;
 }
 
 function sanitizeOrderingConfig(raw: unknown): StoredOrderingConfig | undefined {
@@ -784,6 +790,22 @@ function sanitizeOrderingConfig(raw: unknown): StoredOrderingConfig | undefined 
     ...(promoCodes && promoCodes.length > 0 ? { promoCodes } : {}),
     ...(o.billingCycle === 'annual' || o.billingCycle === 'monthly'
       ? { billingCycle: o.billingCycle }
+      : {}),
+    ...(typeof o.startingPriceUnit === 'string' && o.startingPriceUnit.trim()
+      ? { startingPriceUnit: o.startingPriceUnit.trim().slice(0, 32) }
+      : {}),
+    ...(typeof o.startingPriceLabel === 'string' && o.startingPriceLabel.trim()
+      ? { startingPriceLabel: o.startingPriceLabel.trim().slice(0, 40) }
+      : {}),
+    ...(o.customStartingPrice === true ? { customStartingPrice: true } : {}),
+    ...(typeof o.secondaryStartingPriceUsd === 'number' && o.secondaryStartingPriceUsd > 0
+      ? { secondaryStartingPriceUsd: Math.min(100000, Number(o.secondaryStartingPriceUsd)) }
+      : {}),
+    ...(typeof o.secondaryStartingPriceUnit === 'string' && o.secondaryStartingPriceUnit.trim()
+      ? { secondaryStartingPriceUnit: o.secondaryStartingPriceUnit.trim().slice(0, 32) }
+      : {}),
+    ...(typeof o.secondaryStartingPriceLabel === 'string' && o.secondaryStartingPriceLabel.trim()
+      ? { secondaryStartingPriceLabel: o.secondaryStartingPriceLabel.trim().slice(0, 40) }
       : {}),
   };
 }
@@ -2603,7 +2625,8 @@ export function createSupabaseApiRouter(): MicroRouter {
           [],
           vendor.customLinks,
           vendor.googleMapsUrl,
-          vendor.googleReviewUrl
+          vendor.googleReviewUrl,
+          vendor.orderingConfig
         ),
         claim_status: 'pending',
         created_at: nowIso,

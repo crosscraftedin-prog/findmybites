@@ -536,6 +536,70 @@ export interface VendorOrderingConfig {
   codEnabled?: boolean;
   promoCodes?: VendorPromoCode[];
   billingCycle?: BillingCycle;
+  startingPriceUnit?: string;
+  startingPriceLabel?: string;
+  customStartingPrice?: boolean;
+  secondaryStartingPriceUsd?: number;
+  secondaryStartingPriceUnit?: string;
+  secondaryStartingPriceLabel?: string;
+}
+
+export const STARTING_PRICE_UNIT_OPTIONS = [
+  'per plate',
+  'per event',
+  'per kg',
+  'per box',
+  'per day',
+  'per function',
+  'per hour',
+  'per guest',
+  'onwards',
+] as const;
+
+export function suggestStartingPriceUnitForCategory(
+  category: string,
+  marketplace: 'food' | 'party' = 'food'
+): string {
+  const lower = (category || '').toLowerCase();
+  if (lower.includes('catering') || lower.includes('live counter') || lower.includes('food stall')) {
+    return 'per plate';
+  }
+  if (lower.includes('snack box') || lower.includes('platter') || lower.includes('hamper') || lower.includes('gifting')) {
+    return 'per box';
+  }
+  if (lower.includes('baker') || lower.includes('cake') || lower.includes('mithai')) {
+    return 'per kg';
+  }
+  if (lower.includes('bar') || lower.includes('mocktail')) {
+    return 'per guest';
+  }
+  if (lower.includes('venue') || lower.includes('farmhouse') || lower.includes('rental')) {
+    return 'per day';
+  }
+  if (marketplace === 'party') {
+    return 'per event';
+  }
+  return 'onwards';
+}
+
+export function getVendorStartingPriceUnit(
+  vendor: Pick<Vendor, 'category' | 'marketplace' | 'orderingConfig'>
+): string {
+  const custom = vendor.orderingConfig?.startingPriceUnit?.trim();
+  if (custom) return custom;
+  return suggestStartingPriceUnitForCategory(vendor.category, vendor.marketplace);
+}
+
+export function getVendorStartingPriceLabel(
+  vendor: Pick<Vendor, 'category' | 'marketplace' | 'orderingConfig'>
+): string {
+  const custom = vendor.orderingConfig?.startingPriceLabel?.trim();
+  if (custom) return custom;
+  if (vendor.marketplace === 'party') return 'Starting Package';
+  const lower = (vendor.category || '').toLowerCase();
+  if (lower.includes('catering') || lower.includes('live counter')) return 'Starting Price';
+  if (lower.includes('baker') || lower.includes('cake')) return 'Base Price';
+  return 'Starting Price';
 }
 
 export const DEFAULT_ORDERING_TIME_SLOTS: string[] = [

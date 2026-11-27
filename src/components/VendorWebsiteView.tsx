@@ -49,6 +49,8 @@ import {
   getVendorCoverageLabel,
   getVendorCoveredStatesList,
   getVendorQuickTags,
+  getVendorStartingPriceLabel,
+  getVendorStartingPriceUnit,
   isCustomBuilderActive,
   sanitizeSafeHttpUrl,
   suggestBuilderModeForCategory,
@@ -859,9 +861,14 @@ export function VendorWebsiteView({
                 <ShieldCheck className="size-4 text-[#25D366]" aria-hidden="true" />
                 {vendor.responseTime}
               </span>
-              <span className="font-mono text-white">
-                Starting {formatMoney(vendor.startingPriceUsd, currency)}
-              </span>
+              {vendor.startingPriceUsd > 0 && (
+                <span className="font-mono text-white">
+                  Starting {formatMoney(vendor.startingPriceUsd, currency)}{' '}
+                  <span className="font-sans text-xs font-medium text-white/80">
+                    {getVendorStartingPriceUnit(vendor)}
+                  </span>
+                </span>
+              )}
             </div>
 
             <div className="mt-7 flex flex-wrap gap-3">
@@ -880,13 +887,15 @@ export function VendorWebsiteView({
                 <MessageCircle className="size-5" aria-hidden="true" />
                 Talk Directly on WhatsApp
               </a>
-              <a
-                href="#vendor-products"
-                className="inline-flex items-center gap-2 rounded-xl border border-white/25 bg-white/10 px-5 py-3 text-sm font-semibold text-white backdrop-blur-md transition-colors hover:bg-white/20"
-              >
-                <ShoppingBag className="size-4" aria-hidden="true" />
-                Build Order ({vendor.products.length} Items)
-              </a>
+              {vendor.products.length > 0 && (
+                <a
+                  href="#vendor-products"
+                  className="inline-flex items-center gap-2 rounded-xl border border-white/25 bg-white/10 px-5 py-3 text-sm font-semibold text-white backdrop-blur-md transition-colors hover:bg-white/20"
+                >
+                  <ShoppingBag className="size-4" aria-hidden="true" />
+                  Build Order ({vendor.products.length} Items)
+                </a>
+              )}
               <button
                 type="button"
                 onClick={() => setPromoCardOpen(true)}
@@ -969,55 +978,132 @@ export function VendorWebsiteView({
               </div>
             )}
           </div>
-          <div className="rounded-2xl border border-border bg-card p-5 lg:col-span-4">
-            <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
-              Areas We Serve in {vendor.city}
-            </h3>
-            <p className="mt-2.5 text-sm leading-relaxed text-foreground">
-              {vendor.serviceAreas.join(' · ')}
-            </p>
-            {(vendor.allStatesCoverage || (vendor.serviceStates && vendor.serviceStates.length > 0)) && (
-              <div className="mt-4 border-t border-border pt-3.5">
-                <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-indigo-700 dark:text-indigo-300">
-                  <Globe2 className="size-3.5" aria-hidden="true" />
-                  {vendor.allStatesCoverage
-                    ? vendor.country === 'India'
-                      ? 'Pan-India Coverage'
-                      : `All ${vendor.country} Coverage`
-                    : `Multi-State Delivery (${getVendorCoveredStatesList(vendor).length} States)`}
-                </p>
-                {vendor.allStatesCoverage ? (
-                  <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
-                    Available across all states &amp; major cities in {vendor.country} via our
-                    verified fulfillment network (HQ: {vendor.city}, {vendor.state}).
-                  </p>
-                ) : (
-                  <div className="mt-2 flex flex-wrap gap-1">
-                    {getVendorCoveredStatesList(vendor).map((st) => (
-                      <span
-                        key={st}
-                        className="rounded-md border border-indigo-500/30 bg-indigo-500/10 px-2 py-0.5 text-[11px] font-semibold text-indigo-800 dark:text-indigo-200"
-                      >
-                        {st}
-                      </span>
-                    ))}
+          <div className="space-y-4 lg:col-span-4">
+            {/* Dedicated Starting Price Card */}
+            {vendor.startingPriceUsd > 0 && (() => {
+              const priceUnit = getVendorStartingPriceUnit(vendor);
+              const priceLabel = getVendorStartingPriceLabel(vendor);
+              const secondaryUsd = vendor.orderingConfig?.secondaryStartingPriceUsd;
+              const secondaryUnit =
+                vendor.orderingConfig?.secondaryStartingPriceUnit?.trim() || priceUnit;
+              const secondaryLabel =
+                vendor.orderingConfig?.secondaryStartingPriceLabel?.trim() || 'Non-Veg Price';
+              return (
+                <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-xs">
+                  <div className="flex items-center justify-between border-b border-border px-5 py-3.5">
+                    <h3 className="text-sm font-extrabold text-foreground">Starting Price</h3>
+                    <span className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
+                      0% Commission
+                    </span>
                   </div>
-                )}
+                  <div className="divide-y divide-border px-5">
+                    <div className="flex items-baseline justify-between gap-3 py-3.5">
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="font-mono text-xl font-extrabold tabular-nums text-brand">
+                          {formatMoney(vendor.startingPriceUsd, currency)}
+                        </span>
+                        <span className="text-xs font-semibold text-brand/80">{priceUnit}</span>
+                      </div>
+                      <span className="text-xs font-medium text-muted-foreground">{priceLabel}</span>
+                    </div>
+                    {secondaryUsd && secondaryUsd > 0 ? (
+                      <div className="flex items-baseline justify-between gap-3 py-3.5">
+                        <div className="flex items-baseline gap-1.5">
+                          <span className="font-mono text-xl font-extrabold tabular-nums text-brand">
+                            {formatMoney(secondaryUsd, currency)}
+                          </span>
+                          <span className="text-xs font-semibold text-brand/80">
+                            {secondaryUnit}
+                          </span>
+                        </div>
+                        <span className="text-xs font-medium text-muted-foreground">
+                          {secondaryLabel}
+                        </span>
+                      </div>
+                    ) : null}
+                  </div>
+                  <div
+                    className={`grid gap-2 border-t border-border bg-muted/20 p-3.5 ${
+                      vendor.products.length > 0 ? 'grid-cols-2' : 'grid-cols-1'
+                    }`}
+                  >
+                    <a
+                      href={buildWhatsAppUrl(
+                        vendor,
+                        `Hi ${vendor.name}, I saw your Starting Price (${formatMoney(vendor.startingPriceUsd, currency)} ${priceUnit}) on FindMyBites (${shareUrl}). Please share availability & package details.`
+                      )}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => onTrackWhatsAppClick?.(vendor.id)}
+                      className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-[#25D366] px-3 py-2.5 text-xs font-bold text-white shadow-xs transition-colors hover:bg-[#1ebe5d]"
+                    >
+                      <MessageCircle className="size-3.5" aria-hidden="true" />
+                      {vendor.products.length > 0 ? 'Send Message' : 'Send Message on WhatsApp'}
+                    </a>
+                    {vendor.products.length > 0 && (
+                      <a
+                        href="#vendor-products"
+                        className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-brand px-3 py-2.5 text-xs font-bold text-brand-foreground shadow-xs transition-colors hover:bg-brand-hover"
+                      >
+                        <ShoppingBag className="size-3.5" aria-hidden="true" />
+                        {vendor.marketplace === 'party' ? 'View Packages' : 'View Menu'}
+                      </a>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+
+            <div className="rounded-2xl border border-border bg-card p-5">
+              <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                Areas We Serve in {vendor.city}
+              </h3>
+              <p className="mt-2.5 text-sm leading-relaxed text-foreground">
+                {vendor.serviceAreas.join(' · ')}
+              </p>
+              {(vendor.allStatesCoverage || (vendor.serviceStates && vendor.serviceStates.length > 0)) && (
+                <div className="mt-4 border-t border-border pt-3.5">
+                  <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-indigo-700 dark:text-indigo-300">
+                    <Globe2 className="size-3.5" aria-hidden="true" />
+                    {vendor.allStatesCoverage
+                      ? vendor.country === 'India'
+                        ? 'Pan-India Coverage'
+                        : `All ${vendor.country} Coverage`
+                      : `Multi-State Delivery (${getVendorCoveredStatesList(vendor).length} States)`}
+                  </p>
+                  {vendor.allStatesCoverage ? (
+                    <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+                      Available across all states &amp; major cities in {vendor.country} via our
+                      verified fulfillment network (HQ: {vendor.city}, {vendor.state}).
+                    </p>
+                  ) : (
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {getVendorCoveredStatesList(vendor).map((st) => (
+                        <span
+                          key={st}
+                          className="rounded-md border border-indigo-500/30 bg-indigo-500/10 px-2 py-0.5 text-[11px] font-semibold text-indigo-800 dark:text-indigo-200"
+                        >
+                          {st}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              <div className="mt-4 border-t border-border pt-4 text-xs text-muted-foreground">
+                <p className="font-semibold text-foreground">Direct WhatsApp Hotline</p>
+                <p className="mt-0.5 font-mono">+{vendor.whatsappNumber}</p>
               </div>
-            )}
-            <div className="mt-4 border-t border-border pt-4 text-xs text-muted-foreground">
-              <p className="font-semibold text-foreground">Direct WhatsApp Hotline</p>
-              <p className="mt-0.5 font-mono">+{vendor.whatsappNumber}</p>
-            </div>
-            <div className="mt-4 flex items-center justify-between border-t border-border pt-3 text-[11px] text-muted-foreground">
-              <span className="inline-flex items-center gap-1">
-                <Eye className="size-3.5 text-brand" aria-hidden="true" />
-                <strong className="font-mono text-foreground">{displayViews}</strong> storefront views
-              </span>
-              <span className="inline-flex items-center gap-1">
-                <MessageCircle className="size-3.5 text-[#25D366]" aria-hidden="true" />
-                <strong className="font-mono text-foreground">{displayWaClicks}</strong> WA leads
-              </span>
+              <div className="mt-4 flex items-center justify-between border-t border-border pt-3 text-[11px] text-muted-foreground">
+                <span className="inline-flex items-center gap-1">
+                  <Eye className="size-3.5 text-brand" aria-hidden="true" />
+                  <strong className="font-mono text-foreground">{displayViews}</strong> storefront views
+                </span>
+                <span className="inline-flex items-center gap-1">
+                  <MessageCircle className="size-3.5 text-[#25D366]" aria-hidden="true" />
+                  <strong className="font-mono text-foreground">{displayWaClicks}</strong> WA leads
+                </span>
+              </div>
             </div>
           </div>
         </section>
@@ -1082,9 +1168,14 @@ export function VendorWebsiteView({
                 ? readyPackages
                 : [...readyPackages, ...individualItems];
 
-            const vegCount = catalogSourceProducts.filter((p) => p.foodType === 'veg').length;
-            const nonVegCount = catalogSourceProducts.filter((p) => p.foodType === 'non-veg').length;
-            const hasFoodTypeTags = vegCount > 0 || nonVegCount > 0;
+            const isPartyStore = vendor.marketplace === 'party';
+            const vegCount = isPartyStore
+              ? 0
+              : catalogSourceProducts.filter((p) => p.foodType === 'veg').length;
+            const nonVegCount = isPartyStore
+              ? 0
+              : catalogSourceProducts.filter((p) => p.foodType === 'non-veg').length;
+            const hasFoodTypeTags = !isPartyStore && (vegCount > 0 || nonVegCount > 0);
             const menuSections = Array.from(
               new Set(
                 catalogSourceProducts
@@ -1173,14 +1264,18 @@ export function VendorWebsiteView({
                 <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
                   <div>
                     <p className="text-xs font-bold uppercase tracking-wide text-brand">
-                      {hasCustomBuilder && !showIndividualInPackages
-                        ? 'Fixed Per-Plate Deals & Ready-Made Menus'
-                        : 'One-Page Product Catalog & WhatsApp Order Basket'}
+                      {isPartyStore
+                        ? 'Event Packages, Services & WhatsApp Booking'
+                        : hasCustomBuilder && !showIndividualInPackages
+                          ? 'Fixed Per-Plate Deals & Ready-Made Menus'
+                          : 'One-Page Product Catalog & WhatsApp Order Basket'}
                     </p>
                     <h2 className="mt-1 text-2xl font-extrabold tracking-tight text-foreground sm:text-3xl">
-                      {hasCustomBuilder && !showIndividualInPackages
-                        ? 'Ready-Made Packages & Deals'
-                        : 'Products, Counters & Packages'}
+                      {isPartyStore
+                        ? 'Event Packages & Services'
+                        : hasCustomBuilder && !showIndividualInPackages
+                          ? 'Ready-Made Packages & Deals'
+                          : 'Products, Counters & Packages'}
                     </h2>
                   </div>
 
@@ -1276,7 +1371,55 @@ export function VendorWebsiteView({
                   </div>
                 )}
 
-                {hasCustomBuilder && !showIndividualInPackages && readyPackages.length === 0 ? (
+                {vendor.products.length === 0 ? (
+                  <div className="mt-6 rounded-2xl border border-dashed border-border bg-card p-8 text-center">
+                    <ShoppingBag
+                      className="mx-auto size-8 text-brand"
+                      aria-hidden="true"
+                    />
+                    <h3 className="mt-3 text-base font-extrabold text-foreground">
+                      {canEdit
+                        ? isPartyStore
+                          ? 'No event packages added yet'
+                          : 'No products or menu items added yet'
+                        : isPartyStore
+                          ? 'Event Packages & Pricing on Request'
+                          : 'Menu & Custom Quotes on WhatsApp'}
+                    </h3>
+                    <p className="mx-auto mt-1.5 max-w-lg text-xs leading-relaxed text-muted-foreground sm:text-sm">
+                      {canEdit
+                        ? isPartyStore
+                          ? 'Add your event packages, photos, and pricing anytime from Edit Storefront so customers can browse and enquire.'
+                          : 'Add your cakes, catering menus, or packages anytime from Edit Storefront so customers can order online.'
+                        : `Chat directly with ${vendor.name} on WhatsApp for their latest ${isPartyStore ? 'event packages, availability, and custom quotes' : 'menu, photos, and custom order pricing'}.`}
+                    </p>
+                    <div className="mt-5 flex flex-wrap items-center justify-center gap-2.5">
+                      {canEdit && onEditStorefront && (
+                        <button
+                          type="button"
+                          onClick={() => onEditStorefront(vendor)}
+                          className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl bg-brand px-4 py-2.5 text-xs font-bold text-brand-foreground shadow-sm hover:bg-brand-hover"
+                        >
+                          <Edit3 className="size-3.5" aria-hidden="true" />
+                          {isPartyStore ? 'Add Event Packages' : 'Add Products & Menu'}
+                        </button>
+                      )}
+                      <a
+                        href={buildWhatsAppUrl(
+                          vendor,
+                          `Hi ${vendor.name}, I found your storefront on FindMyBites (${shareUrl}). Please share your latest ${isPartyStore ? 'event packages & pricing' : 'menu & pricing'}.`
+                        )}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={() => onTrackWhatsAppClick?.(vendor.id)}
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-[#25D366] px-4 py-2.5 text-xs font-bold text-white shadow-sm transition-colors hover:bg-[#1ebe5d]"
+                      >
+                        <MessageCircle className="size-3.5" aria-hidden="true" />
+                        Ask on WhatsApp
+                      </a>
+                    </div>
+                  </div>
+                ) : hasCustomBuilder && !showIndividualInPackages && readyPackages.length === 0 ? (
                   <div className="mt-6 rounded-2xl border border-dashed border-amber-500/45 bg-amber-500/5 p-8 text-center">
                     <Package className="mx-auto size-8 text-amber-600 dark:text-amber-400" aria-hidden="true" />
                     <h3 className="mt-3 text-base font-extrabold text-foreground">
@@ -1456,7 +1599,7 @@ export function VendorWebsiteView({
                                 ? ` · ${product.advanceHours}h pre-order`
                                 : ''}
                             </p>
-                            <FoodTypeBadge foodType={product.foodType} size="sm" />
+                            {!isPartyStore && <FoodTypeBadge foodType={product.foodType} size="sm" />}
                           </div>
                           <h3 className="mt-1.5 text-base font-bold text-foreground">
                             {product.name}
@@ -2152,10 +2295,24 @@ export function VendorWebsiteView({
             <div className="min-w-0">
               <p className="truncate text-sm font-bold text-foreground">{vendor.name}</p>
               <p className="truncate text-xs text-muted-foreground">
-                {activeProductLabel} ·{' '}
-                <span className="font-mono font-semibold text-foreground">
-                  {activeProduct ? formatMoney(activeProductPriceUsd, currency) : ''}
-                </span>
+                {activeProduct ? (
+                  <>
+                    {activeProductLabel} ·{' '}
+                    <span className="font-mono font-semibold text-foreground">
+                      {formatMoney(activeProductPriceUsd, currency)}
+                    </span>
+                  </>
+                ) : vendor.startingPriceUsd > 0 ? (
+                  <>
+                    {vendor.category} · Starting{' '}
+                    <span className="font-mono font-semibold text-foreground">
+                      {formatMoney(vendor.startingPriceUsd, currency)}{' '}
+                      {getVendorStartingPriceUnit(vendor)}
+                    </span>
+                  </>
+                ) : (
+                  `${vendor.category} · ${vendor.city}`
+                )}
               </p>
             </div>
           )}
@@ -2179,7 +2336,9 @@ export function VendorWebsiteView({
                 vendor,
                 basketItems.length > 0
                   ? buildBasketWhatsAppMessage()
-                  : `Hi ${vendor.name}, I'm viewing your page on FindMyBites × PimpMyParty and want to ask about "${activeProductLabel}".`
+                  : activeProduct
+                    ? `Hi ${vendor.name}, I'm viewing your page on FindMyBites × PimpMyParty and want to ask about "${activeProductLabel}".`
+                    : `Hi ${vendor.name}, I'm viewing your page on FindMyBites × PimpMyParty and would like to ask about your ${vendor.category} packages & pricing.`
               )}
               target="_blank"
               rel="noopener noreferrer"

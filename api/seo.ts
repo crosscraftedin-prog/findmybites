@@ -101,10 +101,49 @@ interface VendorRecord {
   }>;
 }
 
+const PARTY_CATEGORY_SLUGS = new Set([
+  'wedding-and-party-decor',
+  'balloon-and-theme-birthday-decor',
+  'event-and-wedding-planners',
+  'djs-sound-and-live-bands',
+  'photographers-and-videographers',
+  'venues-farmhouses-and-villas',
+  'photo-booths-and-360-spinners',
+  'kids-entertainment-and-mascots',
+  'anchors-emcees-and-performers',
+  'makeup-hair-and-mehendi-artists',
+  'event-rentals-furniture-and-tents',
+  'lighting-av-and-cold-fireworks',
+]);
+
+const NON_BAKER_FOOD_SLUGS = new Set([
+  'catering-services',
+  'live-counters-and-food-stalls',
+  'bar-mocktails-and-beverage-carts',
+  'snack-boxes-and-party-platters',
+  'mithai-chocolatiers-and-dates',
+  'gifting-hampers-and-return-favors',
+]);
+
+function isPartyCategorySlug(slug: string): boolean {
+  if (!slug) return false;
+  if (PARTY_CATEGORY_SLUGS.has(slug)) return true;
+  if (slug.includes('party-platters') || slug.includes('catering')) return false;
+  return /(wedding-and-party|balloon|event-and-wedding|event-planner|wedding-planner|djs-|sound-and-live|photographer|videographer|venue|farmhouse|photo-booth|360-spinner|kids-entertainment|mascot|anchor|emcee|makeup|mehendi|event-rental|tent|lighting|cold-firework|decor)/.test(
+    slug
+  );
+}
+
+function isBakeryCategoryName(cat: string): boolean {
+  const lower = cat.toLowerCase();
+  return lower.includes('baker') || lower.includes('cake') || lower.includes('dessert');
+}
+
 function parseSupabaseVendor(row: Record<string, unknown>): VendorRecord | null {
   const slug = typeof row.slug === 'string' ? row.slug.trim() : '';
   const name = typeof row.name === 'string' ? row.name.trim() : '';
   if (!slug || !name) return null;
+  const marketplace = row.marketplace === 'party' ? 'party' : 'food';
   const rawProducts = Array.isArray(row.products) ? row.products : [];
   const products = rawProducts
     .map((item) => {
@@ -112,7 +151,12 @@ function parseSupabaseVendor(row: Record<string, unknown>): VendorRecord | null 
       const p = item as Record<string, unknown>;
       return {
         id: typeof p.id === 'string' ? p.id.trim() : '',
-        name: typeof p.name === 'string' && p.name.trim() ? p.name.trim() : 'Signature Cake',
+        name:
+          typeof p.name === 'string' && p.name.trim()
+            ? p.name.trim()
+            : marketplace === 'party'
+              ? 'Event Package'
+              : 'Signature Item',
         description: typeof p.description === 'string' ? p.description.trim() : '',
         priceUsd: typeof p.priceUsd === 'number' ? p.priceUsd : 0,
         inStock: p.inStock === false ? false : true,
@@ -148,8 +192,10 @@ function parseSupabaseVendor(row: Record<string, unknown>): VendorRecord | null 
     category:
       typeof row.category === 'string' && row.category.trim()
         ? row.category.trim()
-        : 'Bakers & Cakes',
-    marketplace: row.marketplace === 'party' ? 'party' : 'food',
+        : marketplace === 'party'
+          ? 'Event & Wedding Planners'
+          : 'Bakers & Cakes',
+    marketplace,
     city,
     state: typeof row.state === 'string' && row.state.trim() ? row.state.trim() : 'Telangana',
     country: typeof row.country === 'string' && row.country.trim() ? row.country.trim() : 'India',
@@ -266,10 +312,17 @@ function renderHtml(params: {
   introParagraph: string;
   bodyHtml: string;
   jsonLdList: unknown[];
+  isParty?: boolean;
 }): string {
   const jsonLdTags = params.jsonLdList
     .map((schema) => `<script type="application/ld+json">${safeJsonLd(schema)}</script>`)
     .join('\n  ');
+  const isParty = Boolean(params.isParty);
+  const siteName = isParty ? 'PimpMyParty by FindMyBites' : 'FindMyBites';
+  const brandColor = isParty ? '#db2777' : '#d95b16';
+  const headerText = isParty
+    ? 'PimpMyParty by FindMyBites — 0% Commission Event Planners, Decor & Party Vendors in India'
+    : 'FindMyBites × PimpMyParty — 0% Commission Home Bakers, Caterers & Event Vendors in India';
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -282,7 +335,7 @@ function renderHtml(params: {
   <meta name="robots" content="index, follow, max-image-preview:large" />
   <link rel="canonical" href="${escapeHtml(params.canonical)}" />
   <meta property="og:type" content="website" />
-  <meta property="og:site_name" content="FindMyBites" />
+  <meta property="og:site_name" content="${escapeHtml(siteName)}" />
   <meta property="og:title" content="${escapeHtml(params.title)}" />
   <meta property="og:description" content="${escapeHtml(params.description)}" />
   <meta property="og:url" content="${escapeHtml(params.canonical)}" />
@@ -295,7 +348,7 @@ function renderHtml(params: {
 </head>
 <body style="font-family:system-ui,-apple-system,sans-serif;max-width:960px;margin:0 auto;padding:24px;color:#111;line-height:1.6;">
   <header style="padding-bottom:14px;border-bottom:1px solid #e5e7eb;margin-bottom:18px;">
-    <a href="${SITE_ORIGIN}/" style="font-weight:800;text-decoration:none;color:#d95b16;font-size:18px;">FindMyBites — 0% Commission Home Bakers &amp; Custom Cakes in India</a>
+    <a href="${SITE_ORIGIN}/" style="font-weight:800;text-decoration:none;color:${brandColor};font-size:18px;">${escapeHtml(headerText)}</a>
   </header>
   ${params.breadcrumbsHtml}
   <main>
@@ -306,24 +359,36 @@ function renderHtml(params: {
   <footer style="margin-top:40px;padding-top:16px;border-top:1px solid #e5e7eb;font-size:13px;color:#555;">
     <nav aria-label="Popular Cities and Categories">
       <p><strong>Popular Cities:</strong>
-        <a href="${SITE_ORIGIN}/hyderabad/home-bakers">Hyderabad</a> ·
-        <a href="${SITE_ORIGIN}/secunderabad/home-bakers">Secunderabad</a> ·
-        <a href="${SITE_ORIGIN}/bengaluru/eggless-cakes">Bengaluru</a> ·
-        <a href="${SITE_ORIGIN}/mumbai/birthday-cakes">Mumbai</a> ·
-        <a href="${SITE_ORIGIN}/delhi-ncr/custom-cakes">Delhi NCR</a> ·
-        <a href="${SITE_ORIGIN}/chennai/eggless-cakes">Chennai</a> ·
-        <a href="${SITE_ORIGIN}/pune/home-bakers">Pune</a> ·
-        <a href="${SITE_ORIGIN}/kolkata/custom-birthday-cakes">Kolkata</a>
+        <a href="${SITE_ORIGIN}/hyderabad/${isParty ? 'event-and-wedding-planners' : 'home-bakers'}">Hyderabad</a> ·
+        <a href="${SITE_ORIGIN}/secunderabad/${isParty ? 'event-and-wedding-planners' : 'home-bakers'}">Secunderabad</a> ·
+        <a href="${SITE_ORIGIN}/bengaluru/${isParty ? 'wedding-and-party-decor' : 'eggless-cakes'}">Bengaluru</a> ·
+        <a href="${SITE_ORIGIN}/mumbai/${isParty ? 'event-and-wedding-planners' : 'birthday-cakes'}">Mumbai</a> ·
+        <a href="${SITE_ORIGIN}/delhi-ncr/${isParty ? 'wedding-and-party-decor' : 'custom-cakes'}">Delhi NCR</a> ·
+        <a href="${SITE_ORIGIN}/chennai/${isParty ? 'photographers-and-videographers' : 'eggless-cakes'}">Chennai</a> ·
+        <a href="${SITE_ORIGIN}/pune/${isParty ? 'djs-sound-and-live-bands' : 'home-bakers'}">Pune</a> ·
+        <a href="${SITE_ORIGIN}/kolkata/${isParty ? 'wedding-and-party-decor' : 'custom-birthday-cakes'}">Kolkata</a>
       </p>
-      <p><strong>Top Cake Categories:</strong>
+      <p><strong>Top Event &amp; Party Categories (PimpMyParty):</strong>
+        <a href="${SITE_ORIGIN}/category/event-and-wedding-planners">Event &amp; Wedding Planners</a> ·
+        <a href="${SITE_ORIGIN}/category/wedding-and-party-decor">Wedding &amp; Party Decor</a> ·
+        <a href="${SITE_ORIGIN}/category/balloon-and-theme-birthday-decor">Balloon &amp; Theme Decor</a> ·
+        <a href="${SITE_ORIGIN}/category/photographers-and-videographers">Photographers &amp; Videographers</a> ·
+        <a href="${SITE_ORIGIN}/category/djs-sound-and-live-bands">DJs &amp; Live Bands</a> ·
+        <a href="${SITE_ORIGIN}/category/venues-farmhouses-and-villas">Venues &amp; Farmhouses</a>
+      </p>
+      <p><strong>Top Food &amp; Baker Categories (FindMyBites):</strong>
+        <a href="${SITE_ORIGIN}/category/catering-services">Catering Services</a> ·
         <a href="${SITE_ORIGIN}/category/eggless-cakes">Eggless Cakes</a> ·
         <a href="${SITE_ORIGIN}/category/bento-cakes">Bento Cakes</a> ·
         <a href="${SITE_ORIGIN}/category/custom-birthday-cakes">Custom Birthday Cakes</a> ·
-        <a href="${SITE_ORIGIN}/category/brownies">Brownies</a> ·
-        <a href="${SITE_ORIGIN}/category/wedding-cakes">Wedding Cakes</a>
+        <a href="${SITE_ORIGIN}/category/brownies">Brownies</a>
       </p>
     </nav>
-    <p>Order direct from local home bakers and party caterers via WhatsApp with 0% commission on <a href="${SITE_ORIGIN}/">FindMyBites.com</a>.</p>
+    <p>${
+      isParty
+        ? `Book verified event planners, decorators, DJs, photographers &amp; venues directly on WhatsApp with 0% commission on <a href="${SITE_ORIGIN}/">PimpMyParty × FindMyBites</a>.`
+        : `Order direct from local home bakers, caterers &amp; event vendors via WhatsApp with 0% commission on <a href="${SITE_ORIGIN}/">FindMyBites.com</a>.`
+    }</p>
   </footer>
 </body>
 </html>`;
@@ -396,26 +461,29 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
       const isoCountry = COUNTRY_ISO[vendor.country] || 'IN';
       const citySlug = slugifySegment(vendor.city);
       const catSlug = slugifySegment(vendor.category);
+      const isParty = vendor.marketplace === 'party' || isPartyCategorySlug(catSlug);
+      const isBaker = !isParty && isBakeryCategoryName(vendor.category);
+      const brandSuffix = isParty ? 'PimpMyParty by FindMyBites' : 'FindMyBites';
 
       const title = matchedProduct
-        ? `${matchedProduct.name} by ${vendor.name} (${vendor.area}, ${vendor.city}) | FindMyBites`
+        ? `${matchedProduct.name} by ${vendor.name} (${vendor.area}, ${vendor.city}) | ${brandSuffix}`
         : vendor.seoTitle ||
-          `${vendor.name} – ${vendor.category} in ${vendor.area}, ${vendor.city} | FindMyBites`;
+          `${vendor.name} – ${vendor.category} in ${vendor.area}, ${vendor.city} | ${brandSuffix}`;
       const description = matchedProduct
-        ? `${matchedProduct.description || matchedProduct.name} — Order directly from ${vendor.name} in ${vendor.area}, ${vendor.city} on FindMyBites (0% commission).`
+        ? `${matchedProduct.description || matchedProduct.name} — ${isParty ? 'Book' : 'Order'} directly from ${vendor.name} in ${vendor.area}, ${vendor.city} on ${brandSuffix} (0% commission).`
         : vendor.seoDescription ||
-          `${vendor.tagline || vendor.description} Order from ${vendor.name} in ${vendor.area}, ${vendor.city}, ${vendor.state} directly on WhatsApp via FindMyBites with 0% commission.`;
+          `${vendor.tagline || vendor.description} ${isParty ? 'Book' : 'Order from'} ${vendor.name} in ${vendor.area}, ${vendor.city}, ${vendor.state} directly on WhatsApp via ${brandSuffix} with 0% commission.`;
       const keywords =
         vendor.seoKeywords ||
-        `${matchedProduct ? `${matchedProduct.name}, ` : ''}${vendor.name}, ${vendor.category} in ${vendor.city}, ${vendor.area} ${vendor.category}, home bakers in ${vendor.city}`;
+        (isParty
+          ? `${matchedProduct ? `${matchedProduct.name}, ` : ''}${vendor.name}, ${vendor.category} in ${vendor.city}, ${vendor.area} ${vendor.category.toLowerCase()}, event vendors in ${vendor.city}, party planners in ${vendor.city}, PimpMyParty`
+          : isBaker
+            ? `${matchedProduct ? `${matchedProduct.name}, ` : ''}${vendor.name}, ${vendor.category} in ${vendor.city}, ${vendor.area} ${vendor.category.toLowerCase()}, home bakers in ${vendor.city}, FindMyBites`
+            : `${matchedProduct ? `${matchedProduct.name}, ` : ''}${vendor.name}, ${vendor.category} in ${vendor.city}, ${vendor.area} ${vendor.category.toLowerCase()}, party catering in ${vendor.city}, FindMyBites`);
 
-      const isBaker =
-        vendor.category.toLowerCase().includes('baker') ||
-        vendor.category.toLowerCase().includes('cake') ||
-        vendor.category.toLowerCase().includes('dessert');
       const schemaType = isBaker
         ? 'Bakery'
-        : vendor.marketplace === 'food'
+        : !isParty && vendor.marketplace === 'food'
           ? 'FoodEstablishment'
           : 'LocalBusiness';
 
@@ -426,8 +494,14 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
         <span>${escapeHtml(vendor.name)}</span>
       </nav>`;
 
+      const catalogHeading = isParty
+        ? 'Event Packages &amp; Services'
+        : isBaker
+          ? 'Signature Cakes, Menu &amp; Packages'
+          : 'Menu, Platters &amp; Catering Packages';
+
       const productListHtml = vendor.products.length
-        ? `<section><h2>Signature Cakes, Menu &amp; Packages</h2><div style="display:grid;gap:14px;">${vendor.products
+        ? `<section><h2>${catalogHeading}</h2><div style="display:grid;gap:14px;">${vendor.products
             .slice(0, 20)
             .map((p) => {
               const localPrice = Math.round(Math.max(0, p.priceUsd) * curr.rate);
@@ -451,12 +525,12 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
               ? 'https://schema.org/OutOfStock'
               : 'https://schema.org/InStock',
           itemOffered: {
-            '@type': 'Product',
+            '@type': isParty ? 'Service' : 'Product',
             name: p.name,
             description:
               p.description || `${p.name} by ${vendor.name} in ${vendor.area}, ${vendor.city}`,
             image: safePublicImage(p.image || vendor.image),
-            brand: { '@type': 'Brand', name: vendor.name },
+            ...(isParty ? { provider: { '@type': 'LocalBusiness', name: vendor.name } } : { brand: { '@type': 'Brand', name: vendor.name } }),
             offers: {
               '@type': 'Offer',
               price: localPrice,
@@ -470,6 +544,48 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
         };
       });
 
+      const businessJsonLd: Record<string, unknown> = {
+        '@context': 'https://schema.org',
+        '@type': schemaType,
+        name: vendor.name,
+        description: vendor.description,
+        url: canonical,
+        image: ogImage,
+        telephone: vendor.whatsappNumber ? `+${vendor.whatsappNumber}` : undefined,
+        priceRange: formatPriceRangeForCountry(vendor.priceTier, vendor.country),
+        sameAs: [vendor.googleMapsUrl, vendor.instagramUrl].filter(Boolean),
+        geo: {
+          '@type': 'GeoCoordinates',
+          latitude: vendor.lat,
+          longitude: vendor.lng,
+        },
+        address: {
+          '@type': 'PostalAddress',
+          streetAddress: vendor.area,
+          addressLocality: vendor.city,
+          addressRegion: vendor.state,
+          addressCountry: isoCountry,
+        },
+        aggregateRating: {
+          '@type': 'AggregateRating',
+          ratingValue: vendor.rating,
+          reviewCount: Math.max(1, vendor.reviewCount),
+        },
+        hasOfferCatalog: {
+          '@type': 'OfferCatalog',
+          name: isParty
+            ? `${vendor.name} Event Packages & Services`
+            : isBaker
+              ? `${vendor.name} Signature Cakes & Menu`
+              : `${vendor.name} Menu & Catering Packages`,
+          itemListElement: signatureOffers,
+        },
+      };
+
+      if (!isParty) {
+        businessJsonLd.servesCuisine = buildServesCuisine(vendor);
+      }
+
       const html = renderHtml({
         title,
         description,
@@ -481,42 +597,14 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
           ? `${matchedProduct.name} by ${vendor.name} (${vendor.area}, ${vendor.city})`
           : `${vendor.name} · ${vendor.category} in ${vendor.area}, ${vendor.city}`,
         introParagraph: matchedProduct?.description || vendor.description || description,
-        bodyHtml: `${productListHtml}<p><a href="${escapeHtml(canonical)}">Order directly on WhatsApp with 0% commission</a></p>`,
+        bodyHtml: `${productListHtml}<p><a href="${escapeHtml(canonical)}">${
+          isParty
+            ? 'Book directly on WhatsApp with 0% commission'
+            : 'Order directly on WhatsApp with 0% commission'
+        }</a></p>`,
+        isParty,
         jsonLdList: [
-          {
-            '@context': 'https://schema.org',
-            '@type': schemaType,
-            name: vendor.name,
-            description: vendor.description,
-            url: canonical,
-            image: ogImage,
-            telephone: vendor.whatsappNumber ? `+${vendor.whatsappNumber}` : undefined,
-            priceRange: formatPriceRangeForCountry(vendor.priceTier, vendor.country),
-            servesCuisine: buildServesCuisine(vendor),
-            sameAs: [vendor.googleMapsUrl, vendor.instagramUrl].filter(Boolean),
-            geo: {
-              '@type': 'GeoCoordinates',
-              latitude: vendor.lat,
-              longitude: vendor.lng,
-            },
-            address: {
-              '@type': 'PostalAddress',
-              streetAddress: vendor.area,
-              addressLocality: vendor.city,
-              addressRegion: vendor.state,
-              addressCountry: isoCountry,
-            },
-            aggregateRating: {
-              '@type': 'AggregateRating',
-              ratingValue: vendor.rating,
-              reviewCount: Math.max(1, vendor.reviewCount),
-            },
-            hasOfferCatalog: {
-              '@type': 'OfferCatalog',
-              name: `${vendor.name} Signature Cakes & Menu`,
-              itemListElement: signatureOffers,
-            },
-          },
+          businessJsonLd,
           {
             '@context': 'https://schema.org',
             '@type': 'BreadcrumbList',
@@ -566,11 +654,13 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
   const cityLabel = citySlug ? humanizeSlug(citySlug) : '';
   const localityLabel = localitySlug ? humanizeSlug(localitySlug) : '';
   const isChristmas = catSlug.includes('christmas');
+  const isPartyCategory = isPartyCategorySlug(catSlug);
+  const isNonBakerFood = !isPartyCategory && NON_BAKER_FOOD_SLUGS.has(catSlug);
   const catLabel = isChristmas
     ? 'Christmas Plum Cakes & Festive Bakers'
     : catSlug
       ? humanizeSlug(catSlug)
-      : 'Home Bakers & Custom Cakes';
+      : 'Home Bakers, Caterers & Event Vendors';
 
   const placeHeading =
     localityLabel && cityLabel
@@ -590,9 +680,17 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
   const canonical = `${SITE_ORIGIN}${canonicalPath}`;
 
   const h1 = cityLabel ? `Top ${catLabel} in ${placeHeading}` : `Top ${catLabel} Across India`;
-  const title = cityLabel
-    ? `Best ${catLabel} in ${placeHeading} | Order Direct from Home Bakers – FindMyBites`
-    : `Best ${catLabel} Near You in India | Order Direct from Home Bakers – FindMyBites`;
+  const title = isPartyCategory
+    ? cityLabel
+      ? `Best ${catLabel} in ${placeHeading} | Book Direct – PimpMyParty`
+      : `Best ${catLabel} in India | Book Direct – PimpMyParty`
+    : isNonBakerFood
+      ? cityLabel
+        ? `Best ${catLabel} in ${placeHeading} | Order Direct – FindMyBites`
+        : `Best ${catLabel} Near You in India | Order Direct – FindMyBites`
+      : cityLabel
+        ? `Best ${catLabel} in ${placeHeading} | Order Direct from Home Bakers – FindMyBites`
+        : `Best ${catLabel} Near You in India | Order Direct from Home Bakers – FindMyBites`;
 
   const isBakerySpecialty =
     /^(cakes-near-me|birthday-cakes|custom-birthday-cakes|eggless-cakes|bento-cakes|brownies|brownies-near-me|custom-cakes|wedding-cakes|home-bakers|cupcakes-and-desserts)$/.test(
@@ -605,14 +703,13 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
       v.city.toLowerCase().includes(cityLabel.toLowerCase()) ||
       v.state.toLowerCase().includes(cityLabel.toLowerCase()) ||
       (citySlug === 'secunderabad' && v.city.toLowerCase().includes('hyderabad'));
+    const vCatSlug = slugifySegment(v.category);
     const catOk =
       !catSlug ||
       isChristmas ||
-      (isBakerySpecialty &&
-        (v.category.toLowerCase().includes('baker') ||
-          v.category.toLowerCase().includes('cake') ||
-          v.category.toLowerCase().includes('dessert'))) ||
-      slugifySegment(v.category).includes(catSlug);
+      (isBakerySpecialty && isBakeryCategoryName(v.category)) ||
+      vCatSlug.includes(catSlug) ||
+      catSlug.includes(vCatSlug);
     return cityOk && catOk;
   });
 
@@ -633,46 +730,109 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
     return bHit - aHit;
   });
 
-  const listToRender =
-    sortedMatching.length > 0 ? sortedMatching.slice(0, 20) : activeVendors.slice(0, 12);
+  const marketplaceFallback = isPartyCategory
+    ? activeVendors.filter((v) => v.marketplace === 'party')
+    : activeVendors.filter((v) => v.marketplace === 'food');
 
+  const listToRender =
+    sortedMatching.length > 0
+      ? sortedMatching.slice(0, 20)
+      : marketplaceFallback.length > 0
+        ? marketplaceFallback.slice(0, 12)
+        : activeVendors.slice(0, 12);
+
+  const defaultMinPrice = isPartyCategory ? 2500 : isNonBakerFood ? 450 : 550;
   const minPriceInr =
     listToRender.length > 0
       ? Math.max(
-          250,
+          isPartyCategory ? 1000 : 250,
           Math.round(
             Math.min(...listToRender.map((v) => Math.max(4, v.startingPriceUsd || 7))) * 84
           )
         )
-      : 550;
+      : defaultMinPrice;
 
-  const introParagraph = cityLabel
-    ? `Looking for fresh ${catLabel.toLowerCase()} in ${placeHeading}? Discover top-rated local home bakers, eggless cake makers, and party food vendors delivering across ${localityLabel ? `${localityLabel} and nearby ${cityLabel} areas` : cityLabel}. Compare transparent INR menus starting from ₹${minPriceInr.toLocaleString('en-IN')}, check doorstep delivery or kitchen pickup availability, and order directly on WhatsApp with 0% commission.`
-    : `Discover top-rated ${catLabel.toLowerCase()} across Hyderabad, Secunderabad, Bengaluru, Mumbai, Delhi NCR, Chennai, Pune, Kolkata & across India. Compare menus starting from ₹${minPriceInr.toLocaleString('en-IN')} and order directly via WhatsApp with 0% commission.`;
+  const introParagraph = isPartyCategory
+    ? cityLabel
+      ? `Looking for verified ${catLabel.toLowerCase()} in ${placeHeading}? Discover top-rated local event planners, decorators, DJs, photographers, and celebration specialists serving ${localityLabel ? `${localityLabel} and nearby ${cityLabel} areas` : cityLabel}. Compare transparent INR packages starting from ₹${minPriceInr.toLocaleString('en-IN')}, check event portfolios, and book directly on WhatsApp with 0% commission on PimpMyParty.`
+      : `Discover verified ${catLabel.toLowerCase()} across Hyderabad, Secunderabad, Bengaluru, Mumbai, Delhi NCR, Chennai, Pune, Kolkata & across India. Compare transparent INR event packages starting from ₹${minPriceInr.toLocaleString('en-IN')} and book directly via WhatsApp with 0% commission on PimpMyParty.`
+    : isNonBakerFood
+      ? cityLabel
+        ? `Looking for reliable ${catLabel.toLowerCase()} in ${placeHeading}? Compare verified local caterers, live food counters, mocktail bars, and party platter makers serving ${localityLabel ? `${localityLabel} and nearby ${cityLabel} areas` : cityLabel}. View transparent INR per-plate & package pricing starting from ₹${minPriceInr.toLocaleString('en-IN')} and book directly on WhatsApp with 0% commission.`
+        : `Discover verified ${catLabel.toLowerCase()} across Hyderabad, Secunderabad, Bengaluru, Mumbai, Delhi NCR, Chennai, Pune, Kolkata & across India. Compare per-plate menus starting from ₹${minPriceInr.toLocaleString('en-IN')} and book directly via WhatsApp with 0% commission.`
+      : cityLabel
+        ? `Looking for fresh ${catLabel.toLowerCase()} in ${placeHeading}? Discover top-rated local home bakers, eggless cake makers, and party food vendors delivering across ${localityLabel ? `${localityLabel} and nearby ${cityLabel} areas` : cityLabel}. Compare transparent INR menus starting from ₹${minPriceInr.toLocaleString('en-IN')}, check doorstep delivery or kitchen pickup availability, and order directly on WhatsApp with 0% commission.`
+        : `Discover top-rated ${catLabel.toLowerCase()} across Hyderabad, Secunderabad, Bengaluru, Mumbai, Delhi NCR, Chennai, Pune, Kolkata & across India. Compare menus starting from ₹${minPriceInr.toLocaleString('en-IN')} and order directly via WhatsApp with 0% commission.`;
 
   const description = introParagraph.slice(0, 210);
-  const keywords = cityLabel
-    ? `${catLabel.toLowerCase()} in ${placeHeading.toLowerCase()}, eggless cakes ${placeHeading.toLowerCase()}, home bakers in ${cityLabel.toLowerCase()}, custom cakes ${cityLabel.toLowerCase()}, FindMyBites`
-    : `${catLabel.toLowerCase()} near me, eggless cakes india, home bakers india, FindMyBites`;
+  const keywords = isPartyCategory
+    ? cityLabel
+      ? `${catLabel.toLowerCase()} in ${placeHeading.toLowerCase()}, best ${catLabel.toLowerCase()} ${cityLabel.toLowerCase()}, event planners in ${cityLabel.toLowerCase()}, wedding vendors ${placeHeading.toLowerCase()}, PimpMyParty, FindMyBites`
+      : `${catLabel.toLowerCase()} near me, event planners india, wedding and party decor india, PimpMyParty, FindMyBites`
+    : isNonBakerFood
+      ? cityLabel
+        ? `${catLabel.toLowerCase()} in ${placeHeading.toLowerCase()}, best ${catLabel.toLowerCase()} ${cityLabel.toLowerCase()}, party catering ${cityLabel.toLowerCase()}, per plate catering ${placeHeading.toLowerCase()}, FindMyBites`
+        : `${catLabel.toLowerCase()} near me, party catering india, live food counters india, FindMyBites`
+      : cityLabel
+        ? `${catLabel.toLowerCase()} in ${placeHeading.toLowerCase()}, eggless cakes ${placeHeading.toLowerCase()}, home bakers in ${cityLabel.toLowerCase()}, custom cakes ${cityLabel.toLowerCase()}, FindMyBites`
+        : `${catLabel.toLowerCase()} near me, eggless cakes india, home bakers india, FindMyBites`;
 
-  const faqs = [
-    {
-      question: `Who are the best eggless home bakers in ${placeHeading}?`,
-      answer: `FindMyBites features verified local home bakers in ${placeHeading} specializing in 100% eggless birthday cakes, bento cakes, fudgy brownies, and custom theme cakes with transparent INR pricing and direct WhatsApp ordering.`,
-    },
-    {
-      question: `How do I order a custom cake in ${cityLabel || 'India'} without delivery app markups?`,
-      answer: `Browse ${catLabel.toLowerCase()} in ${placeHeading} on FindMyBites and chat directly with the home baker on WhatsApp or use direct store checkout with 0% middleman commission.`,
-    },
-    {
-      question: `What is the starting price for ${catLabel.toLowerCase()} in ${placeHeading}?`,
-      answer: `Freshly made ${catLabel.toLowerCase()} from local home bakers in ${placeHeading} start from approximately ₹${minPriceInr.toLocaleString('en-IN')}, with custom designs quoted directly on WhatsApp.`,
-    },
-    {
-      question: `Do bakers in ${placeHeading} offer doorstep delivery and kitchen pickup?`,
-      answer: `Yes! Listed home bakers and caterers in ${placeHeading} offer scheduled doorstep delivery across ${cityLabel || 'your city'} as well as direct pickup.`,
-    },
-  ];
+  const faqs = isPartyCategory
+    ? [
+        {
+          question: `Who are the best ${catLabel.toLowerCase()} in ${placeHeading}?`,
+          answer: `PimpMyParty by FindMyBites features verified local ${catLabel.toLowerCase()} in ${placeHeading} for weddings, birthdays, corporate events, and private celebrations—with transparent INR packages and direct WhatsApp booking.`,
+        },
+        {
+          question: `How do I book ${catLabel.toLowerCase()} in ${cityLabel || 'India'} without broker commissions?`,
+          answer: `Browse ${catLabel.toLowerCase()} in ${placeHeading} on PimpMyParty, compare packages and portfolios, and message the vendor directly on WhatsApp with 0% middleman commission.`,
+        },
+        {
+          question: `What is the starting price for ${catLabel.toLowerCase()} in ${placeHeading}?`,
+          answer: `Verified ${catLabel.toLowerCase()} in ${placeHeading} start from approximately ₹${minPriceInr.toLocaleString('en-IN')}, with custom wedding, birthday, and corporate quotes shared directly on WhatsApp.`,
+        },
+        {
+          question: `How early should I book ${catLabel.toLowerCase()} in ${placeHeading}?`,
+          answer: `For birthdays and house parties in ${placeHeading}, booking 1–2 weeks ahead is ideal; for weddings and peak-season dates in ${cityLabel || 'your city'}, booking 4–8 weeks in advance secures your preferred vendor.`,
+        },
+      ]
+    : isNonBakerFood
+      ? [
+          {
+            question: `Who are the best ${catLabel.toLowerCase()} in ${placeHeading}?`,
+            answer: `FindMyBites lists verified ${catLabel.toLowerCase()} in ${placeHeading} for weddings, house parties, and corporate events, complete with transparent per-plate menus and direct WhatsApp booking.`,
+          },
+          {
+            question: `How do I book ${catLabel.toLowerCase()} in ${cityLabel || 'India'} with 0% commission?`,
+            answer: `Browse ${catLabel.toLowerCase()} in ${placeHeading} on FindMyBites, pick ready-made packages or custom menus, and confirm directly with the vendor on WhatsApp with zero aggregator markup.`,
+          },
+          {
+            question: `What is the starting price for ${catLabel.toLowerCase()} in ${placeHeading}?`,
+            answer: `Local ${catLabel.toLowerCase()} in ${placeHeading} start from approximately ₹${minPriceInr.toLocaleString('en-IN')}, with custom guest-count and Veg/Non-Veg menu quotes available directly on WhatsApp.`,
+          },
+          {
+            question: `Do ${catLabel.toLowerCase()} in ${placeHeading} serve small house parties and large weddings?`,
+            answer: `Yes! Listed vendors in ${placeHeading} handle everything from 15-guest home gatherings and corporate snack boxes to large wedding functions across ${cityLabel || 'your city'}.`,
+          },
+        ]
+      : [
+          {
+            question: `Who are the best eggless home bakers in ${placeHeading}?`,
+            answer: `FindMyBites features verified local home bakers in ${placeHeading} specializing in 100% eggless birthday cakes, bento cakes, fudgy brownies, and custom theme cakes with transparent INR pricing and direct WhatsApp ordering.`,
+          },
+          {
+            question: `How do I order a custom cake in ${cityLabel || 'India'} without delivery app markups?`,
+            answer: `Browse ${catLabel.toLowerCase()} in ${placeHeading} on FindMyBites and chat directly with the home baker on WhatsApp or use direct store checkout with 0% middleman commission.`,
+          },
+          {
+            question: `What is the starting price for ${catLabel.toLowerCase()} in ${placeHeading}?`,
+            answer: `Freshly made ${catLabel.toLowerCase()} from local home bakers in ${placeHeading} start from approximately ₹${minPriceInr.toLocaleString('en-IN')}, with custom designs quoted directly on WhatsApp.`,
+          },
+          {
+            question: `Do bakers in ${placeHeading} offer doorstep delivery and kitchen pickup?`,
+            answer: `Yes! Listed home bakers and caterers in ${placeHeading} offer scheduled doorstep delivery across ${cityLabel || 'your city'} as well as direct pickup.`,
+          },
+        ];
 
   const breadcrumbItems: Array<Record<string, unknown>> = [
     { '@type': 'ListItem', position: 1, name: 'Home', item: `${SITE_ORIGIN}/` },
@@ -691,7 +851,7 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
       '@type': 'ListItem',
       position: pos++,
       name: localityLabel,
-      item: `${SITE_ORIGIN}/${citySlug}/${localitySlug}/${catSlug || 'home-bakers'}`,
+      item: `${SITE_ORIGIN}/${citySlug}/${localitySlug}/${catSlug || (isPartyCategory ? 'event-and-wedding-planners' : 'home-bakers')}`,
     });
   }
   if (catSlug) {
@@ -710,7 +870,7 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
         : ''
     }${
       citySlug && localitySlug
-        ? ` › <a href="${SITE_ORIGIN}/${encodeURIComponent(citySlug)}/${encodeURIComponent(localitySlug)}/${encodeURIComponent(catSlug || 'home-bakers')}">${escapeHtml(localityLabel)}</a>`
+        ? ` › <a href="${SITE_ORIGIN}/${encodeURIComponent(citySlug)}/${encodeURIComponent(localitySlug)}/${encodeURIComponent(catSlug || (isPartyCategory ? 'event-and-wedding-planners' : 'home-bakers'))}">${escapeHtml(localityLabel)}</a>`
         : ''
     }${catSlug ? ` › <span>${escapeHtml(catLabel)}</span>` : ''}
   </nav>`;
@@ -741,6 +901,7 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
     h1,
     introParagraph,
     bodyHtml: `${listHtml}${faqHtml}`,
+    isParty: isPartyCategory,
     jsonLdList: [
       {
         '@context': 'https://schema.org',

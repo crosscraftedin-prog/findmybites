@@ -53,6 +53,7 @@ import {
   ProductFoodType,
   ProductUnitType,
   SAAS_PLANS,
+  STARTING_PRICE_UNIT_OPTIONS,
   STATES_BY_COUNTRY,
   Vendor,
   VendorProduct,
@@ -62,6 +63,7 @@ import {
   isBuilderSuggestedCategory,
   localToUsd,
   suggestBuilderModeForCategory,
+  suggestStartingPriceUnitForCategory,
   usdToLocal,
 } from '../data/vendors';
 import { compressImageFile, parseCoordsFromMapsLink } from '../utils/imageUpload';
@@ -190,6 +192,15 @@ export function ListBusinessModal({
   );
   const [billingCycle, setBillingCycle] = useState<BillingCycle>(initialBillingCycle);
   const [autoPayAccepted, setAutoPayAccepted] = useState(true);
+
+  // Starting price card settings
+  const [startingPriceLocal, setStartingPriceLocal] = useState('');
+  const [startingPriceUnit, setStartingPriceUnit] = useState('per kg');
+  const [startingPriceLabel, setStartingPriceLabel] = useState('');
+  const [secondaryPriceLocal, setSecondaryPriceLocal] = useState('');
+  const [secondaryPriceUnit, setSecondaryPriceUnit] = useState('per plate');
+  const [secondaryPriceLabel, setSecondaryPriceLabel] = useState('');
+  const [showSecondaryPrice, setShowSecondaryPrice] = useState(false);
 
   // Branding uploads
   const [logoDataUrl, setLogoDataUrl] = useState<string>('');
@@ -608,7 +619,17 @@ export function ListBusinessModal({
       };
     });
 
-    const minPriceUsd = Math.min(...finalProducts.map((p) => p.priceUsd));
+    const minProdPriceUsd = Math.min(...finalProducts.map((p) => p.priceUsd));
+    const parsedStartingLocal = Number(startingPriceLocal);
+    const hasCustomStartingPrice = Number.isFinite(parsedStartingLocal) && parsedStartingLocal > 0;
+    const minPriceUsd = hasCustomStartingPrice
+      ? Math.max(0.5, localToUsd(parsedStartingLocal, formCurrency))
+      : minProdPriceUsd;
+    const parsedSecondaryLocal = Number(secondaryPriceLocal);
+    const secondaryStartingPriceUsd =
+      showSecondaryPrice && Number.isFinite(parsedSecondaryLocal) && parsedSecondaryLocal > 0
+        ? Math.max(0.5, localToUsd(parsedSecondaryLocal, formCurrency))
+        : undefined;
 
     const newVendor: Vendor = {
       id: `custom-${Date.now()}`,
@@ -634,6 +655,24 @@ export function ListBusinessModal({
         pickupEnabled: true,
         codEnabled: true,
         billingCycle,
+        startingPriceUnit:
+          startingPriceUnit.trim() || suggestStartingPriceUnitForCategory(category, marketplace),
+        ...(startingPriceLabel.trim()
+          ? { startingPriceLabel: startingPriceLabel.trim().slice(0, 40) }
+          : {}),
+        ...(hasCustomStartingPrice ? { customStartingPrice: true } : {}),
+        ...(secondaryStartingPriceUsd
+          ? {
+              secondaryStartingPriceUsd,
+              secondaryStartingPriceUnit:
+                secondaryPriceUnit.trim() ||
+                startingPriceUnit.trim() ||
+                suggestStartingPriceUnitForCategory(category, marketplace),
+              ...(secondaryPriceLabel.trim()
+                ? { secondaryStartingPriceLabel: secondaryPriceLabel.trim().slice(0, 40) }
+                : {}),
+            }
+          : {}),
       },
       priceTier: computeTier(minPriceUsd),
       startingPriceUsd: minPriceUsd,
@@ -870,7 +909,12 @@ export function ListBusinessModal({
             <div className="grid grid-cols-2 gap-2 rounded-xl bg-muted p-1">
               <button
                 type="button"
-                onClick={() => setMarketplace('food')}
+                onClick={() => {
+                  setMarketplace('food');
+                  const unit = suggestStartingPriceUnitForCategory(FOOD_CATEGORIES[0], 'food');
+                  setStartingPriceUnit(unit);
+                  setSecondaryPriceUnit(unit);
+                }}
                 className={`cursor-pointer rounded-lg py-2 text-xs font-bold transition-colors ${
                   marketplace === 'food'
                     ? 'bg-[#ef6c22] text-white shadow-xs'
@@ -881,7 +925,12 @@ export function ListBusinessModal({
               </button>
               <button
                 type="button"
-                onClick={() => setMarketplace('party')}
+                onClick={() => {
+                  setMarketplace('party');
+                  const unit = suggestStartingPriceUnitForCategory(PARTY_CATEGORIES[0], 'party');
+                  setStartingPriceUnit(unit);
+                  setSecondaryPriceUnit(unit);
+                }}
                 className={`cursor-pointer rounded-lg py-2 text-xs font-bold transition-colors ${
                   marketplace === 'party'
                     ? 'bg-[#db2fb2] text-white shadow-xs'
@@ -917,6 +966,9 @@ export function ListBusinessModal({
                   onChange={(e) => {
                     const nextCat = e.target.value;
                     setCategory(nextCat);
+                    const nextUnit = suggestStartingPriceUnitForCategory(nextCat, marketplace);
+                    setStartingPriceUnit(nextUnit);
+                    setSecondaryPriceUnit(nextUnit);
                     const suggestedMode = suggestBuilderModeForCategory(nextCat);
                     setCustomBuilderMode(suggestedMode);
                     setCustomBuilderMinQty(getCustomBuilderModeConfig(suggestedMode).defaultMinQty);
@@ -966,6 +1018,117 @@ export function ListBusinessModal({
                   className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:border-brand focus:outline-none"
                 />
               </div>
+            </div>
+
+            {/* Storefront Starting Price Card Display */}
+            <div className="rounded-xl border border-brand-border/70 bg-brand-soft/30 p-3.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="text-xs font-extrabold text-foreground">
+                    Starting Price Display (Top Right of Your Storefront)
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Optional — enter your starting price (e.g. {CURRENCIES[formCurrency].symbol.trim()}200 per plate · Veg Price), or leave blank to auto-use your lowest menu price.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowSecondaryPrice((prev) => !prev)}
+                  className="cursor-pointer rounded-lg border border-border bg-background px-2.5 py-1 text-[11px] font-bold text-foreground hover:border-brand hover:text-brand"
+                >
+                  {showSecondaryPrice ? 'Hide 2nd Row' : '+ Add 2nd Price Row'}
+                </button>
+              </div>
+              <div className="mt-3 grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+                <div>
+                  <label className="block text-[11px] font-semibold text-foreground">
+                    Starting Price ({CURRENCIES[formCurrency].symbol.trim()})
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={startingPriceLocal}
+                    onChange={(e) => setStartingPriceLocal(e.target.value)}
+                    placeholder={marketplace === 'party' ? 'e.g. 15000' : 'e.g. 200'}
+                    className="mt-1 w-full rounded-lg border border-border bg-background px-2.5 py-2 font-mono text-xs font-semibold text-foreground focus:border-brand focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-foreground">
+                    Price Unit
+                  </label>
+                  <select
+                    value={startingPriceUnit}
+                    onChange={(e) => setStartingPriceUnit(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-border bg-background px-2.5 py-2 text-xs text-foreground focus:border-brand focus:outline-none"
+                  >
+                    {STARTING_PRICE_UNIT_OPTIONS.map((unit) => (
+                      <option key={unit} value={unit}>
+                        {unit}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-foreground">
+                    Label (Right Side)
+                  </label>
+                  <input
+                    type="text"
+                    maxLength={40}
+                    value={startingPriceLabel}
+                    onChange={(e) => setStartingPriceLabel(e.target.value)}
+                    placeholder={marketplace === 'party' ? 'e.g. Starting Package' : 'e.g. Veg Price'}
+                    className="mt-1 w-full rounded-lg border border-border bg-background px-2.5 py-2 text-xs text-foreground focus:border-brand focus:outline-none"
+                  />
+                </div>
+              </div>
+              {showSecondaryPrice && (
+                <div className="mt-2.5 grid grid-cols-1 gap-2.5 border-t border-border/60 pt-2.5 sm:grid-cols-3">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-foreground">
+                      2nd Price ({CURRENCIES[formCurrency].symbol.trim()})
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={secondaryPriceLocal}
+                      onChange={(e) => setSecondaryPriceLocal(e.target.value)}
+                      placeholder={marketplace === 'party' ? 'e.g. 50000' : 'e.g. 350'}
+                      className="mt-1 w-full rounded-lg border border-border bg-background px-2.5 py-2 font-mono text-xs font-semibold text-foreground focus:border-brand focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-foreground">
+                      2nd Unit
+                    </label>
+                    <select
+                      value={secondaryPriceUnit}
+                      onChange={(e) => setSecondaryPriceUnit(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-border bg-background px-2.5 py-2 text-xs text-foreground focus:border-brand focus:outline-none"
+                    >
+                      {STARTING_PRICE_UNIT_OPTIONS.map((unit) => (
+                        <option key={unit} value={unit}>
+                          {unit}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-foreground">
+                      2nd Label
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={40}
+                      value={secondaryPriceLabel}
+                      onChange={(e) => setSecondaryPriceLabel(e.target.value)}
+                      placeholder={marketplace === 'party' ? 'e.g. Wedding Package' : 'e.g. Non-Veg Price'}
+                      className="mt-1 w-full rounded-lg border border-border bg-background px-2.5 py-2 text-xs text-foreground focus:border-brand focus:outline-none"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
