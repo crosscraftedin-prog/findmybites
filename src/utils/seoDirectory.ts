@@ -5,6 +5,7 @@ import {
   QuickFilterTag,
   STATES_BY_COUNTRY,
   Vendor,
+  getVendorAllCategories,
   getVendorBioHandle,
 } from '../data/vendors';
 
@@ -823,15 +824,17 @@ export function generateLiveSitemapXml(
     }
     const citySlug = slugifySeoSegment(v.city);
     const areaSlug = slugifySeoSegment(v.area);
-    const catSlug = slugifySeoSegment(v.category);
-    if (citySlug && catSlug) {
-      pushUrl(`${origin}/${citySlug}/${catSlug}`, '0.8', 'weekly');
-      if (areaSlug && areaSlug !== citySlug) {
-        pushUrl(`${origin}/${citySlug}/${areaSlug}/${catSlug}`, '0.78', 'weekly');
-        if (v.category.toLowerCase().includes('baker') || v.category.toLowerCase().includes('cake')) {
-          pushUrl(`${origin}/${citySlug}/${areaSlug}/home-bakers`, '0.78', 'weekly');
-          pushUrl(`${origin}/${citySlug}/${areaSlug}/custom-cakes`, '0.78', 'weekly');
-          pushUrl(`${origin}/${citySlug}/${areaSlug}/eggless-cakes`, '0.78', 'weekly');
+    for (const catName of getVendorAllCategories(v)) {
+      const catSlug = slugifySeoSegment(catName);
+      if (citySlug && catSlug) {
+        pushUrl(`${origin}/${citySlug}/${catSlug}`, '0.8', 'weekly');
+        if (areaSlug && areaSlug !== citySlug) {
+          pushUrl(`${origin}/${citySlug}/${areaSlug}/${catSlug}`, '0.78', 'weekly');
+          if (catName.toLowerCase().includes('baker') || catName.toLowerCase().includes('cake')) {
+            pushUrl(`${origin}/${citySlug}/${areaSlug}/home-bakers`, '0.78', 'weekly');
+            pushUrl(`${origin}/${citySlug}/${areaSlug}/custom-cakes`, '0.78', 'weekly');
+            pushUrl(`${origin}/${citySlug}/${areaSlug}/eggless-cakes`, '0.78', 'weekly');
+          }
         }
       }
     }

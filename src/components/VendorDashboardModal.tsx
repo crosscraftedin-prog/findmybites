@@ -5,6 +5,7 @@ import {
   BookOpen,
   Calculator,
   Calendar,
+  Check,
   CheckCircle2,
   ChefHat,
   Copy,
@@ -40,6 +41,8 @@ import {
   X,
 } from 'lucide-react';
 import {
+  BALLOON_COLOR_PRESETS,
+  BALLOON_COLOR_QUICK_PACKS,
   BUILDER_PRESET_OPTIONS,
   BillingCycle,
   BioTheme,
@@ -54,6 +57,8 @@ import {
   CustomBuilderMode,
   DEFAULT_ORDERING_TIME_SLOTS,
   EventRequest,
+  FOOD_CATEGORIES,
+  PARTY_CATEGORIES,
   PRODUCT_DIETARY_OPTIONS,
   PRODUCT_UNIT_OPTIONS,
   PlanTier,
@@ -71,6 +76,7 @@ import {
   formatMoney,
   formatPlanPrice,
   formatProductServesLabel,
+  getBalloonColorSwatchHex,
   getBusinessPlan,
   getCustomBuilderModeConfig,
   getVendorBioHandle,
@@ -232,6 +238,8 @@ export function VendorDashboardModal({
   const [prodServes, setProdServes] = useState('1 kg');
   const [prodFoodType, setProdFoodType] = useState<ProductFoodType | ''>('');
   const [prodDietaryTags, setProdDietaryTags] = useState<string[]>([]);
+  const [prodColorOptions, setProdColorOptions] = useState<string[]>([]);
+  const [prodCustomColorInput, setProdCustomColorInput] = useState('');
   const [prodPriceLocal, setProdPriceLocal] = useState(usdToLocal(40, currency));
   const [prodDesc, setProdDesc] = useState('');
   const [prodImage, setProdImage] = useState('');
@@ -250,6 +258,8 @@ export function VendorDashboardModal({
 
   // Storefront full editor state
   const [editName, setEditName] = useState('');
+  const [editCategory, setEditCategory] = useState('');
+  const [editExtraCategories, setEditExtraCategories] = useState<string[]>([]);
   const [editTagline, setEditTagline] = useState('');
   const [editDescription, setEditDescription] = useState('');
   const [editWhatsapp, setEditWhatsapp] = useState('');
@@ -340,6 +350,12 @@ export function VendorDashboardModal({
     (v: Vendor) => {
       setEditingVendorId(v.id);
       setEditName(v.name);
+      setEditCategory(v.category);
+      setEditExtraCategories(
+        Array.isArray(v.extraCategories)
+          ? v.extraCategories.filter((c) => c && c !== v.category)
+          : []
+      );
       setEditTagline(v.tagline);
       setEditDescription(v.description);
       setEditWhatsapp(v.whatsappNumber);
@@ -653,8 +669,15 @@ export function VendorDashboardModal({
           : {}),
       };
 
+      const resolvedPrimaryCategory = editCategory.trim() || vendor.category;
+      const cleanedExtraCategories = editExtraCategories.filter(
+        (c) => c && c !== resolvedPrimaryCategory
+      );
+
       await updateVendorInCloud(vendor.id, {
         name: editName,
+        category: resolvedPrimaryCategory,
+        extraCategories: cleanedExtraCategories,
         tagline: editTagline,
         description: editDescription,
         whatsappNumber: editWhatsapp,
@@ -833,6 +856,8 @@ export function VendorDashboardModal({
     setProdServes('1 kg');
     setProdFoodType('');
     setProdDietaryTags([]);
+    setProdColorOptions([]);
+    setProdCustomColorInput('');
     setProdPriceLocal(usdToLocal(40, currency));
     setProdDesc('');
     setProdImage('');
@@ -896,6 +921,8 @@ export function VendorDashboardModal({
     setProdServes(parsed.custom);
     setProdFoodType(product.foodType || '');
     setProdDietaryTags(product.dietaryTags ? [...product.dietaryTags] : []);
+    setProdColorOptions(product.colorOptions ? [...product.colorOptions] : []);
+    setProdCustomColorInput('');
     setProdPriceLocal(Math.max(1, usdToLocal(product.priceUsd, currency)));
     setProdDesc(product.description || '');
     setProdImage(product.image || '');
@@ -1002,6 +1029,28 @@ export function VendorDashboardModal({
     );
   };
 
+  const toggleProdColorOption = (colorName: string) => {
+    setProdColorOptions((prev) =>
+      prev.some((c) => c.toLowerCase() === colorName.toLowerCase())
+        ? prev.filter((c) => c.toLowerCase() !== colorName.toLowerCase())
+        : prev.length < 24
+          ? [...prev, colorName]
+          : prev
+    );
+  };
+
+  const addCustomProdColor = () => {
+    const cleaned = prodCustomColorInput.trim().slice(0, 36);
+    if (!cleaned) return;
+    setProdColorOptions((prev) => {
+      if (prev.length >= 24 || prev.some((c) => c.toLowerCase() === cleaned.toLowerCase())) {
+        return prev;
+      }
+      return [...prev, cleaned];
+    });
+    setProdCustomColorInput('');
+  };
+
   const toggleProdBuilderPreset = (presetId: BuilderPresetId) => {
     setProdBuilderPresets((prev) =>
       prev.includes(presetId) ? prev.filter((p) => p !== presetId) : [...prev, presetId]
@@ -1080,6 +1129,7 @@ export function VendorDashboardModal({
         unitType: isPartyStore ? 'custom' : prodUnitType,
         ...(!isPartyStore && prodFoodType ? { foodType: prodFoodType } : {}),
         ...(!isPartyStore && prodDietaryTags.length > 0 ? { dietaryTags: prodDietaryTags } : {}),
+        ...(isPartyStore && prodColorOptions.length > 0 ? { colorOptions: prodColorOptions } : {}),
         ...(prodMenuSection.trim() ? { menuSection: prodMenuSection.trim().slice(0, 48) } : {}),
         ...(parsedAdvanceHours > 0 ? { advanceHours: parsedAdvanceHours } : {}),
         ...(existingProduct?.inStock === false ? { inStock: false } : {}),
@@ -1755,6 +1805,91 @@ export function VendorDashboardModal({
                                   />
                                 </div>
                               </div>
+
+                              {/* Primary + Multi-Select Categories */}
+                              {(() => {
+                                const availableCats: readonly string[] =
+                                  v.marketplace === 'party' ? PARTY_CATEGORIES : FOOD_CATEGORIES;
+                                const extraOptions = availableCats.filter(
+                                  (c) => c !== editCategory
+                                );
+                                return (
+                                  <div className="space-y-2.5 rounded-xl border border-border bg-background/80 p-3">
+                                    <div>
+                                      <label className="block text-[11px] font-semibold text-foreground">
+                                        {v.marketplace === 'party'
+                                          ? 'Primary Event Category'
+                                          : 'Primary Food Category'}
+                                      </label>
+                                      <select
+                                        value={editCategory}
+                                        onChange={(e) => {
+                                          const nextCat = e.target.value;
+                                          setEditCategory(nextCat);
+                                          setEditExtraCategories((prev) =>
+                                            prev.filter((c) => c !== nextCat)
+                                          );
+                                        }}
+                                        className="mt-1 w-full rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs text-foreground"
+                                      >
+                                        {!availableCats.includes(editCategory) && editCategory && (
+                                          <option value={editCategory}>{editCategory}</option>
+                                        )}
+                                        {availableCats.map((cat) => (
+                                          <option key={cat} value={cat}>
+                                            {cat}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                    <div>
+                                      <div className="flex flex-wrap items-center justify-between gap-1">
+                                        <label className="block text-[11px] font-semibold text-foreground">
+                                          Also List This Store Under (Multi-Select Categories)
+                                        </label>
+                                        <span className="text-[10px] font-semibold text-brand">
+                                          {editExtraCategories.length + 1}{' '}
+                                          {editExtraCategories.length === 0
+                                            ? 'category'
+                                            : 'categories'}{' '}
+                                          selected
+                                        </span>
+                                      </div>
+                                      <p className="mt-0.5 text-[10px] text-muted-foreground">
+                                        Select all services this store offers so customers find it under every selected category without creating another store.
+                                      </p>
+                                      <div className="mt-2 flex flex-wrap gap-1.5">
+                                        {extraOptions.map((cat) => {
+                                          const checked = editExtraCategories.includes(cat);
+                                          return (
+                                            <button
+                                              key={cat}
+                                              type="button"
+                                              onClick={() =>
+                                                setEditExtraCategories((prev) =>
+                                                  prev.includes(cat)
+                                                    ? prev.filter((item) => item !== cat)
+                                                    : [...prev, cat]
+                                                )
+                                              }
+                                              className={`inline-flex cursor-pointer items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                                                checked
+                                                  ? 'border-brand bg-brand text-brand-foreground shadow-xs'
+                                                  : 'border-border bg-card text-foreground hover:border-brand/60 hover:bg-brand-soft/40'
+                                              }`}
+                                            >
+                                              {checked && (
+                                                <Check className="size-3 shrink-0" aria-hidden="true" />
+                                              )}
+                                              {cat}
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
 
                               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                                 <div>
@@ -2906,6 +3041,28 @@ export function VendorDashboardModal({
                                               ))}
                                             </div>
                                           )}
+                                          {p.colorOptions && p.colorOptions.length > 0 && (
+                                            <div className="mt-1 flex flex-wrap items-center gap-1">
+                                              {p.colorOptions.slice(0, 6).map((colorName) => (
+                                                <span
+                                                  key={colorName}
+                                                  className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-1.5 py-0.5 text-[10px] font-semibold text-foreground"
+                                                >
+                                                  <span
+                                                    className="size-2.5 shrink-0 rounded-full border border-black/20"
+                                                    style={{ backgroundColor: getBalloonColorSwatchHex(colorName) }}
+                                                    aria-hidden="true"
+                                                  />
+                                                  {colorName}
+                                                </span>
+                                              ))}
+                                              {p.colorOptions.length > 6 && (
+                                                <span className="text-[10px] font-bold text-brand">
+                                                  +{p.colorOptions.length - 6} colors
+                                                </span>
+                                              )}
+                                            </div>
+                                          )}
                                         </div>
                                       </div>
 
@@ -3144,6 +3301,123 @@ export function VendorDashboardModal({
                                     />
                                   </div>
                                 </div>
+
+                                {/* Balloon / Decor Color Options (Event & Party Stores) */}
+                                {v.marketplace === 'party' && (
+                                  <div className="space-y-2.5 rounded-xl border border-brand-border/70 bg-background/85 p-3">
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                      <div>
+                                        <p className="text-[11px] font-extrabold text-foreground">
+                                          Balloon / Decor Color Options (Optional)
+                                        </p>
+                                        <p className="text-[10px] text-muted-foreground">
+                                          Choose the balloon colors customers can select when booking this decor package.
+                                        </p>
+                                      </div>
+                                      <div className="flex flex-wrap items-center gap-1">
+                                        {BALLOON_COLOR_QUICK_PACKS.map((pack) => (
+                                          <button
+                                            key={pack.label}
+                                            type="button"
+                                            onClick={() =>
+                                              setProdColorOptions((prev) =>
+                                                Array.from(new Set([...prev, ...pack.colors])).slice(0, 24)
+                                              )
+                                            }
+                                            className="cursor-pointer rounded-md bg-brand/10 px-2 py-0.5 text-[10px] font-bold text-brand transition-colors hover:bg-brand hover:text-brand-foreground"
+                                          >
+                                            + {pack.label}
+                                          </button>
+                                        ))}
+                                        {prodColorOptions.length > 0 && (
+                                          <button
+                                            type="button"
+                                            onClick={() => setProdColorOptions([])}
+                                            className="cursor-pointer rounded-md border border-border px-2 py-0.5 text-[10px] font-semibold text-muted-foreground hover:border-rose-500/50 hover:text-rose-600"
+                                          >
+                                            Clear ({prodColorOptions.length})
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    <div className="flex flex-wrap gap-1.5">
+                                      {BALLOON_COLOR_PRESETS.map((preset) => {
+                                        const selected = prodColorOptions.some(
+                                          (c) => c.toLowerCase() === preset.name.toLowerCase()
+                                        );
+                                        return (
+                                          <button
+                                            key={preset.name}
+                                            type="button"
+                                            onClick={() => toggleProdColorOption(preset.name)}
+                                            className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                                              selected
+                                                ? 'border-brand bg-brand text-brand-foreground shadow-xs'
+                                                : 'border-border bg-card text-foreground hover:border-brand/60'
+                                            }`}
+                                          >
+                                            <span
+                                              className="size-3 shrink-0 rounded-full border border-black/20 shadow-2xs"
+                                              style={{ backgroundColor: preset.hex }}
+                                              aria-hidden="true"
+                                            />
+                                            <span>{preset.name}</span>
+                                            {selected && <Check className="size-3 shrink-0" aria-hidden="true" />}
+                                          </button>
+                                        );
+                                      })}
+                                      {prodColorOptions
+                                        .filter(
+                                          (c) =>
+                                            !BALLOON_COLOR_PRESETS.some(
+                                              (p) => p.name.toLowerCase() === c.toLowerCase()
+                                            )
+                                        )
+                                        .map((customColor) => (
+                                          <button
+                                            key={customColor}
+                                            type="button"
+                                            onClick={() => toggleProdColorOption(customColor)}
+                                            className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-brand bg-brand px-2.5 py-1 text-[11px] font-semibold text-brand-foreground shadow-xs"
+                                          >
+                                            <span
+                                              className="size-3 shrink-0 rounded-full border border-white/40"
+                                              style={{ backgroundColor: getBalloonColorSwatchHex(customColor) }}
+                                              aria-hidden="true"
+                                            />
+                                            <span>{customColor}</span>
+                                            <X className="size-3 shrink-0" aria-hidden="true" />
+                                          </button>
+                                        ))}
+                                    </div>
+
+                                    <div className="flex items-center gap-1.5 pt-0.5">
+                                      <input
+                                        type="text"
+                                        value={prodCustomColorInput}
+                                        onChange={(e) => setProdCustomColorInput(e.target.value)}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            addCustomProdColor();
+                                          }
+                                        }}
+                                        maxLength={36}
+                                        placeholder="Add custom balloon color (e.g. Confetti Gold, Teal, Burgundy)"
+                                        className="min-w-0 flex-1 rounded-lg border border-border bg-card px-2.5 py-1.5 text-[11px] text-foreground focus:border-brand focus:outline-none"
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={addCustomProdColor}
+                                        disabled={!prodCustomColorInput.trim() || prodColorOptions.length >= 24}
+                                        className="cursor-pointer rounded-lg border border-brand bg-brand-soft px-2.5 py-1.5 text-[11px] font-bold text-brand transition-colors hover:bg-brand hover:text-brand-foreground disabled:opacity-50"
+                                      >
+                                        + Add Color
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
 
                                 {v.marketplace !== 'party' && (
                                   prodIsPackage ? (

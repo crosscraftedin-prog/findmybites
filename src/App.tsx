@@ -124,12 +124,14 @@ import {
   Vendor,
   formatPlanPrice,
   getBusinessPlan,
+  getVendorAllCategories,
   getVendorBioHandle,
   getVendorQuickTags,
   haversineKm,
   planRankWeight,
   vendorCoversLocationQuery,
   vendorCoversState,
+  vendorMatchesCategory,
 } from './data/vendors';
 import { ADMIN_EMAIL, auth, formatUserDisplayLabel, signOutUser } from './firebase';
 import { useSeoMeta } from './hooks/useSeoMeta';
@@ -1260,7 +1262,9 @@ export default function App() {
   const displayedCategoryCards = useMemo(() => {
     const countMap = new Map<string, number>();
     for (const v of countryScopedAllVendors) {
-      countMap.set(v.category, (countMap.get(v.category) ?? 0) + 1);
+      for (const cat of getVendorAllCategories(v)) {
+        countMap.set(cat, (countMap.get(cat) ?? 0) + 1);
+      }
     }
     const source =
       categoryTab === 'all'
@@ -1422,7 +1426,9 @@ export default function App() {
     for (const v of activeVendorPool) {
       if (selectedCountry !== 'All' && v.country !== selectedCountry) continue;
       total += 1;
-      map.set(v.category, (map.get(v.category) ?? 0) + 1);
+      for (const cat of getVendorAllCategories(v)) {
+        map.set(cat, (map.get(cat) ?? 0) + 1);
+      }
     }
     return { map, total };
   }, [activeVendorPool, selectedCountry]);
@@ -1457,7 +1463,7 @@ export default function App() {
       : [];
 
     const list = activeVendorPool.filter((v) => {
-      if (selectedCategory !== 'All' && v.category !== selectedCategory) return false;
+      if (selectedCategory !== 'All' && !vendorMatchesCategory(v, selectedCategory)) return false;
       // Strict country isolation: never mix Pakistan/Nepal/UAE/Sri Lanka/Bangladesh into India or vice versa
       if (selectedCountry !== 'All' && v.country !== selectedCountry) return false;
       if (selectedState !== 'All' && !vendorCoversState(v, selectedState, selectedCountry)) {
@@ -1504,7 +1510,7 @@ export default function App() {
         const stateExtras = v.allStatesCoverage
           ? `pan-india all states ${v.country}`
           : (v.serviceStates || []).join(' ');
-        const hay = `${v.name} ${v.category} ${v.city} ${v.area} ${v.state} ${stateExtras} ${v.country} ${v.tagline} ${v.description || ''} ${v.specialties.join(' ')} ${prodHay}`.toLowerCase();
+        const hay = `${v.name} ${getVendorAllCategories(v).join(' ')} ${v.city} ${v.area} ${v.state} ${stateExtras} ${v.country} ${v.tagline} ${v.description || ''} ${v.specialties.join(' ')} ${prodHay}`.toLowerCase();
         if (queryTokens.length > 0) {
           const allTokensMatch = queryTokens.every((tok) => {
             if (hay.includes(tok)) return true;

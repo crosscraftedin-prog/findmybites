@@ -685,6 +685,23 @@ async function normalizeProductsForStorage(
       if (typeof p.minOrderQty === 'number' && Number.isFinite(p.minOrderQty) && p.minOrderQty > 0) {
         out.minOrderQty = Math.min(5000, Math.round(p.minOrderQty));
       }
+      if (Array.isArray(p.colorOptions)) {
+        const seenColors = new Set<string>();
+        const cleanedColors: string[] = [];
+        for (const c of p.colorOptions) {
+          if (typeof c !== 'string') continue;
+          const clean = c.trim().slice(0, 36);
+          if (!clean) continue;
+          const key = clean.toLowerCase();
+          if (seenColors.has(key)) continue;
+          seenColors.add(key);
+          cleanedColors.push(clean);
+          if (cleanedColors.length >= 24) break;
+        }
+        if (cleanedColors.length > 0) {
+          out.colorOptions = cleanedColors;
+        }
+      }
       return out;
     })
   );
@@ -693,6 +710,25 @@ async function normalizeProductsForStorage(
 const GBP_MAPS_LINK_ID = '__gbp_maps__';
 const GBP_REVIEW_LINK_ID = '__gbp_review__';
 const ORDERING_CONFIG_LINK_ID = '__fmb_ordering_config__';
+const EXTRA_CATEGORIES_LINK_ID = '__fmb_extra_categories__';
+
+function sanitizeExtraCategories(raw: unknown, primaryCategory?: string): string[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const primaryLower = (primaryCategory || '').trim().toLowerCase();
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of raw) {
+    if (typeof item !== 'string') continue;
+    const clean = item.trim().slice(0, 80);
+    if (!clean) continue;
+    const key = clean.toLowerCase();
+    if (key === primaryLower || seen.has(key)) continue;
+    seen.add(key);
+    out.push(clean);
+    if (out.length >= 15) break;
+  }
+  return out.length > 0 ? out : undefined;
+}
 
 interface StoredOrderingConfig {
   enabled: boolean;
@@ -815,11 +851,13 @@ function extractGbpAndCustomLinks(raw: unknown): {
   googleMapsUrl?: string;
   googleReviewUrl?: string;
   orderingConfig?: StoredOrderingConfig;
+  extraCategories?: string[];
 } {
   if (!Array.isArray(raw)) return {};
   let googleMapsUrl: string | undefined;
   let googleReviewUrl: string | undefined;
   let orderingConfig: StoredOrderingConfig | undefined;
+  let extraCategories: string[] | undefined;
   const regular: Array<{ id: string; title: string; url: string; badge?: string }> = [];
   for (const item of raw) {
     if (!item || typeof item !== 'object') continue;
@@ -838,6 +876,10 @@ function extractGbpAndCustomLinks(raw: unknown): {
       orderingConfig = sanitizeOrderingConfig(obj.config);
       continue;
     }
+    if (id === EXTRA_CATEGORIES_LINK_ID) {
+      extraCategories = sanitizeExtraCategories(obj.categories);
+      continue;
+    }
     if (url && typeof obj.title === 'string' && obj.title.trim()) {
       regular.push({
         id: id || `link-${regular.length + 1}`,
@@ -852,6 +894,7 @@ function extractGbpAndCustomLinks(raw: unknown): {
     googleMapsUrl,
     googleReviewUrl,
     orderingConfig,
+    extraCategories,
   };
 }
 
@@ -860,7 +903,9 @@ function buildStoredCustomLinks(
   nextCustomLinks: unknown,
   nextGoogleMapsUrl: unknown,
   nextGoogleReviewUrl: unknown,
-  nextOrderingConfig?: unknown
+  nextOrderingConfig?: unknown,
+  nextExtraCategories?: unknown,
+  primaryCategory?: string
 ): Array<Record<string, unknown>> {
   const existing = extractGbpAndCustomLinks(existingRaw);
   const regularSource = Array.isArray(nextCustomLinks)
@@ -871,7 +916,12 @@ function buildStoredCustomLinks(
     const item = regularSource[idx];
     const l = (item && typeof item === 'object' ? item : {}) as Record<string, unknown>;
     const id = sanitizeId(l.id || `link-${idx + 1}`, 'link');
-    if (id === GBP_MAPS_LINK_ID || id === GBP_REVIEW_LINK_ID || id === ORDERING_CONFIG_LINK_ID) {
+    if (
+      id === GBP_MAPS_LINK_ID ||
+      id === GBP_REVIEW_LINK_ID ||
+      id === ORDERING_CONFIG_LINK_ID ||
+      id === EXTRA_CATEGORIES_LINK_ID
+    ) {
       continue;
     }
     const safeUrl = sanitizeSafeHttpUrl(l.url);
@@ -899,6 +949,10 @@ function buildStoredCustomLinks(
     nextOrderingConfig !== undefined
       ? sanitizeOrderingConfig(nextOrderingConfig)
       : existing.orderingConfig;
+  const resolvedExtraCategories =
+    nextExtraCategories !== undefined
+      ? sanitizeExtraCategories(nextExtraCategories, primaryCategory)
+      : sanitizeExtraCategories(existing.extraCategories, primaryCategory);
 
   if (resolvedMaps) {
     regular.push({
@@ -922,13 +976,22 @@ function buildStoredCustomLinks(
       config: resolvedOrdering,
     });
   }
+  if (resolvedExtraCategories && resolvedExtraCategories.length > 0) {
+    regular.push({
+      id: EXTRA_CATEGORIES_LINK_ID,
+      title: 'Extra Categories',
+      url: '',
+      categories: resolvedExtraCategories,
+    });
+  }
   return regular;
 }
 
 function rowToVendor(row: Record<string, unknown>) {
-  const { customLinks, googleMapsUrl, googleReviewUrl, orderingConfig } = extractGbpAndCustomLinks(
-    row.custom_links
-  );
+  const { customLinks, googleMapsUrl, googleReviewUrl, orderingConfig, extraCategories } =
+    extractGbpAndCustomLinks(row.custom_links);
+  const primaryCategory = typeof row.category === 'string' ? row.category : 'Bakers & Cakes';
+  const cleanedExtraCategories = sanitizeExtraCategories(extraCategories, primaryCategory);
   return {
     id: String(row.id || ''),
     ownerId: typeof row.owner_id === 'string' ? row.owner_id : undefined,
@@ -937,7 +1000,10 @@ function rowToVendor(row: Record<string, unknown>) {
     slug: typeof row.slug === 'string' ? row.slug : sanitizeSlug(row.id),
     name: typeof row.name === 'string' ? row.name : 'Vendor',
     marketplace: row.marketplace === 'party' ? 'party' : 'food',
-    category: typeof row.category === 'string' ? row.category : 'Bakers & Cakes',
+    category: primaryCategory,
+    ...(cleanedExtraCategories && cleanedExtraCategories.length > 0
+      ? { extraCategories: cleanedExtraCategories }
+      : {}),
     country: typeof row.country === 'string' ? row.country : 'India',
     state: typeof row.state === 'string' ? row.state : 'Maharashtra',
     city: typeof row.city === 'string' ? row.city : 'Mumbai',
@@ -1408,7 +1474,9 @@ export function createSupabaseApiRouter(): MicroRouter {
           vendor.customLinks,
           vendor.googleMapsUrl,
           vendor.googleReviewUrl,
-          vendor.orderingConfig
+          vendor.orderingConfig,
+          vendor.extraCategories,
+          clampStr(vendor.category, 2, 80, 'Bakers & Cakes')
         ),
         claim_status: 'none',
         created_at: nowIso,
@@ -1432,7 +1500,7 @@ export function createSupabaseApiRouter(): MicroRouter {
 
       const { data: existing, error: fetchErr } = await supabase
         .from('vendors')
-        .select('id, owner_id, status, plan_tier, custom_links')
+        .select('id, owner_id, status, plan_tier, category, custom_links')
         .eq('id', vendorId)
         .maybeSingle();
 
@@ -1450,6 +1518,9 @@ export function createSupabaseApiRouter(): MicroRouter {
       };
 
       if (updates.name !== undefined) patch.name = clampStr(updates.name, 2, 100, 'Vendor');
+      if (updates.category !== undefined) {
+        patch.category = clampStr(updates.category, 2, 80, 'Bakers & Cakes');
+      }
       if (updates.slug !== undefined) {
         patch.slug = await ensureUniqueVendorSlug(supabase, updates.slug, vendorId);
       }
@@ -1484,14 +1555,21 @@ export function createSupabaseApiRouter(): MicroRouter {
         Array.isArray(updates.customLinks) ||
         updates.googleMapsUrl !== undefined ||
         updates.googleReviewUrl !== undefined ||
-        updates.orderingConfig !== undefined
+        updates.orderingConfig !== undefined ||
+        updates.extraCategories !== undefined ||
+        updates.category !== undefined
       ) {
+        const resolvedPrimaryCategory = String(
+          patch.category || existing.category || 'Bakers & Cakes'
+        );
         patch.custom_links = buildStoredCustomLinks(
           existing.custom_links,
           updates.customLinks,
           updates.googleMapsUrl,
           updates.googleReviewUrl,
-          updates.orderingConfig
+          updates.orderingConfig,
+          updates.extraCategories,
+          resolvedPrimaryCategory
         );
       }
       if (updates.whatsappNumber !== undefined)
@@ -2626,7 +2704,9 @@ export function createSupabaseApiRouter(): MicroRouter {
           vendor.customLinks,
           vendor.googleMapsUrl,
           vendor.googleReviewUrl,
-          vendor.orderingConfig
+          vendor.orderingConfig,
+          vendor.extraCategories,
+          clampStr(vendor.category, 2, 80, 'Bakers & Cakes')
         ),
         claim_status: 'pending',
         created_at: nowIso,

@@ -21,6 +21,7 @@ import {
   buildWhatsAppUrl,
   formatMoney,
   getCustomBuilderModeConfig,
+  getVendorAllCategories,
   getVendorCoverageLabel,
   getVendorStartingPriceUnit,
   isCustomBuilderActive,
@@ -278,21 +279,37 @@ export function VendorCard({
             </div>
           )}
 
-          <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
-            <span className="truncate font-medium text-foreground">
-              {vendor.category}
-              {vendor.products.length > 0
-                ? ` · ${vendor.products.length} ${
-                    vendor.marketplace === 'party'
-                      ? vendor.products.length === 1
-                        ? 'package'
-                        : 'packages'
-                      : vendor.products.length === 1
-                        ? 'product'
-                        : 'products'
-                  }`
-                : ''}
-            </span>
+          <div className="mt-2 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+            {(() => {
+              const allCats = getVendorAllCategories(vendor);
+              const extraCount = allCats.length - 1;
+              return (
+                <span
+                  className="flex min-w-0 items-center gap-1.5 font-medium text-foreground"
+                  title={allCats.join(' · ')}
+                >
+                  <span className="truncate">
+                    {vendor.category}
+                    {vendor.products.length > 0
+                      ? ` · ${vendor.products.length} ${
+                          vendor.marketplace === 'party'
+                            ? vendor.products.length === 1
+                              ? 'package'
+                              : 'packages'
+                            : vendor.products.length === 1
+                              ? 'product'
+                              : 'products'
+                        }`
+                      : ''}
+                  </span>
+                  {extraCount > 0 && (
+                    <span className="shrink-0 rounded-md border border-brand-border bg-brand-soft px-1.5 py-0.5 text-[10px] font-bold text-brand">
+                      +{extraCount} more
+                    </span>
+                  )}
+                </span>
+              );
+            })()}
             <span className="inline-flex items-center gap-1 shrink-0">
               <Star className="size-3.5 fill-amber-400 text-amber-400" aria-hidden="true" />
               <span className="font-mono font-semibold tabular-nums text-foreground">

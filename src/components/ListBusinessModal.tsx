@@ -19,6 +19,8 @@ import {
   X,
 } from 'lucide-react';
 import {
+  BALLOON_COLOR_PRESETS,
+  BALLOON_COLOR_QUICK_PACKS,
   BUILDER_PRESET_OPTIONS,
   BillingCycle,
   BuilderPresetId,
@@ -59,6 +61,7 @@ import {
   VendorProduct,
   formatPlanPrice,
   formatProductServesLabel,
+  getBalloonColorSwatchHex,
   getCustomBuilderModeConfig,
   isBuilderSuggestedCategory,
   localToUsd,
@@ -93,6 +96,7 @@ interface DraftProduct {
   serves: string;
   foodType: ProductFoodType | '';
   dietaryTags: string[];
+  colorOptions: string[];
   builderSection: string;
   builderPresets: BuilderPresetId[];
   priceLocal: number;
@@ -160,6 +164,7 @@ export function ListBusinessModal({
   const [marketplace, setMarketplace] = useState<'food' | 'party'>('food');
   const [name, setName] = useState('');
   const [category, setCategory] = useState<string>(FOOD_CATEGORIES[0]);
+  const [extraCategories, setExtraCategories] = useState<string[]>([]);
   const [country, setCountry] = useState<Exclude<LaunchCountry, 'All'>>(defaultCountry);
   const [formCurrency, setFormCurrency] = useState<CurrencyCode>(
     COUNTRY_DEFAULT_CURRENCY[defaultCountry] || currency || 'INR'
@@ -216,6 +221,7 @@ export function ListBusinessModal({
       serves: '1 kg',
       foodType: '',
       dietaryTags: [],
+      colorOptions: [],
       builderSection: '',
       builderPresets: [],
       priceLocal: usdToLocal(35, currency || 'INR'),
@@ -247,6 +253,7 @@ export function ListBusinessModal({
 
   useEffect(() => {
     setCategory(marketplace === 'food' ? FOOD_CATEGORIES[0] : PARTY_CATEGORIES[0]);
+    setExtraCategories([]);
   }, [marketplace]);
 
   useEffect(() => {
@@ -477,6 +484,38 @@ export function ListBusinessModal({
     );
   };
 
+  const toggleDraftColorOption = (id: string, colorName: string) => {
+    setProducts((prev) =>
+      prev.map((p) =>
+        p.id === id
+          ? {
+              ...p,
+              colorOptions: p.colorOptions.some(
+                (c) => c.toLowerCase() === colorName.toLowerCase()
+              )
+                ? p.colorOptions.filter((c) => c.toLowerCase() !== colorName.toLowerCase())
+                : p.colorOptions.length < 24
+                  ? [...p.colorOptions, colorName]
+                  : p.colorOptions,
+            }
+          : p
+      )
+    );
+  };
+
+  const applyDraftColorPack = (id: string, packColors: ReadonlyArray<string>) => {
+    setProducts((prev) =>
+      prev.map((p) =>
+        p.id === id
+          ? {
+              ...p,
+              colorOptions: Array.from(new Set([...p.colorOptions, ...packColors])).slice(0, 24),
+            }
+          : p
+      )
+    );
+  };
+
   const addDraftProduct = () => {
     if (products.length >= 25) return;
     setProducts((prev) => [
@@ -489,6 +528,7 @@ export function ListBusinessModal({
         serves: customBuilderEnabled ? '1 pc' : '1 kg',
         foodType: '',
         dietaryTags: [],
+        colorOptions: [],
         builderSection: '',
         builderPresets: [],
         priceLocal: usdToLocal(customBuilderEnabled ? 2 : 50, formCurrency),
@@ -602,8 +642,11 @@ export function ListBusinessModal({
         serves: formattedServes,
         ...(p.unitType !== 'custom' ? { unitQuantity: p.unitQuantity.trim() || '1' } : {}),
         unitType: p.unitType,
-        ...(p.foodType ? { foodType: p.foodType } : {}),
-        ...(p.dietaryTags.length > 0 ? { dietaryTags: p.dietaryTags } : {}),
+        ...(marketplace === 'food' && p.foodType ? { foodType: p.foodType } : {}),
+        ...(marketplace === 'food' && p.dietaryTags.length > 0 ? { dietaryTags: p.dietaryTags } : {}),
+        ...(marketplace === 'party' && p.colorOptions.length > 0
+          ? { colorOptions: p.colorOptions }
+          : {}),
         ...(isPaidPlan && customBuilderEnabled && p.builderSection.trim()
           ? { builderSection: p.builderSection.trim().slice(0, 60) }
           : {}),
@@ -639,6 +682,9 @@ export function ListBusinessModal({
       name: name.trim(),
       marketplace,
       category,
+      ...(extraCategories.filter((c) => c && c !== category).length > 0
+        ? { extraCategories: extraCategories.filter((c) => c && c !== category) }
+        : {}),
       city: city.trim(),
       state: stateName,
       area: area.trim() || city.trim(),
@@ -710,7 +756,12 @@ export function ListBusinessModal({
       serviceStates: allStatesCoverage
         ? []
         : serviceStates.filter((s) => s && s !== stateName),
-      specialties: [category, 'Direct WhatsApp Booking', 'Custom Orders'],
+      specialties: [
+        category,
+        ...extraCategories.filter((c) => c && c !== category),
+        'Direct WhatsApp Booking',
+        'Custom Orders',
+      ],
       image: coverImg,
       logo: logoDataUrl || undefined,
       products: finalProducts,
@@ -720,6 +771,7 @@ export function ListBusinessModal({
     try {
       await onAddVendor(newVendor);
       setName('');
+      setExtraCategories([]);
       setArea('');
       setCustomCityMode(false);
       setExtraCities('');
@@ -743,6 +795,7 @@ export function ListBusinessModal({
           serves: '1 kg',
           foodType: '',
           dietaryTags: [],
+          colorOptions: [],
           builderSection: '',
           builderPresets: [],
           priceLocal: usdToLocal(35, formCurrency),
@@ -958,7 +1011,7 @@ export function ListBusinessModal({
               </div>
               <div>
                 <label htmlFor="biz-cat" className="block text-xs font-semibold text-foreground">
-                  Category
+                  Primary Category
                 </label>
                 <select
                   id="biz-cat"
@@ -966,6 +1019,7 @@ export function ListBusinessModal({
                   onChange={(e) => {
                     const nextCat = e.target.value;
                     setCategory(nextCat);
+                    setExtraCategories((prev) => prev.filter((c) => c !== nextCat));
                     const nextUnit = suggestStartingPriceUnitForCategory(nextCat, marketplace);
                     setStartingPriceUnit(nextUnit);
                     setSecondaryPriceUnit(nextUnit);
@@ -981,6 +1035,49 @@ export function ListBusinessModal({
                     </option>
                   ))}
                 </select>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-border bg-muted/25 p-3.5">
+              <div className="flex flex-wrap items-center justify-between gap-1">
+                <label className="block text-xs font-semibold text-foreground">
+                  Also List Under Additional Categories (Optional)
+                </label>
+                <span className="text-[11px] font-semibold text-brand">
+                  {extraCategories.length + 1}{' '}
+                  {extraCategories.length === 0 ? 'category' : 'categories'} selected
+                </span>
+              </div>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                Offer multiple services? Select every matching category so customers find your storefront across all of them.
+              </p>
+              <div className="mt-2.5 flex flex-wrap gap-1.5">
+                {categories
+                  .filter((cat) => cat !== category)
+                  .map((cat) => {
+                    const selected = extraCategories.includes(cat);
+                    return (
+                      <button
+                        key={cat}
+                        type="button"
+                        onClick={() =>
+                          setExtraCategories((prev) =>
+                            prev.includes(cat)
+                              ? prev.filter((item) => item !== cat)
+                              : [...prev, cat]
+                          )
+                        }
+                        className={`inline-flex cursor-pointer items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                          selected
+                            ? 'border-brand bg-brand text-brand-foreground shadow-xs'
+                            : 'border-border bg-background text-foreground hover:border-brand/60 hover:bg-brand-soft/40'
+                        }`}
+                      >
+                        {selected && <Check className="size-3 shrink-0" aria-hidden="true" />}
+                        {cat}
+                      </button>
+                    );
+                  })}
               </div>
             </div>
 
@@ -1739,7 +1836,63 @@ export function ListBusinessModal({
                         />
                       </div>
 
-                      {/* Veg / Non-Veg + Sweetener & Dietary Options */}
+                      {/* Veg / Non-Veg (Food Stores) OR Balloon Color Options (Event / Party Stores) */}
+                      {marketplace === 'party' ? (
+                        <div className="space-y-1.5 rounded-lg border border-brand-border/60 bg-brand-soft/15 p-2.5">
+                          <div className="flex flex-wrap items-center justify-between gap-1">
+                            <span className="text-[11px] font-bold text-foreground">
+                              Balloon / Decor Color Options (Optional)
+                            </span>
+                            <div className="flex flex-wrap items-center gap-1">
+                              {BALLOON_COLOR_QUICK_PACKS.map((pack) => (
+                                <button
+                                  key={pack.label}
+                                  type="button"
+                                  onClick={() => applyDraftColorPack(prod.id, pack.colors)}
+                                  className="cursor-pointer rounded bg-brand/10 px-1.5 py-0.5 text-[10px] font-bold text-brand hover:bg-brand hover:text-brand-foreground"
+                                >
+                                  + {pack.label}
+                                </button>
+                              ))}
+                              {prod.colorOptions.length > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => updateProductField(prod.id, 'colorOptions', [])}
+                                  className="cursor-pointer rounded border border-border px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground hover:text-rose-600"
+                                >
+                                  Clear
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap gap-1">
+                            {BALLOON_COLOR_PRESETS.map((preset) => {
+                              const selected = prod.colorOptions.some(
+                                (c) => c.toLowerCase() === preset.name.toLowerCase()
+                              );
+                              return (
+                                <button
+                                  key={preset.name}
+                                  type="button"
+                                  onClick={() => toggleDraftColorOption(prod.id, preset.name)}
+                                  className={`inline-flex cursor-pointer items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold transition-colors ${
+                                    selected
+                                      ? 'border-brand bg-brand text-brand-foreground'
+                                      : 'border-border bg-card text-foreground hover:border-brand/60'
+                                  }`}
+                                >
+                                  <span
+                                    className="size-2.5 shrink-0 rounded-full border border-black/20"
+                                    style={{ backgroundColor: getBalloonColorSwatchHex(preset.name) }}
+                                    aria-hidden="true"
+                                  />
+                                  {preset.name}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ) : (
                       <div className="flex flex-wrap items-center gap-1.5">
                         <button
                           type="button"
@@ -1796,6 +1949,7 @@ export function ListBusinessModal({
                           );
                         })}
                       </div>
+                      )}
 
                       {marketplace === 'food' && isPaidPlan && customBuilderEnabled && (() => {
                         const modeCfg = getCustomBuilderModeConfig(customBuilderMode);

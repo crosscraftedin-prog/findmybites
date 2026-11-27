@@ -46,6 +46,7 @@ import {
   formatMoney,
   generateTransferPasscode,
   getCustomBuilderModeConfig,
+  getVendorAllCategories,
   getVendorCoverageLabel,
   isPaidPlanTier,
   normalizePasscode,
@@ -412,7 +413,7 @@ export function AdminApprovalsTab({
       if (statusFilter === 'paused' && v.status !== 'paused') return false;
       if (statusFilter === 'christmas' && !v.christmasSpecial) return false;
       if (q) {
-        const hay = `${v.name} ${v.city} ${v.area} ${v.category} ${v.whatsappNumber}`.toLowerCase();
+        const hay = `${v.name} ${v.city} ${v.area} ${getVendorAllCategories(v).join(' ')} ${v.whatsappNumber}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -671,7 +672,7 @@ export function AdminApprovalsTab({
                       <span className="inline-flex items-center gap-1">
                         <MapPin className="size-3" /> {v.area}, {v.city}, {v.country}
                       </span>
-                      <span>{v.category}</span>
+                      <span>{getVendorAllCategories(v).join(' · ')}</span>
                       <span>
                         {v.products.length} products · From {formatMoney(v.startingPriceUsd, currency)}
                       </span>

@@ -258,6 +258,7 @@ export function AdminPanelModal({
   const [marketplace, setMarketplace] = useState<'food' | 'party'>('food');
   const [name, setName] = useState('');
   const [category, setCategory] = useState<string>(FOOD_CATEGORIES[0]);
+  const [extraCategories, setExtraCategories] = useState<string[]>([]);
   const [country, setCountry] = useState<Exclude<LaunchCountry, 'All'>>('India');
   const [stateName, setStateName] = useState('Maharashtra');
   const [city, setCity] = useState('Mumbai');
@@ -432,6 +433,7 @@ export function AdminPanelModal({
     const nextIsParty = nextMarket === 'party';
     const nextCat = nextIsParty ? PARTY_CATEGORIES[0] : FOOD_CATEGORIES[0];
     setCategory(nextCat);
+    setExtraCategories([]);
     const nextUnit = suggestStartingPriceUnitForCategory(nextCat, nextMarket);
     setStartingPriceUnit(nextUnit);
     setSecondaryPriceUnit(nextUnit);
@@ -471,6 +473,7 @@ export function AdminPanelModal({
 
   const resetBuilder = () => {
     setName('');
+    setExtraCategories([]);
     setArea('');
     setCustomCityMode(false);
     setExtraCities('');
@@ -549,6 +552,9 @@ export function AdminPanelModal({
       name: trimmedName,
       marketplace: isParty ? 'party' : 'food',
       category,
+      ...(extraCategories.filter((c) => c && c !== category).length > 0
+        ? { extraCategories: extraCategories.filter((c) => c && c !== category) }
+        : {}),
       country,
       state: stateName,
       city,
@@ -633,7 +639,7 @@ export function AdminPanelModal({
       serviceStates: allStatesCoverage
         ? []
         : serviceStates.filter((s) => s && s !== stateName),
-      specialties: [category],
+      specialties: [category, ...extraCategories.filter((c) => c && c !== category)],
       image: coverImage || categoryDefaultImg,
       products: [],
       reviews: [],
@@ -1142,13 +1148,14 @@ export function AdminPanelModal({
 
                     <div>
                       <label className="mb-1 block text-xs font-bold text-foreground">
-                        {isParty ? 'Event Category *' : 'Food Category *'}
+                        {isParty ? 'Primary Event Category *' : 'Primary Food Category *'}
                       </label>
                       <select
                         value={category}
                         onChange={(e) => {
                           const nextCat = e.target.value;
                           setCategory(nextCat);
+                          setExtraCategories((prev) => prev.filter((c) => c !== nextCat));
                           const suggestedUnit = suggestStartingPriceUnitForCategory(
                             nextCat,
                             marketplace
@@ -1175,6 +1182,49 @@ export function AdminPanelModal({
                           </option>
                         ))}
                       </select>
+                    </div>
+
+                    <div className="sm:col-span-2 rounded-xl border border-border bg-muted/25 p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-1">
+                        <label className="block text-xs font-bold text-foreground">
+                          Also List Store Under (Optional — Multi-Select Categories)
+                        </label>
+                        <span className="text-[11px] font-semibold text-brand">
+                          {extraCategories.length + 1}{' '}
+                          {extraCategories.length === 0 ? 'category' : 'categories'} selected
+                        </span>
+                      </div>
+                      <p className="mt-0.5 text-[11px] text-muted-foreground">
+                        Pick any additional {isParty ? 'event' : 'food'} categories so this single storefront appears in every selected category.
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {availableCategories
+                          .filter((c) => c !== category)
+                          .map((c) => {
+                            const selected = extraCategories.includes(c);
+                            return (
+                              <button
+                                key={c}
+                                type="button"
+                                onClick={() =>
+                                  setExtraCategories((prev) =>
+                                    prev.includes(c)
+                                      ? prev.filter((item) => item !== c)
+                                      : [...prev, c]
+                                  )
+                                }
+                                className={`inline-flex cursor-pointer items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                                  selected
+                                    ? 'border-brand bg-brand text-brand-foreground shadow-xs'
+                                    : 'border-border bg-background text-foreground hover:border-brand/60 hover:bg-brand-soft/40'
+                                }`}
+                              >
+                                {selected && <Check className="size-3 shrink-0" aria-hidden="true" />}
+                                {c}
+                              </button>
+                            );
+                          })}
+                      </div>
                     </div>
 
                     <div>

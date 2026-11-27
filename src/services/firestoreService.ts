@@ -245,6 +245,8 @@ export async function updateVendorInCloud(
   vendorId: string,
   updates: Partial<{
     name: string;
+    category: string;
+    extraCategories: string[];
     slug: string;
     tagline: string;
     description: string;

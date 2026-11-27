@@ -5,6 +5,7 @@ import {
   LaunchCountry,
   SiteSettings,
   Vendor,
+  getVendorAllCategories,
   usdToLocal,
   vendorCoversState,
 } from '../data/vendors';
@@ -145,13 +146,16 @@ export function useSeoMeta({
       description =
         activeVendor.seoDescription?.trim() ||
         `${activeVendor.tagline} ${isPartyVendor ? 'Book' : 'Order from'} ${activeVendor.name} in ${activeLocForSeo} directly on WhatsApp with 0% commission via ${brandLabel}.`;
+      const allCatKeywords = getVendorAllCategories(activeVendor)
+        .map((c) => `${c} in ${activeCityOrState}`)
+        .join(', ');
       keywords =
         activeVendor.seoKeywords?.trim() ||
         (isPartyVendor
-          ? `${activeVendor.name}, ${activeVendor.category} in ${activeCityOrState}, ${activeLocForSeo} ${activeVendor.category.toLowerCase()}, event vendors in ${activeCityOrState}, PimpMyParty`
+          ? `${activeVendor.name}, ${allCatKeywords}, ${activeLocForSeo} ${activeVendor.category.toLowerCase()}, event vendors in ${activeCityOrState}, PimpMyParty`
           : isBakerVendor
-            ? `${activeVendor.name}, ${activeVendor.category} in ${activeCityOrState}, ${activeLocForSeo} ${activeVendor.category.toLowerCase()}, home bakers in ${activeCityOrState}`
-            : `${activeVendor.name}, ${activeVendor.category} in ${activeCityOrState}, ${activeLocForSeo} ${activeVendor.category.toLowerCase()}, party catering in ${activeCityOrState}`);
+            ? `${activeVendor.name}, ${allCatKeywords}, ${activeLocForSeo} ${activeVendor.category.toLowerCase()}, home bakers in ${activeCityOrState}`
+            : `${activeVendor.name}, ${allCatKeywords}, ${activeLocForSeo} ${activeVendor.category.toLowerCase()}, party catering in ${activeCityOrState}`);
       canonical = `${origin}/v/${activeVendor.slug}`;
     } else if (seoDirectoryRoute) {
       title = seoDirectoryRoute.title;

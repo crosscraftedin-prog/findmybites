@@ -404,6 +404,95 @@ export const CAKE_WEIGHT_PRESETS: ReadonlyArray<{
   { id: 'w-5kg', label: '5 kg', kgRatio: 5, serves: 'Serves 45-50' },
 ];
 
+export interface BalloonColorPreset {
+  name: string;
+  hex: string;
+  group: 'classic' | 'chrome' | 'pastel';
+}
+
+export const BALLOON_COLOR_PRESETS: ReadonlyArray<BalloonColorPreset> = [
+  { name: 'Red', hex: '#E11D48', group: 'classic' },
+  { name: 'Hot Pink', hex: '#EC4899', group: 'classic' },
+  { name: 'Royal Blue', hex: '#2563EB', group: 'classic' },
+  { name: 'Navy Blue', hex: '#1E3A8A', group: 'classic' },
+  { name: 'Purple', hex: '#7C3AED', group: 'classic' },
+  { name: 'Emerald Green', hex: '#059669', group: 'classic' },
+  { name: 'Yellow', hex: '#FACC15', group: 'classic' },
+  { name: 'Orange', hex: '#F97316', group: 'classic' },
+  { name: 'White', hex: '#FFFFFF', group: 'classic' },
+  { name: 'Black', hex: '#171717', group: 'classic' },
+  { name: 'Gold Chrome', hex: '#D4AF37', group: 'chrome' },
+  { name: 'Rose Gold', hex: '#E09F98', group: 'chrome' },
+  { name: 'Silver Chrome', hex: '#C0C5CE', group: 'chrome' },
+  { name: 'Pastel Pink', hex: '#F9A8D4', group: 'pastel' },
+  { name: 'Baby Blue', hex: '#93C5FD', group: 'pastel' },
+  { name: 'Lavender', hex: '#C4B5FD', group: 'pastel' },
+  { name: 'Mint Green', hex: '#86EFAC', group: 'pastel' },
+  { name: 'Peach', hex: '#FDBA74', group: 'pastel' },
+  { name: 'Cream / Ivory', hex: '#FEF3C7', group: 'pastel' },
+  { name: 'Sage Green', hex: '#84A98C', group: 'pastel' },
+];
+
+export const BALLOON_COLOR_QUICK_PACKS: ReadonlyArray<{
+  label: string;
+  colors: ReadonlyArray<string>;
+}> = [
+  {
+    label: 'Pastel Pack',
+    colors: ['Pastel Pink', 'Baby Blue', 'Lavender', 'Mint Green', 'Peach', 'Cream / Ivory', 'White'],
+  },
+  {
+    label: 'Gold & Chrome',
+    colors: ['Gold Chrome', 'Rose Gold', 'Silver Chrome', 'White', 'Black'],
+  },
+  {
+    label: 'Popular Mix',
+    colors: [
+      'Red',
+      'Hot Pink',
+      'Pastel Pink',
+      'Royal Blue',
+      'Baby Blue',
+      'Purple',
+      'Lavender',
+      'Gold Chrome',
+      'Rose Gold',
+      'Silver Chrome',
+      'White',
+      'Black',
+    ],
+  },
+];
+
+export function getBalloonColorSwatchHex(colorName: string): string {
+  const clean = (colorName || '').trim().toLowerCase();
+  const exact = BALLOON_COLOR_PRESETS.find((c) => c.name.toLowerCase() === clean);
+  if (exact) return exact.hex;
+  if (clean.includes('rose gold')) return '#E09F98';
+  if (clean.includes('gold')) return '#D4AF37';
+  if (clean.includes('silver') || clean.includes('grey') || clean.includes('gray')) return '#C0C5CE';
+  if (clean.includes('pastel pink') || clean.includes('baby pink') || clean.includes('blush')) return '#F9A8D4';
+  if (clean.includes('pink') || clean.includes('magenta') || clean.includes('fuchsia')) return '#EC4899';
+  if (clean.includes('red') || clean.includes('maroon') || clean.includes('burgundy') || clean.includes('wine')) return '#E11D48';
+  if (clean.includes('navy')) return '#1E3A8A';
+  if (clean.includes('sky') || clean.includes('baby blue') || clean.includes('light blue')) return '#93C5FD';
+  if (clean.includes('teal') || clean.includes('turquoise') || clean.includes('aqua')) return '#14B8A6';
+  if (clean.includes('blue')) return '#2563EB';
+  if (clean.includes('lavender') || clean.includes('lilac')) return '#C4B5FD';
+  if (clean.includes('purple') || clean.includes('violet')) return '#7C3AED';
+  if (clean.includes('mint')) return '#86EFAC';
+  if (clean.includes('sage') || clean.includes('olive')) return '#84A98C';
+  if (clean.includes('green')) return '#059669';
+  if (clean.includes('peach') || clean.includes('coral')) return '#FDBA74';
+  if (clean.includes('orange')) return '#F97316';
+  if (clean.includes('yellow') || clean.includes('lemon')) return '#FACC15';
+  if (clean.includes('cream') || clean.includes('ivory') || clean.includes('beige') || clean.includes('champagne')) return '#FEF3C7';
+  if (clean.includes('brown') || clean.includes('chocolate') || clean.includes('mocha')) return '#92400E';
+  if (clean.includes('black')) return '#171717';
+  if (clean.includes('white')) return '#FFFFFF';
+  return '#E879F9';
+}
+
 export interface VendorProduct {
   id: string;
   name: string;
@@ -412,6 +501,7 @@ export interface VendorProduct {
   unitType?: ProductUnitType;
   foodType?: ProductFoodType;
   dietaryTags?: string[];
+  colorOptions?: string[];
   builderSection?: string;
   builderPresets?: BuilderPresetId[];
   variants?: VendorProductVariant[];
@@ -455,6 +545,7 @@ export interface Vendor {
   name: string;
   marketplace: 'food' | 'party';
   category: string;
+  extraCategories?: string[];
   city: string;
   area: string;
   state: string;
@@ -829,6 +920,35 @@ export function getIndiaLocationSwitcherOptions(): {
     }
   }
   return { states, cities };
+}
+
+export function getVendorAllCategories(
+  vendor: Pick<Vendor, 'category' | 'extraCategories'>
+): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const add = (cat?: string) => {
+    const clean = (cat || '').trim();
+    if (!clean) return;
+    const key = clean.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(clean);
+  };
+  add(vendor.category);
+  if (Array.isArray(vendor.extraCategories)) {
+    for (const c of vendor.extraCategories) add(c);
+  }
+  return out;
+}
+
+export function vendorMatchesCategory(
+  vendor: Pick<Vendor, 'category' | 'extraCategories'>,
+  selectedCategory: string
+): boolean {
+  if (!selectedCategory || selectedCategory === 'All') return true;
+  const target = selectedCategory.trim().toLowerCase();
+  return getVendorAllCategories(vendor).some((c) => c.toLowerCase() === target);
 }
 
 export interface SiteSettings {

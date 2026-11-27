@@ -45,7 +45,9 @@ import {
   VendorReview,
   buildWhatsAppUrl,
   formatMoney,
+  getBalloonColorSwatchHex,
   getCustomBuilderModeConfig,
+  getVendorAllCategories,
   getVendorCoverageLabel,
   getVendorCoveredStatesList,
   getVendorLocationSwitcherOptions,
@@ -124,6 +126,7 @@ export function VendorWebsiteView({
   const [activeLocationLabel, setActiveLocationLabel] = useState<string>('');
   const lastInternalStateRef = useRef<string | null>(null);
   const [selectedVariants, setSelectedVariants] = useState<Record<string, string>>({});
+  const [selectedColorsByProduct, setSelectedColorsByProduct] = useState<Record<string, string[]>>({});
   const [catalogView, setCatalogView] = useState<'builder' | 'catalog'>('catalog');
   const [showIndividualInPackages, setShowIndividualInPackages] = useState(false);
   const [foodFilter, setFoodFilter] = useState<'all' | 'veg' | 'non-veg'>('all');
@@ -189,6 +192,7 @@ export function VendorWebsiteView({
       setQrMenuMode(menuModeParam);
       setCheckoutOpen(false);
       setSelectedVariants({});
+      setSelectedColorsByProduct({});
       setBasket({});
       setQtyDrafts({});
       setBasketExpanded(false);
@@ -364,7 +368,11 @@ export function VendorWebsiteView({
         product.name,
         activeLocationLabel || vendor.city
       );
-      const displayName = variant ? `${localizedBaseName} (${variant.label})` : localizedBaseName;
+      const chosenColors = selectedColorsByProduct[product.id] ?? [];
+      const colorTag = chosenColors.length > 0 ? ` [Colors: ${chosenColors.join(', ')}]` : '';
+      const displayName = variant
+        ? `${localizedBaseName} (${variant.label})${colorTag}`
+        : `${localizedBaseName}${colorTag}`;
       items.push({
         key,
         product,
@@ -376,7 +384,7 @@ export function VendorWebsiteView({
       });
     }
     return items;
-  }, [vendor, basket, activeLocationLabel]);
+  }, [vendor, basket, activeLocationLabel, selectedColorsByProduct]);
 
   const basketTotalCount = useMemo(
     () => basketItems.reduce((sum, item) => sum + item.qty, 0),
@@ -412,10 +420,13 @@ export function VendorWebsiteView({
   const activeProductLocalizedName = activeProduct
     ? localizeProductNameForLocation(activeProduct.name, effectiveLocationLabel)
     : '';
+  const activeProductColors = activeProduct ? selectedColorsByProduct[activeProduct.id] ?? [] : [];
+  const activeProductColorSuffix =
+    activeProductColors.length > 0 ? ` [Colors: ${activeProductColors.join(', ')}]` : '';
   const activeProductLabel = activeProduct
     ? activeProductVariant
-      ? `${activeProductLocalizedName} (${activeProductVariant.label})`
-      : activeProductLocalizedName
+      ? `${activeProductLocalizedName} (${activeProductVariant.label})${activeProductColorSuffix}`
+      : `${activeProductLocalizedName}${activeProductColorSuffix}`
     : '';
   const activeProductPriceUsd = activeProduct
     ? activeProductVariant
@@ -909,7 +920,7 @@ export function VendorWebsiteView({
                   Business Partner
                 </span>
               )}
-              <span className="font-semibold">{vendor.category}</span>
+              <span className="font-semibold">{getVendorAllCategories(vendor).join(' · ')}</span>
               <span aria-hidden="true">·</span>
               <span className="inline-flex items-center gap-1">
                 <MapPin className="size-3.5" aria-hidden="true" />
@@ -1066,6 +1077,19 @@ export function VendorWebsiteView({
             <p className="mt-3 text-sm leading-relaxed text-muted-foreground sm:text-base">
               {vendor.description}
             </p>
+            {getVendorAllCategories(vendor).length > 1 && (
+              <div className="mt-4 flex flex-wrap items-center gap-1.5">
+                <span className="text-xs font-semibold text-foreground">Categories:</span>
+                {getVendorAllCategories(vendor).map((cat) => (
+                  <span
+                    key={cat}
+                    className="rounded-md border border-brand-border bg-brand-soft px-2 py-0.5 text-[11px] font-semibold text-brand"
+                  >
+                    {cat}
+                  </span>
+                ))}
+              </div>
+            )}
             <p className="mt-4 text-xs text-muted-foreground">
               <span className="font-semibold text-foreground">Specialties: </span>
               {vendor.specialties.join(' · ')}
@@ -1628,6 +1652,9 @@ export function VendorWebsiteView({
                     const waItemName = selectedVariant
                       ? `${localizedProductName} (${selectedVariant.label})`
                       : localizedProductName;
+                    const chosenColors = selectedColorsByProduct[product.id] ?? [];
+                    const balloonColorsSuffix =
+                      chosenColors.length > 0 ? ` · Balloon Colors: ${chosenColors.join(', ')}` : '';
                     const includedListSuffix =
                       product.isPackage && product.includedItems && product.includedItems.length > 0
                         ? ` | Includes: ${product.includedItems.join(', ')}`
@@ -1636,7 +1663,7 @@ export function VendorWebsiteView({
                       product.isPackage && product.minOrderQty && product.minOrderQty > 1
                         ? ` (Min ${product.minOrderQty})`
                         : '';
-                    const productWaText = `Hi ${vendor.name}, I saw "${waItemName}" (${formatMoney(activePriceUsd, currency)} · ${activeServesText}${minQtySuffix}${foodTypeText}${dietarySuffix}${includedListSuffix}${deliveryRegionSuffix}) on your FindMyBites page (${shareUrl}). Is it available for my upcoming event?`;
+                    const productWaText = `Hi ${vendor.name}, I saw "${waItemName}" (${formatMoney(activePriceUsd, currency)} · ${activeServesText}${minQtySuffix}${foodTypeText}${dietarySuffix}${balloonColorsSuffix}${includedListSuffix}${deliveryRegionSuffix}) on your FindMyBites page (${shareUrl}). Is it available for my upcoming event?`;
 
                     const isSoldOut = product.inStock === false;
                     return (
@@ -1757,6 +1784,73 @@ export function VendorWebsiteView({
                                   );
                                 })}
                               </div>
+                            </div>
+                          )}
+
+                          {/* Interactive Balloon / Decor Color Selector */}
+                          {product.colorOptions && product.colorOptions.length > 0 && (
+                            <div className="mt-2.5 rounded-xl border border-border/80 bg-muted/25 p-2.5">
+                              <div className="flex flex-wrap items-center justify-between gap-1">
+                                <p className="text-[11px] font-bold text-foreground">
+                                  Select Balloon Colors:
+                                </p>
+                                {chosenColors.length > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setSelectedColorsByProduct((prev) => {
+                                        const next = { ...prev };
+                                        delete next[product.id];
+                                        return next;
+                                      })
+                                    }
+                                    className="cursor-pointer text-[10px] font-semibold text-muted-foreground hover:text-brand"
+                                  >
+                                    Clear ({chosenColors.length})
+                                  </button>
+                                )}
+                              </div>
+                              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                                {product.colorOptions.map((colorName) => {
+                                  const isColorActive = chosenColors.includes(colorName);
+                                  return (
+                                    <button
+                                      key={colorName}
+                                      type="button"
+                                      onClick={() => {
+                                        setSelectedColorsByProduct((prev) => {
+                                          const cur = prev[product.id] ?? [];
+                                          const next = cur.includes(colorName)
+                                            ? cur.filter((c) => c !== colorName)
+                                            : [...cur, colorName];
+                                          return { ...prev, [product.id]: next };
+                                        });
+                                        setSelectedProductId(product.id);
+                                      }}
+                                      className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-semibold transition-colors ${
+                                        isColorActive
+                                          ? 'border-brand bg-brand text-brand-foreground shadow-xs'
+                                          : 'border-border bg-background text-foreground hover:border-brand/60'
+                                      }`}
+                                    >
+                                      <span
+                                        className="size-2.5 shrink-0 rounded-full border border-black/20"
+                                        style={{ backgroundColor: getBalloonColorSwatchHex(colorName) }}
+                                        aria-hidden="true"
+                                      />
+                                      <span>{colorName}</span>
+                                      {isColorActive && (
+                                        <Check className="size-2.5 shrink-0" aria-hidden="true" />
+                                      )}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                              {chosenColors.length > 0 && (
+                                <p className="mt-1.5 text-[10px] font-semibold text-brand">
+                                  Selected: {chosenColors.join(', ')}
+                                </p>
+                              )}
                             </div>
                           )}
 
