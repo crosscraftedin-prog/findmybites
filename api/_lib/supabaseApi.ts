@@ -702,6 +702,9 @@ async function normalizeProductsForStorage(
           out.colorOptions = cleanedColors;
         }
       }
+      if (p.disableColorSelector === true) {
+        out.disableColorSelector = true;
+      }
       return out;
     })
   );

@@ -47,6 +47,7 @@ import {
   formatMoney,
   getBalloonColorSwatchHex,
   getCustomBuilderModeConfig,
+  getEffectiveProductColorOptions,
   getVendorAllCategories,
   getVendorCoverageLabel,
   getVendorCoveredStatesList,
@@ -1788,71 +1789,79 @@ export function VendorWebsiteView({
                           )}
 
                           {/* Interactive Balloon / Decor Color Selector */}
-                          {product.colorOptions && product.colorOptions.length > 0 && (
-                            <div className="mt-2.5 rounded-xl border border-border/80 bg-muted/25 p-2.5">
-                              <div className="flex flex-wrap items-center justify-between gap-1">
-                                <p className="text-[11px] font-bold text-foreground">
-                                  Select Balloon Colors:
-                                </p>
+                          {(() => {
+                            const effectiveColorOptions = getEffectiveProductColorOptions(vendor, product);
+                            if (effectiveColorOptions.length === 0) return null;
+                            return (
+                              <div className="mt-2.5 rounded-xl border border-brand-border/70 bg-brand-soft/20 p-2.5">
+                                <div className="flex flex-wrap items-center justify-between gap-1">
+                                  <p className="text-[11px] font-bold text-foreground">
+                                    Select Balloon Colors:
+                                  </p>
+                                  {chosenColors.length > 0 ? (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setSelectedColorsByProduct((prev) => {
+                                          const next = { ...prev };
+                                          delete next[product.id];
+                                          return next;
+                                        })
+                                      }
+                                      className="cursor-pointer text-[10px] font-semibold text-muted-foreground hover:text-brand"
+                                    >
+                                      Clear ({chosenColors.length})
+                                    </button>
+                                  ) : (
+                                    <span className="text-[10px] text-muted-foreground">
+                                      Pick 1 or more
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                                  {effectiveColorOptions.map((colorName) => {
+                                    const isColorActive = chosenColors.includes(colorName);
+                                    return (
+                                      <button
+                                        key={colorName}
+                                        type="button"
+                                        onClick={() => {
+                                          setSelectedColorsByProduct((prev) => {
+                                            const cur = prev[product.id] ?? [];
+                                            const next = cur.includes(colorName)
+                                              ? cur.filter((c) => c !== colorName)
+                                              : [...cur, colorName];
+                                            return { ...prev, [product.id]: next };
+                                          });
+                                          setSelectedProductId(product.id);
+                                        }}
+                                        className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-semibold transition-colors ${
+                                          isColorActive
+                                            ? 'border-brand bg-brand text-brand-foreground shadow-xs'
+                                            : 'border-border bg-background text-foreground hover:border-brand/60'
+                                        }`}
+                                      >
+                                        <span
+                                          className="size-2.5 shrink-0 rounded-full border border-black/20"
+                                          style={{ backgroundColor: getBalloonColorSwatchHex(colorName) }}
+                                          aria-hidden="true"
+                                        />
+                                        <span>{colorName}</span>
+                                        {isColorActive && (
+                                          <Check className="size-2.5 shrink-0" aria-hidden="true" />
+                                        )}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
                                 {chosenColors.length > 0 && (
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      setSelectedColorsByProduct((prev) => {
-                                        const next = { ...prev };
-                                        delete next[product.id];
-                                        return next;
-                                      })
-                                    }
-                                    className="cursor-pointer text-[10px] font-semibold text-muted-foreground hover:text-brand"
-                                  >
-                                    Clear ({chosenColors.length})
-                                  </button>
+                                  <p className="mt-1.5 text-[10px] font-semibold text-brand">
+                                    Selected: {chosenColors.join(', ')}
+                                  </p>
                                 )}
                               </div>
-                              <div className="mt-1.5 flex flex-wrap gap-1.5">
-                                {product.colorOptions.map((colorName) => {
-                                  const isColorActive = chosenColors.includes(colorName);
-                                  return (
-                                    <button
-                                      key={colorName}
-                                      type="button"
-                                      onClick={() => {
-                                        setSelectedColorsByProduct((prev) => {
-                                          const cur = prev[product.id] ?? [];
-                                          const next = cur.includes(colorName)
-                                            ? cur.filter((c) => c !== colorName)
-                                            : [...cur, colorName];
-                                          return { ...prev, [product.id]: next };
-                                        });
-                                        setSelectedProductId(product.id);
-                                      }}
-                                      className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-semibold transition-colors ${
-                                        isColorActive
-                                          ? 'border-brand bg-brand text-brand-foreground shadow-xs'
-                                          : 'border-border bg-background text-foreground hover:border-brand/60'
-                                      }`}
-                                    >
-                                      <span
-                                        className="size-2.5 shrink-0 rounded-full border border-black/20"
-                                        style={{ backgroundColor: getBalloonColorSwatchHex(colorName) }}
-                                        aria-hidden="true"
-                                      />
-                                      <span>{colorName}</span>
-                                      {isColorActive && (
-                                        <Check className="size-2.5 shrink-0" aria-hidden="true" />
-                                      )}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                              {chosenColors.length > 0 && (
-                                <p className="mt-1.5 text-[10px] font-semibold text-brand">
-                                  Selected: {chosenColors.join(', ')}
-                                </p>
-                              )}
-                            </div>
-                          )}
+                            );
+                          })()}
 
                           {product.isPackage && product.minOrderQty && product.minOrderQty > 1 && (
                             <p className="mt-1 text-xs font-bold text-amber-700 dark:text-amber-300">

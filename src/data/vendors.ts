@@ -433,6 +433,21 @@ export const BALLOON_COLOR_PRESETS: ReadonlyArray<BalloonColorPreset> = [
   { name: 'Sage Green', hex: '#84A98C', group: 'pastel' },
 ];
 
+export const DEFAULT_BALLOON_COLOR_OPTIONS: ReadonlyArray<string> = [
+  'Red',
+  'Hot Pink',
+  'Pastel Pink',
+  'Royal Blue',
+  'Baby Blue',
+  'Purple',
+  'Lavender',
+  'Gold Chrome',
+  'Rose Gold',
+  'Silver Chrome',
+  'White',
+  'Black',
+];
+
 export const BALLOON_COLOR_QUICK_PACKS: ReadonlyArray<{
   label: string;
   colors: ReadonlyArray<string>;
@@ -447,22 +462,47 @@ export const BALLOON_COLOR_QUICK_PACKS: ReadonlyArray<{
   },
   {
     label: 'Popular Mix',
-    colors: [
-      'Red',
-      'Hot Pink',
-      'Pastel Pink',
-      'Royal Blue',
-      'Baby Blue',
-      'Purple',
-      'Lavender',
-      'Gold Chrome',
-      'Rose Gold',
-      'Silver Chrome',
-      'White',
-      'Black',
-    ],
+    colors: DEFAULT_BALLOON_COLOR_OPTIONS,
   },
 ];
+
+export function isBalloonDecorProduct(
+  vendor: Pick<Vendor, 'marketplace' | 'category' | 'extraCategories'>,
+  product: Pick<VendorProduct, 'name' | 'description' | 'menuSection'>
+): boolean {
+  if (vendor.marketplace !== 'party') return false;
+  const name = (product.name || '').toLowerCase();
+  const section = (product.menuSection || '').toLowerCase();
+  const desc = (product.description || '').toLowerCase();
+  const titleAndSection = `${name} ${section}`;
+
+  // Exclude kids entertainment activities that mention balloons (e.g. Balloon Sculptor / Balloon Shooting)
+  if (/(sculptor|shooting|twisting|dart|game|mascot|magician|clown|caricature|tattoo|mehendi|mehndi)/i.test(name)) {
+    return false;
+  }
+
+  if (/(balloon|decor|arch|backdrop|garland)/i.test(titleAndSection)) {
+    return true;
+  }
+  if (/(balloon arch|balloon decor|balloon theme|premium balloons|chrome metallic|select colors)/i.test(desc)) {
+    return true;
+  }
+  return false;
+}
+
+export function getEffectiveProductColorOptions(
+  vendor: Pick<Vendor, 'marketplace' | 'category' | 'extraCategories'>,
+  product: Pick<VendorProduct, 'name' | 'description' | 'menuSection' | 'colorOptions' | 'disableColorSelector'>
+): string[] {
+  if (product.disableColorSelector) return [];
+  if (Array.isArray(product.colorOptions) && product.colorOptions.length > 0) {
+    return product.colorOptions;
+  }
+  if (isBalloonDecorProduct(vendor, product)) {
+    return [...DEFAULT_BALLOON_COLOR_OPTIONS];
+  }
+  return [];
+}
 
 export function getBalloonColorSwatchHex(colorName: string): string {
   const clean = (colorName || '').trim().toLowerCase();
@@ -502,6 +542,7 @@ export interface VendorProduct {
   foodType?: ProductFoodType;
   dietaryTags?: string[];
   colorOptions?: string[];
+  disableColorSelector?: boolean;
   builderSection?: string;
   builderPresets?: BuilderPresetId[];
   variants?: VendorProductVariant[];

@@ -79,8 +79,10 @@ import {
   getBalloonColorSwatchHex,
   getBusinessPlan,
   getCustomBuilderModeConfig,
+  getEffectiveProductColorOptions,
   getVendorBioHandle,
   getVendorStartingPriceUnit,
+  isBalloonDecorProduct,
   isPaidPlanTier,
   localToUsd,
   parseProductUnitFromServes,
@@ -239,6 +241,7 @@ export function VendorDashboardModal({
   const [prodFoodType, setProdFoodType] = useState<ProductFoodType | ''>('');
   const [prodDietaryTags, setProdDietaryTags] = useState<string[]>([]);
   const [prodColorOptions, setProdColorOptions] = useState<string[]>([]);
+  const [prodDisableColorSelector, setProdDisableColorSelector] = useState(false);
   const [prodCustomColorInput, setProdCustomColorInput] = useState('');
   const [prodPriceLocal, setProdPriceLocal] = useState(usdToLocal(40, currency));
   const [prodDesc, setProdDesc] = useState('');
@@ -857,6 +860,7 @@ export function VendorDashboardModal({
     setProdFoodType('');
     setProdDietaryTags([]);
     setProdColorOptions([]);
+    setProdDisableColorSelector(false);
     setProdCustomColorInput('');
     setProdPriceLocal(usdToLocal(40, currency));
     setProdDesc('');
@@ -921,7 +925,12 @@ export function VendorDashboardModal({
     setProdServes(parsed.custom);
     setProdFoodType(product.foodType || '');
     setProdDietaryTags(product.dietaryTags ? [...product.dietaryTags] : []);
-    setProdColorOptions(product.colorOptions ? [...product.colorOptions] : []);
+    const targetVendor = myVendors.find((item) => item.id === vendorId);
+    const effectiveColors = targetVendor
+      ? getEffectiveProductColorOptions(targetVendor, product)
+      : product.colorOptions ?? [];
+    setProdColorOptions([...effectiveColors]);
+    setProdDisableColorSelector(Boolean(product.disableColorSelector));
     setProdCustomColorInput('');
     setProdPriceLocal(Math.max(1, usdToLocal(product.priceUsd, currency)));
     setProdDesc(product.description || '');
@@ -1030,6 +1039,7 @@ export function VendorDashboardModal({
   };
 
   const toggleProdColorOption = (colorName: string) => {
+    setProdDisableColorSelector(false);
     setProdColorOptions((prev) =>
       prev.some((c) => c.toLowerCase() === colorName.toLowerCase())
         ? prev.filter((c) => c.toLowerCase() !== colorName.toLowerCase())
@@ -1042,6 +1052,7 @@ export function VendorDashboardModal({
   const addCustomProdColor = () => {
     const cleaned = prodCustomColorInput.trim().slice(0, 36);
     if (!cleaned) return;
+    setProdDisableColorSelector(false);
     setProdColorOptions((prev) => {
       if (prev.length >= 24 || prev.some((c) => c.toLowerCase() === cleaned.toLowerCase())) {
         return prev;
@@ -1130,6 +1141,17 @@ export function VendorDashboardModal({
         ...(!isPartyStore && prodFoodType ? { foodType: prodFoodType } : {}),
         ...(!isPartyStore && prodDietaryTags.length > 0 ? { dietaryTags: prodDietaryTags } : {}),
         ...(isPartyStore && prodColorOptions.length > 0 ? { colorOptions: prodColorOptions } : {}),
+        ...(isPartyStore &&
+        prodColorOptions.length === 0 &&
+        (prodDisableColorSelector ||
+          (editingProductId &&
+            isBalloonDecorProduct(vendor, {
+              name: prodName.trim(),
+              description: prodDesc.trim(),
+              menuSection: prodMenuSection.trim(),
+            })))
+          ? { disableColorSelector: true }
+          : {}),
         ...(prodMenuSection.trim() ? { menuSection: prodMenuSection.trim().slice(0, 48) } : {}),
         ...(parsedAdvanceHours > 0 ? { advanceHours: parsedAdvanceHours } : {}),
         ...(existingProduct?.inStock === false ? { inStock: false } : {}),
@@ -3319,11 +3341,12 @@ export function VendorDashboardModal({
                                           <button
                                             key={pack.label}
                                             type="button"
-                                            onClick={() =>
+                                            onClick={() => {
+                                              setProdDisableColorSelector(false);
                                               setProdColorOptions((prev) =>
                                                 Array.from(new Set([...prev, ...pack.colors])).slice(0, 24)
-                                              )
-                                            }
+                                              );
+                                            }}
                                             className="cursor-pointer rounded-md bg-brand/10 px-2 py-0.5 text-[10px] font-bold text-brand transition-colors hover:bg-brand hover:text-brand-foreground"
                                           >
                                             + {pack.label}
@@ -3332,7 +3355,10 @@ export function VendorDashboardModal({
                                         {prodColorOptions.length > 0 && (
                                           <button
                                             type="button"
-                                            onClick={() => setProdColorOptions([])}
+                                            onClick={() => {
+                                              setProdColorOptions([]);
+                                              setProdDisableColorSelector(true);
+                                            }}
                                             className="cursor-pointer rounded-md border border-border px-2 py-0.5 text-[10px] font-semibold text-muted-foreground hover:border-rose-500/50 hover:text-rose-600"
                                           >
                                             Clear ({prodColorOptions.length})
