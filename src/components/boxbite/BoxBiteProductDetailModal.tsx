@@ -15,9 +15,11 @@ import {
   CorporateBoxProduct,
   CorporateProductReview,
 } from '../../data/boxAndBiteCatalog';
+import { localizeProductNameForLocation } from '../../data/vendors';
 
 interface BoxBiteProductDetailModalProps {
   product: CorporateBoxProduct | null;
+  locationLabel?: string;
   isWishlisted: boolean;
   reviews: CorporateProductReview[];
   onClose: () => void;
@@ -29,6 +31,7 @@ interface BoxBiteProductDetailModalProps {
 
 export function BoxBiteProductDetailModal({
   product,
+  locationLabel,
   isWishlisted,
   reviews,
   onClose,
@@ -179,7 +182,7 @@ export function BoxBiteProductDetailModal({
       style={{ backgroundColor: 'rgba(42, 25, 21, 0.72)' }}
       role="dialog"
       aria-modal="true"
-      aria-label={product.name}
+      aria-label={localizeProductNameForLocation(product.name, locationLabel)}
       onClick={onClose}
     >
       <div
@@ -410,7 +413,7 @@ export function BoxBiteProductDetailModal({
                 className="mt-2 text-3xl font-semibold leading-tight tracking-tight sm:text-4xl"
                 style={{ fontFamily: 'var(--font-editorial)' }}
               >
-                {product.name}
+                {localizeProductNameForLocation(product.name, locationLabel)}
               </h2>
               <p className="mt-2 text-sm leading-relaxed opacity-80">{product.subtitle}</p>
               <p className="mt-3 text-sm leading-relaxed opacity-90">{product.description}</p>

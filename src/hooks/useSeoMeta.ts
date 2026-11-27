@@ -6,6 +6,7 @@ import {
   SiteSettings,
   Vendor,
   usdToLocal,
+  vendorCoversState,
 } from '../data/vendors';
 import {
   ResolvedSeoDirectoryRoute,
@@ -124,19 +125,33 @@ export function useSeoMeta({
           activeVendor.category.toLowerCase().includes('cake') ||
           activeVendor.category.toLowerCase().includes('dessert'));
       const brandLabel = isPartyVendor ? 'PimpMyParty by FindMyBites' : 'FindMyBites';
+      const activeLocForSeo =
+        selectedState &&
+        selectedState !== 'All' &&
+        selectedState !== activeVendor.state &&
+        vendorCoversState(activeVendor, selectedState)
+          ? selectedState
+          : `${activeVendor.area}, ${activeVendor.city}`;
+      const activeCityOrState =
+        selectedState &&
+        selectedState !== 'All' &&
+        selectedState !== activeVendor.state &&
+        vendorCoversState(activeVendor, selectedState)
+          ? selectedState
+          : activeVendor.city;
       title =
         activeVendor.seoTitle?.trim() ||
-        `${activeVendor.name} – ${activeVendor.category} in ${activeVendor.area}, ${activeVendor.city} | ${brandLabel}`;
+        `${activeVendor.name} – ${activeVendor.category} in ${activeLocForSeo} | ${brandLabel}`;
       description =
         activeVendor.seoDescription?.trim() ||
-        `${activeVendor.tagline} ${isPartyVendor ? 'Book' : 'Order from'} ${activeVendor.name} in ${activeVendor.area}, ${activeVendor.city}, ${activeVendor.state} directly on WhatsApp with 0% commission via ${brandLabel}.`;
+        `${activeVendor.tagline} ${isPartyVendor ? 'Book' : 'Order from'} ${activeVendor.name} in ${activeLocForSeo} directly on WhatsApp with 0% commission via ${brandLabel}.`;
       keywords =
         activeVendor.seoKeywords?.trim() ||
         (isPartyVendor
-          ? `${activeVendor.name}, ${activeVendor.category} in ${activeVendor.city}, ${activeVendor.area} ${activeVendor.category.toLowerCase()}, event vendors in ${activeVendor.city}, PimpMyParty`
+          ? `${activeVendor.name}, ${activeVendor.category} in ${activeCityOrState}, ${activeLocForSeo} ${activeVendor.category.toLowerCase()}, event vendors in ${activeCityOrState}, PimpMyParty`
           : isBakerVendor
-            ? `${activeVendor.name}, ${activeVendor.category} in ${activeVendor.city}, ${activeVendor.area} ${activeVendor.category.toLowerCase()}, home bakers in ${activeVendor.city}`
-            : `${activeVendor.name}, ${activeVendor.category} in ${activeVendor.city}, ${activeVendor.area} ${activeVendor.category.toLowerCase()}, party catering in ${activeVendor.city}`);
+            ? `${activeVendor.name}, ${activeVendor.category} in ${activeCityOrState}, ${activeLocForSeo} ${activeVendor.category.toLowerCase()}, home bakers in ${activeCityOrState}`
+            : `${activeVendor.name}, ${activeVendor.category} in ${activeCityOrState}, ${activeLocForSeo} ${activeVendor.category.toLowerCase()}, party catering in ${activeCityOrState}`);
       canonical = `${origin}/v/${activeVendor.slug}`;
     } else if (seoDirectoryRoute) {
       title = seoDirectoryRoute.title;

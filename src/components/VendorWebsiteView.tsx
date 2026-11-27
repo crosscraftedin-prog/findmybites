@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import type { User } from 'firebase/auth';
 import {
   ArrowLeft,
@@ -48,12 +48,15 @@ import {
   getCustomBuilderModeConfig,
   getVendorCoverageLabel,
   getVendorCoveredStatesList,
+  getVendorLocationSwitcherOptions,
   getVendorQuickTags,
   getVendorStartingPriceLabel,
   getVendorStartingPriceUnit,
   isCustomBuilderActive,
+  localizeProductNameForLocation,
   sanitizeSafeHttpUrl,
   suggestBuilderModeForCategory,
+  vendorCoversState,
 } from '../data/vendors';
 import {
   createReviewInCloud,
@@ -80,6 +83,8 @@ interface VendorWebsiteViewProps {
   isSaved: boolean;
   metrics?: VendorMetrics;
   browsingLocation?: string;
+  selectedState?: string;
+  onChangeSelectedState?: (nextState: string) => void;
   user?: User | null;
   canEdit?: boolean;
   onSignIn?: () => Promise<void>;
@@ -100,6 +105,8 @@ export function VendorWebsiteView({
   isSaved,
   metrics,
   browsingLocation,
+  selectedState,
+  onChangeSelectedState,
   user,
   canEdit = false,
   onSignIn,
@@ -114,6 +121,8 @@ export function VendorWebsiteView({
   onTrackShare,
 }: VendorWebsiteViewProps) {
   const [selectedProductId, setSelectedProductId] = useState<string>('');
+  const [activeLocationLabel, setActiveLocationLabel] = useState<string>('');
+  const lastInternalStateRef = useRef<string | null>(null);
   const [selectedVariants, setSelectedVariants] = useState<Record<string, string>>({});
   const [catalogView, setCatalogView] = useState<'builder' | 'catalog'>('catalog');
   const [showIndividualInPackages, setShowIndividualInPackages] = useState(false);
@@ -153,10 +162,18 @@ export function VendorWebsiteView({
       const params =
         typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
       const itemParam = params?.get('item') ?? null;
+      const locParam = params?.get('location')?.trim() || params?.get('state')?.trim() || '';
       const menuModeParam = params?.get('menu') === '1' || params?.get('mode') === 'menu';
       const deepLinkedProduct = itemParam
         ? vendor.products.find((p) => p.id === itemParam)
         : undefined;
+
+      const resolvedInitialLoc =
+        locParam ||
+        (selectedState && selectedState !== 'All' && vendorCoversState(vendor, selectedState)
+          ? selectedState
+          : browsingLocation?.split(',')[0]?.trim() || vendor.city || vendor.state);
+      setActiveLocationLabel(resolvedInitialLoc);
 
       setSelectedProductId(deepLinkedProduct?.id ?? vendor.products[0]?.id ?? '');
       setCatalogView(
@@ -194,6 +211,20 @@ export function VendorWebsiteView({
       }
     }
   }, [vendor]);
+
+  // Keep storefront display location in sync when user changes global State filter externally
+  useEffect(() => {
+    if (!vendor) return;
+    if (lastInternalStateRef.current && selectedState === lastInternalStateRef.current) {
+      lastInternalStateRef.current = null;
+      return;
+    }
+    if (selectedState && selectedState !== 'All' && vendorCoversState(vendor, selectedState)) {
+      setActiveLocationLabel(selectedState);
+    } else if (selectedState === 'All') {
+      setActiveLocationLabel(vendor.city || vendor.state);
+    }
+  }, [vendor, selectedState]);
 
   useEffect(() => {
     if (!vendor) {
@@ -254,11 +285,28 @@ export function VendorWebsiteView({
         addressRegion: vendor.state,
         addressCountry: vendor.country,
       },
+      areaServed: activeLocationLabel || vendor.city,
       geo: {
         '@type': 'GeoCoordinates',
         latitude: vendor.lat,
         longitude: vendor.lng,
       },
+      ...(vendor.products.length > 0
+        ? {
+            hasOfferCatalog: {
+              '@type': 'OfferCatalog',
+              name: `${vendor.name} Catalog in ${activeLocationLabel || vendor.city}`,
+              itemListElement: vendor.products.slice(0, 20).map((p) => ({
+                '@type': 'Offer',
+                itemOffered: {
+                  '@type': vendor.marketplace === 'party' ? 'Service' : 'Product',
+                  name: localizeProductNameForLocation(p.name, activeLocationLabel || vendor.city),
+                  description: p.description,
+                },
+              })),
+            },
+          }
+        : {}),
       ...(sameAs.length > 0 ? { sameAs } : {}),
       ...(vendor.reviewCount > 0
         ? {
@@ -285,7 +333,7 @@ export function VendorWebsiteView({
       const existing = document.getElementById(scriptId);
       if (existing) existing.remove();
     };
-  }, [vendor]);
+  }, [vendor, activeLocationLabel]);
 
   const getProductMinQty = (product?: VendorProduct): number =>
     product?.isPackage && product.minOrderQty && product.minOrderQty > 1
@@ -312,7 +360,11 @@ export function VendorWebsiteView({
       const qty = Math.max(minQty, Math.round(rawQty));
       const variant = varId ? product.variants?.find((v) => v.id === varId) : undefined;
       const unitPriceUsd = variant ? variant.priceUsd : product.priceUsd;
-      const displayName = variant ? `${product.name} (${variant.label})` : product.name;
+      const localizedBaseName = localizeProductNameForLocation(
+        product.name,
+        activeLocationLabel || vendor.city
+      );
+      const displayName = variant ? `${localizedBaseName} (${variant.label})` : localizedBaseName;
       items.push({
         key,
         product,
@@ -324,7 +376,7 @@ export function VendorWebsiteView({
       });
     }
     return items;
-  }, [vendor, basket]);
+  }, [vendor, basket, activeLocationLabel]);
 
   const basketTotalCount = useMemo(
     () => basketItems.reduce((sum, item) => sum + item.qty, 0),
@@ -338,16 +390,32 @@ export function VendorWebsiteView({
 
   if (!vendor) return null;
 
+  const locationOptions = getVendorLocationSwitcherOptions(vendor);
+  const effectiveLocationLabel = activeLocationLabel || vendor.city || vendor.state;
+  const handleSelectStoreLocation = (nextValue: string) => {
+    setActiveLocationLabel(nextValue);
+    const matchedState =
+      locationOptions.states.find((s) => s.value === nextValue)?.stateName ||
+      locationOptions.cities.find((c) => c.value === nextValue)?.stateName;
+    if (matchedState && onChangeSelectedState) {
+      lastInternalStateRef.current = matchedState;
+      onChangeSelectedState(matchedState);
+    }
+  };
+
   const activeProduct: VendorProduct | undefined =
     vendor.products.find((p) => p.id === selectedProductId) ?? vendor.products[0];
   const activeProductVariant = activeProduct?.variants?.length
     ? activeProduct.variants.find((v) => v.id === selectedVariants[activeProduct.id]) ??
       activeProduct.variants[0]
     : undefined;
+  const activeProductLocalizedName = activeProduct
+    ? localizeProductNameForLocation(activeProduct.name, effectiveLocationLabel)
+    : '';
   const activeProductLabel = activeProduct
     ? activeProductVariant
-      ? `${activeProduct.name} (${activeProductVariant.label})`
-      : activeProduct.name
+      ? `${activeProductLocalizedName} (${activeProductVariant.label})`
+      : activeProductLocalizedName
     : '';
   const activeProductPriceUsd = activeProduct
     ? activeProductVariant
@@ -441,7 +509,7 @@ export function VendorWebsiteView({
       ...lines,
       '',
       `Estimated Total: ${formatMoney(basketTotalUsd, currency)}`,
-      browsingLocation ? `Delivery Region: ${browsingLocation}` : '',
+      effectiveLocationLabel ? `Delivery Region: ${effectiveLocationLabel}` : '',
       `Event Date: ${eventDate} · Guests: ${guests}`,
       notes.trim() ? `Notes: ${notes.trim()}` : '',
       'Please confirm availability and next steps!',
@@ -583,6 +651,43 @@ export function VendorWebsiteView({
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            {/* Live State / City Location Switcher — updates product titles dynamically */}
+            <label
+              className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-brand/40 bg-brand-soft/60 px-2.5 text-xs font-bold text-foreground shadow-2xs transition-colors hover:border-brand"
+              title="Switch state or city to update localized product names & delivery availability"
+            >
+              <MapPin className="size-3.5 shrink-0 text-brand" aria-hidden="true" />
+              <select
+                aria-label="Select state or city"
+                value={effectiveLocationLabel}
+                onChange={(e) => handleSelectStoreLocation(e.target.value)}
+                className="max-w-[125px] cursor-pointer bg-transparent pr-1 text-xs font-bold text-foreground focus:outline-none sm:max-w-[155px]"
+              >
+                {!locationOptions.states.some((s) => s.value === effectiveLocationLabel) &&
+                  !locationOptions.cities.some((c) => c.value === effectiveLocationLabel) && (
+                    <option value={effectiveLocationLabel}>{effectiveLocationLabel}</option>
+                  )}
+                {locationOptions.states.length > 0 && (
+                  <optgroup label={locationOptions.isMultiState ? 'States Covered' : 'State'}>
+                    {locationOptions.states.map((st) => (
+                      <option key={`st-${st.value}`} value={st.value}>
+                        {st.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {locationOptions.cities.length > 0 && (
+                  <optgroup label="Cities & Areas">
+                    {locationOptions.cities.map((ct) => (
+                      <option key={`ct-${ct.value}`} value={ct.value}>
+                        {ct.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+            </label>
+
             {canEdit && onEditStorefront && (
               <button
                 type="button"
@@ -811,7 +916,7 @@ export function VendorWebsiteView({
                 {vendor.area}, {vendor.city}, {vendor.state} · {vendor.country}
               </span>
               {(() => {
-                const covBadge = getVendorCoverageLabel(vendor, browsingLocation);
+                const covBadge = getVendorCoverageLabel(vendor, effectiveLocationLabel);
                 return covBadge ? (
                   <span className="inline-flex items-center gap-1 rounded-full bg-indigo-500/90 px-2.5 py-0.5 text-[11px] font-bold text-white">
                     <Globe2 className="size-3" aria-hidden="true" />
@@ -875,8 +980,8 @@ export function VendorWebsiteView({
               <a
                 href={buildWhatsAppUrl(
                   vendor,
-                  browsingLocation
-                    ? `Hi ${vendor.name}, I found your storefront on FindMyBites (${shareUrl}). Delivery Region: ${browsingLocation}. I'd love to discuss an order!`
+                  effectiveLocationLabel
+                    ? `Hi ${vendor.name}, I found your storefront on FindMyBites (${shareUrl}). Location: ${effectiveLocationLabel}. I'd love to discuss an order!`
                     : undefined
                 )}
                 target="_blank"
@@ -1256,7 +1361,7 @@ export function VendorWebsiteView({
                     vendor={vendor}
                     currency={currency}
                     shareUrl={shareUrl}
-                    browsingLocation={browsingLocation}
+                    browsingLocation={effectiveLocationLabel}
                     onTrackWhatsAppClick={(vendorId) => onTrackWhatsAppClick?.(vendorId)}
                   />
                 ) : (
@@ -1513,12 +1618,16 @@ export function VendorWebsiteView({
                       product.dietaryTags && product.dietaryTags.length > 0
                         ? ` [${product.dietaryTags.join(', ')}]`
                         : '';
-                    const deliveryRegionSuffix = browsingLocation
-                      ? ` · Delivery Region: ${browsingLocation}`
+                    const deliveryRegionSuffix = effectiveLocationLabel
+                      ? ` · Location: ${effectiveLocationLabel}`
                       : '';
+                    const localizedProductName = localizeProductNameForLocation(
+                      product.name,
+                      effectiveLocationLabel
+                    );
                     const waItemName = selectedVariant
-                      ? `${product.name} (${selectedVariant.label})`
-                      : product.name;
+                      ? `${localizedProductName} (${selectedVariant.label})`
+                      : localizedProductName;
                     const includedListSuffix =
                       product.isPackage && product.includedItems && product.includedItems.length > 0
                         ? ` | Includes: ${product.includedItems.join(', ')}`
@@ -1549,7 +1658,7 @@ export function VendorWebsiteView({
                         <div className="relative flex aspect-[4/3] w-full items-center justify-center overflow-hidden border-b border-border/60 bg-white dark:bg-neutral-900">
                           <img
                             src={product.image}
-                            alt={`${product.name} by ${vendor.name} - ${vendor.category} in ${vendor.area}, ${vendor.city}`}
+                            alt={`${localizedProductName} by ${vendor.name} - ${vendor.category}`}
                             width={400}
                             height={300}
                             loading="lazy"
@@ -1602,7 +1711,7 @@ export function VendorWebsiteView({
                             {!isPartyStore && <FoodTypeBadge foodType={product.foodType} size="sm" />}
                           </div>
                           <h3 className="mt-1.5 text-base font-bold text-foreground">
-                            {product.name}
+                            {localizedProductName}
                           </h3>
 
                           {/* Interactive Weight / Size Variant Selector (e.g. 500g, 1 kg, 2 kg ... 5 kg) */}
@@ -2374,7 +2483,17 @@ export function VendorWebsiteView({
       />
       <ProductShareModal
         vendor={shareProductTarget ? vendor : null}
-        product={shareProductTarget?.product ?? null}
+        product={
+          shareProductTarget?.product
+            ? {
+                ...shareProductTarget.product,
+                name: localizeProductNameForLocation(
+                  shareProductTarget.product.name,
+                  effectiveLocationLabel
+                ),
+              }
+            : null
+        }
         selectedVariant={shareProductTarget?.variant ?? null}
         currency={currency}
         onClose={() => setShareProductTarget(null)}

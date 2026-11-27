@@ -3740,6 +3740,8 @@ export default function App() {
                 .filter((part, idx, arr) => part && arr.indexOf(part) === idx)
                 .join(', ') || userCoords?.label || undefined
             }
+            selectedState={selectedState}
+            onChangeSelectedState={(nextState) => setSelectedState(nextState)}
             user={authUser}
             canEdit={canEditVendor(resolvedActiveVendor)}
             onSignIn={handleSignIn}
@@ -4019,6 +4021,8 @@ export default function App() {
           <BoxBitePortal
             isOpen={boxAndBiteOpen}
             initialSection={boxAndBiteSection}
+            selectedState={selectedState}
+            onChangeSelectedState={(nextState) => setSelectedState(nextState)}
             cloudProducts={cloudBoxBiteCatalog.products}
             cloudBuilderItems={cloudBoxBiteCatalog.builderItems}
             onBackToFindMyBites={closeBoxAndBite}

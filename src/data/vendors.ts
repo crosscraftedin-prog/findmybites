@@ -692,6 +692,145 @@ export function getVendorCoverageLabel(vendor: Vendor, browsingState?: string): 
   return `Serves ${totalStates} States`;
 }
 
+let cachedKnownLocationsRegex: RegExp | null = null;
+
+function getKnownLocationsTrailingRegex(): RegExp {
+  if (cachedKnownLocationsRegex) return cachedKnownLocationsRegex;
+  const names = new Set<string>([
+    'Bangalore',
+    'Bombay',
+    'Calcutta',
+    'Madras',
+    'Delhi NCR',
+    'NCR',
+    'Gurgaon',
+    'Gurugram',
+    'Noida',
+    'Greater Noida',
+    'Faridabad',
+    'Ghaziabad',
+    'Navi Mumbai',
+    'Thane',
+    'Secunderabad',
+    'India',
+    'UAE',
+  ]);
+  for (const regions of Object.values(STATES_BY_COUNTRY)) {
+    for (const r of regions) {
+      if (r.name) names.add(r.name);
+      for (const c of r.cities) {
+        if (c) names.add(c);
+      }
+    }
+  }
+  const sorted = Array.from(names)
+    .map((n) => n.trim())
+    .filter((n) => n.length >= 3)
+    .sort((a, b) => b.length - a.length)
+    .map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  cachedKnownLocationsRegex = new RegExp(`\\s+in\\s+(?:${sorted.join('|')})\\s*$`, 'i');
+  return cachedKnownLocationsRegex;
+}
+
+/**
+ * Dynamically localizes a product or service title for the user's selected state/city
+ * without mutating the stored product name (e.g. "Caricature for kids birthday party"
+ * -> "Caricature for kids birthday party in Hyderabad" / "... in Mumbai").
+ */
+export function localizeProductNameForLocation(
+  rawName: string,
+  locationLabel?: string | null
+): string {
+  const base = (rawName || '').trim();
+  const loc = (locationLabel || '').trim();
+  if (!base || !loc || loc.toLowerCase() === 'all') return base;
+
+  const escapedLoc = loc.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const alreadyEndsWithSameLoc = new RegExp(`\\bin\\s+${escapedLoc}\\s*$`, 'i');
+  if (alreadyEndsWithSameLoc.test(base)) return base;
+
+  const trailingKnownLocRe = getKnownLocationsTrailingRegex();
+  if (trailingKnownLocRe.test(base)) {
+    return base.replace(trailingKnownLocRe, ` in ${loc}`);
+  }
+
+  const containsLocWord = new RegExp(`\\b${escapedLoc}\\b`, 'i');
+  if (containsLocWord.test(base)) return base;
+
+  return `${base} in ${loc}`;
+}
+
+export interface LocationSwitcherOption {
+  value: string;
+  label: string;
+  stateName: string;
+}
+
+export function getVendorLocationSwitcherOptions(vendor: Vendor): {
+  states: LocationSwitcherOption[];
+  cities: LocationSwitcherOption[];
+  isMultiState: boolean;
+} {
+  const coveredStates = getVendorCoveredStatesList(vendor);
+  const countryRegions = STATES_BY_COUNTRY[vendor.country] || [];
+  const isMultiState = Boolean(
+    vendor.allStatesCoverage || (Array.isArray(vendor.serviceStates) && vendor.serviceStates.length > 0)
+  );
+
+  const states: LocationSwitcherOption[] = [];
+  const cities: LocationSwitcherOption[] = [];
+  const seenCity = new Set<string>();
+
+  if (vendor.city && !seenCity.has(vendor.city.toLowerCase())) {
+    seenCity.add(vendor.city.toLowerCase());
+    cities.push({ value: vendor.city, label: vendor.city, stateName: vendor.state });
+  }
+
+  for (const stName of coveredStates) {
+    states.push({ value: stName, label: stName, stateName: stName });
+    const reg = countryRegions.find((r) => r.name === stName);
+    if (reg) {
+      const limit = isMultiState ? 2 : 6;
+      for (const c of reg.cities.slice(0, limit)) {
+        if (!c || seenCity.has(c.toLowerCase())) continue;
+        seenCity.add(c.toLowerCase());
+        cities.push({ value: c, label: c, stateName: stName });
+      }
+    }
+  }
+
+  if (!isMultiState && Array.isArray(vendor.serviceAreas)) {
+    for (const areaName of vendor.serviceAreas) {
+      const clean = areaName?.trim();
+      if (!clean || seenCity.has(clean.toLowerCase())) continue;
+      seenCity.add(clean.toLowerCase());
+      cities.push({ value: clean, label: clean, stateName: vendor.state });
+    }
+  }
+
+  return { states, cities, isMultiState };
+}
+
+export function getIndiaLocationSwitcherOptions(): {
+  states: LocationSwitcherOption[];
+  cities: LocationSwitcherOption[];
+} {
+  const regions = STATES_BY_COUNTRY.India || [];
+  const states: LocationSwitcherOption[] = [];
+  const cities: LocationSwitcherOption[] = [];
+  const seenCity = new Set<string>();
+
+  for (const reg of regions) {
+    states.push({ value: reg.name, label: reg.name, stateName: reg.name });
+    for (const c of reg.cities.slice(0, 2)) {
+      if (!c || seenCity.has(c.toLowerCase())) continue;
+      seenCity.add(c.toLowerCase());
+      cities.push({ value: c, label: c, stateName: reg.name });
+    }
+  }
+  return { states, cities };
+}
+
 export interface SiteSettings {
   siteTitle: string;
   siteDescription: string;

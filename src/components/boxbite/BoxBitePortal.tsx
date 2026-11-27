@@ -32,10 +32,16 @@ import { BoxBiteBuilderSection } from './BoxBiteBuilderSection';
 import { BoxBiteCartDrawer } from './BoxBiteCartDrawer';
 import { BoxBiteProductDetailModal } from './BoxBiteProductDetailModal';
 import { BoxBiteQuoteForm } from './BoxBiteQuoteForm';
+import {
+  getIndiaLocationSwitcherOptions,
+  localizeProductNameForLocation,
+} from '../../data/vendors';
 
 interface BoxBitePortalProps {
   isOpen: boolean;
   initialSection?: 'top' | 'builder' | 'quote';
+  selectedState?: string;
+  onChangeSelectedState?: (nextState: string) => void;
   cloudProducts?: CorporateBoxProduct[];
   cloudBuilderItems?: BoxBuilderItem[];
   onBackToFindMyBites: () => void;
@@ -60,12 +66,41 @@ function readStored<T>(key: string, fallback: T): T {
 export function BoxBitePortal({
   isOpen,
   initialSection = 'top',
+  selectedState,
+  onChangeSelectedState,
   cloudProducts = [],
   cloudBuilderItems = [],
   onBackToFindMyBites,
 }: BoxBitePortalProps) {
   const { brandName, tagline, colors, contact, shipping, samplePriceNotice } =
     BOX_AND_BITE_CONFIG;
+
+  const locationOptions = useMemo(() => getIndiaLocationSwitcherOptions(), []);
+  const [activeLocationLabel, setActiveLocationLabel] = useState<string>(
+    selectedState && selectedState !== 'All' ? selectedState : 'Hyderabad'
+  );
+  const lastInternalStateRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (lastInternalStateRef.current && selectedState === lastInternalStateRef.current) {
+      lastInternalStateRef.current = null;
+      return;
+    }
+    if (selectedState && selectedState !== 'All') {
+      setActiveLocationLabel(selectedState);
+    }
+  }, [selectedState]);
+
+  const handleSelectLocation = (nextValue: string) => {
+    setActiveLocationLabel(nextValue);
+    const matchedState =
+      locationOptions.states.find((s) => s.value === nextValue)?.stateName ||
+      locationOptions.cities.find((c) => c.value === nextValue)?.stateName;
+    if (matchedState && onChangeSelectedState) {
+      lastInternalStateRef.current = matchedState;
+      onChangeSelectedState(matchedState);
+    }
+  };
 
   const { activeProducts } = useMemo(
     () => mergeBoxBiteProducts(cloudProducts),
@@ -277,9 +312,10 @@ export function BoxBitePortal({
   };
 
   const handleRequestQuoteForProduct = (product: CorporateBoxProduct) => {
+    const localizedName = localizeProductNameForLocation(product.name, activeLocationLabel);
     setQuotePrefillGiftingType(product.categoryName);
     setQuotePrefillNotes(
-      `Enquiring about ${product.name} (${product.sku}). Please share bulk tier pricing, custom logo belly sleeve artwork templates, and dispatch schedule.`
+      `Enquiring about ${localizedName} (${product.sku}). Please share bulk tier pricing, custom logo belly sleeve artwork templates, and dispatch schedule for ${activeLocationLabel}.`
     );
     scrollToElement('boxbite-quote');
   };
@@ -389,8 +425,41 @@ export function BoxBitePortal({
             </button>
           </nav>
 
-          {/* Zone 3: Wishlist, Bag & Quote CTA */}
+          {/* Zone 3: Location Switcher, Wishlist, Bag & Quote CTA */}
           <div className="flex items-center gap-2 shrink-0">
+            <label
+              className="inline-flex h-9 items-center gap-1 rounded-lg border px-2.5 text-xs font-semibold transition-colors whitespace-nowrap shrink-0"
+              style={{
+                borderColor: colors.hairline,
+                backgroundColor: '#FFFFFF',
+                color: colors.chocolate,
+              }}
+              title="Switch state or city for localized corporate dispatch"
+            >
+              <MapPin className="size-3.5 shrink-0" style={{ color: colors.caramel }} aria-hidden="true" />
+              <select
+                aria-label="Select delivery state or city"
+                value={activeLocationLabel}
+                onChange={(e) => handleSelectLocation(e.target.value)}
+                className="max-w-[115px] cursor-pointer bg-transparent text-xs font-semibold focus:outline-none sm:max-w-[140px]"
+              >
+                <optgroup label="States">
+                  {locationOptions.states.map((st) => (
+                    <option key={`bb-st-${st.value}`} value={st.value}>
+                      {st.label}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Major Cities">
+                  {locationOptions.cities.map((ct) => (
+                    <option key={`bb-ct-${ct.value}`} value={ct.value}>
+                      {ct.label}
+                    </option>
+                  ))}
+                </optgroup>
+              </select>
+            </label>
+
             <button
               type="button"
               onClick={() => setDrawerState({ open: true, tab: 'wishlist' })}
@@ -771,7 +840,7 @@ export function BoxBitePortal({
                           className="mt-2 cursor-pointer text-2xl font-semibold leading-snug hover:underline"
                           style={{ fontFamily: 'var(--font-editorial)' }}
                         >
-                          {product.name}
+                          {localizeProductNameForLocation(product.name, activeLocationLabel)}
                         </h3>
                         <p className="mt-1.5 text-xs leading-relaxed opacity-80">
                           {product.subtitle}
@@ -1036,6 +1105,7 @@ export function BoxBitePortal({
       {/* Product Detail Page Modal */}
       <BoxBiteProductDetailModal
         product={activeProduct}
+        locationLabel={activeLocationLabel}
         isWishlisted={activeProduct ? wishlistIds.includes(activeProduct.id) : false}
         reviews={
           activeProduct ? reviews.filter((r) => r.productId === activeProduct.id) : []
