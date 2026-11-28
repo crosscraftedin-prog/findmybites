@@ -38,6 +38,15 @@ import {
 } from 'lucide-react';
 import { onAuthStateChanged, type User as FirebaseUser } from 'firebase/auth';
 import { ChristmasSpotlightSection } from './components/ChristmasSpotlightSection';
+import { MysteryBoxHomepageSection } from './components/mysterybox/MysteryBoxHomepageSection';
+import { MysteryBoxPortal } from './components/mysterybox/MysteryBoxPortal';
+import {
+  DEFAULT_MARKETING_CONFIG,
+  DEFAULT_MYSTERY_BOX_PACKAGES,
+  type MysteryBoxMarketingConfig,
+  type MysteryBoxPackage,
+} from './data/mysteryBoxes';
+import { fetchMysteryBoxCatalog } from './services/mysteryBoxService';
 import { CityCategorySeoBanner } from './components/CityCategorySeoBanner';
 import type { ClaimModalInitialTab } from './components/ClaimStoreModal';
 import { Ecosystem, Header } from './components/Header';
@@ -586,6 +595,16 @@ export default function App() {
   const [growthHubOpen, setGrowthHubOpen] = useState(false);
   const [boxAndBiteOpen, setBoxAndBiteOpen] = useState(false);
   const [boxAndBiteSection, setBoxAndBiteSection] = useState<'top' | 'builder' | 'quote'>('top');
+  const [mysteryBoxOpen, setMysteryBoxOpen] = useState(false);
+  const [mysteryBoxTab, setMysteryBoxTab] = useState<'shop' | 'orders'>('shop');
+  const [mysteryBoxPackageId, setMysteryBoxPackageId] = useState<string | null>(null);
+  const [mysteryBoxOrderId, setMysteryBoxOrderId] = useState<string | null>(null);
+  const [mysteryBoxPackages, setMysteryBoxPackages] = useState<MysteryBoxPackage[]>(
+    DEFAULT_MYSTERY_BOX_PACKAGES
+  );
+  const [mysteryBoxMarketing, setMysteryBoxMarketing] = useState<MysteryBoxMarketingConfig>(
+    DEFAULT_MARKETING_CONFIG
+  );
   const [notice, setNotice] = useState<string | null>(null);
 
   // Firebase Auth & Live Cloud Firestore State
@@ -620,6 +639,22 @@ export default function App() {
       setAuthReady(true);
     });
     return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    fetchMysteryBoxCatalog()
+      .then((data) => {
+        if (!active) return;
+        if (data.packages.length > 0) setMysteryBoxPackages(data.packages);
+        if (data.marketing) setMysteryBoxMarketing(data.marketing);
+      })
+      .catch(() => {
+        // Keep seeded defaults when offline
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -1015,6 +1050,28 @@ export default function App() {
     const syncRouteFromUrl = (fromPopState: boolean) => {
       const pathname = window.location.pathname;
       if (
+        pathname === '/mystery-boxes' ||
+        pathname.startsWith('/mystery-boxes/')
+      ) {
+        setActiveVendor(null);
+        setBioVendor(null);
+        setSeoDirectoryRoute(null);
+        setPricingKitOpen(false);
+        setGrowthHubOpen(false);
+        setBoxAndBiteOpen(false);
+        if (pathname.startsWith('/mystery-boxes/order/')) {
+          const ordId = decodeURIComponent(pathname.slice('/mystery-boxes/order/'.length)).replace(
+            /\/$/,
+            ''
+          );
+          setMysteryBoxTab('orders');
+          setMysteryBoxOrderId(ordId || null);
+        } else {
+          setMysteryBoxTab('shop');
+          setMysteryBoxOrderId(null);
+        }
+        setMysteryBoxOpen(true);
+      } else if (
         pathname === '/box-and-bite' ||
         pathname.startsWith('/box-and-bite/') ||
         pathname === '/corporate-gifting' ||
@@ -1025,6 +1082,7 @@ export default function App() {
         setSeoDirectoryRoute(null);
         setPricingKitOpen(false);
         setGrowthHubOpen(false);
+        setMysteryBoxOpen(false);
         setBoxAndBiteSection(pathname.includes('builder') ? 'builder' : pathname.includes('quote') ? 'quote' : 'top');
         setBoxAndBiteOpen(true);
       } else if (
@@ -1093,6 +1151,7 @@ export default function App() {
           setPricingKitOpen(false);
           setGrowthHubOpen(false);
           setBoxAndBiteOpen(false);
+          setMysteryBoxOpen(false);
           setSeoDirectoryRoute(null);
         }
       }
@@ -1171,6 +1230,32 @@ export default function App() {
     setBoxAndBiteOpen(false);
     const pathname = window.location.pathname;
     if (pathname.startsWith('/box-and-bite') || pathname.startsWith('/corporate-gifting')) {
+      try {
+        window.history.pushState({}, '', '/');
+      } catch {
+        // ignore sandbox history restrictions
+      }
+    }
+  };
+
+  const openMysteryBoxes = (tab: 'shop' | 'orders' = 'shop', packageId?: string) => {
+    setMysteryBoxTab(tab);
+    setMysteryBoxPackageId(packageId || null);
+    setMysteryBoxOrderId(null);
+    setMysteryBoxOpen(true);
+    try {
+      window.history.pushState({ mysteryBoxes: tab }, '', '/mystery-boxes');
+    } catch {
+      // ignore sandbox history restrictions
+    }
+  };
+
+  const closeMysteryBoxes = () => {
+    setMysteryBoxOpen(false);
+    setMysteryBoxPackageId(null);
+    setMysteryBoxOrderId(null);
+    const pathname = window.location.pathname;
+    if (pathname.startsWith('/mystery-boxes')) {
       try {
         window.history.pushState({}, '', '/');
       } catch {
@@ -1813,6 +1898,7 @@ export default function App() {
           setClaimModalOpen(true);
         }}
         onOpenBoxAndBite={() => openBoxAndBite('top')}
+        onOpenMysteryBoxes={() => openMysteryBoxes('shop')}
         onSignIn={() => {
           setClaimHintSlug(null);
           setClaimModalTab('login');
@@ -2170,7 +2256,15 @@ export default function App() {
           </div>
         </section>
 
-        {/* 1B. CHRISTMAS & NEW YEAR 2026 BAKERS & FESTIVE SPOTLIGHT (country-isolated!) */}
+        {/* 1B. FINDMYBITES MYSTERY BOXES — UNWRAP THE SURPRISE! */}
+        <MysteryBoxHomepageSection
+          packages={mysteryBoxPackages}
+          marketing={mysteryBoxMarketing}
+          onExploreMysteryBoxes={(pkgId) => openMysteryBoxes('shop', pkgId)}
+          onOpenMyMysteryBoxes={() => openMysteryBoxes('orders')}
+        />
+
+        {/* 1C. CHRISTMAS & NEW YEAR 2026 BAKERS & FESTIVE SPOTLIGHT (country-isolated!) */}
         <ChristmasSpotlightSection
           vendors={countryScopedAllVendors}
           currency={currency}
@@ -4032,6 +4126,23 @@ export default function App() {
             cloudProducts={cloudBoxBiteCatalog.products}
             cloudBuilderItems={cloudBoxBiteCatalog.builderItems}
             onBackToFindMyBites={closeBoxAndBite}
+          />
+        )}
+
+        {mysteryBoxOpen && (
+          <MysteryBoxPortal
+            isOpen={mysteryBoxOpen}
+            initialTab={mysteryBoxTab}
+            initialPackageId={mysteryBoxPackageId}
+            initialOrderId={mysteryBoxOrderId}
+            user={authUser}
+            onSignIn={async () => {
+              setClaimHintSlug(null);
+              setClaimModalTab('login');
+              setClaimModalOpen(true);
+            }}
+            onClose={closeMysteryBoxes}
+            onNotify={setNotice}
           />
         )}
       </Suspense>

@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import type { IncomingMessage, ServerResponse } from 'http';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { registerMysteryBoxRoutes } from './mysteryBoxApi.ts';
 
 const ADMIN_EMAIL = 'crosscraftedin@gmail.com';
 const MEDIA_BUCKET = 'marketplace-media';
@@ -3494,6 +3495,16 @@ export function createSupabaseApiRouter(): MicroRouter {
     } catch (err) {
       handleApiError(res, err, 'Failed to delete builder item.');
     }
+  });
+
+  registerMysteryBoxRoutes(router, {
+    getSupabase,
+    requireAuth,
+    requireAdmin,
+    isRootAdmin,
+    mediaBucket: MEDIA_BUCKET,
+    uploadDataUrlIfNeeded,
+    handleApiError,
   });
 
   return router;

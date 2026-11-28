@@ -1,6 +1,7 @@
 import type { User } from 'firebase/auth';
 import {
   Briefcase,
+  Gift,
   KeyRound,
   LogIn,
   Moon,
@@ -34,6 +35,7 @@ interface HeaderProps {
   onOpenAdminPanel?: () => void;
   onOpenClaimStore?: () => void;
   onOpenBoxAndBite?: () => void;
+  onOpenMysteryBoxes?: () => void;
   onSignIn: () => void;
   onNotice?: (message: string) => void;
 }
@@ -56,6 +58,7 @@ export function Header({
   onOpenAdminPanel,
   onOpenClaimStore,
   onOpenBoxAndBite,
+  onOpenMysteryBoxes,
   onSignIn,
   onNotice,
 }: HeaderProps) {
@@ -101,6 +104,17 @@ export function Header({
           >
             Categories
           </a>
+          {onOpenMysteryBoxes && (
+            <button
+              type="button"
+              onClick={onOpenMysteryBoxes}
+              className="inline-flex cursor-pointer items-center gap-1 rounded-md bg-[#FF6B35]/12 px-2 py-1.5 text-xs font-extrabold text-[#EA5822] transition-colors hover:bg-[#FF6B35]/20 dark:bg-[#FF6B35]/20 dark:text-[#FF956E] xl:px-2.5 2xl:px-3 2xl:text-sm whitespace-nowrap shrink-0"
+              title="Explore FindMyBites Mystery Boxes"
+            >
+              <Gift className="size-3.5" aria-hidden="true" />
+              Mystery Boxes
+            </button>
+          )}
           <a
             href="#christmas-special"
             className="inline-flex items-center gap-1 rounded-md bg-emerald-600/10 px-2 py-1.5 text-xs font-bold text-emerald-700 transition-colors hover:bg-emerald-600/20 dark:bg-emerald-500/15 dark:text-emerald-300 xl:px-2.5 2xl:px-3 2xl:text-sm whitespace-nowrap shrink-0"
@@ -284,6 +298,16 @@ export function Header({
         >
           Categories
         </a>
+        {onOpenMysteryBoxes && (
+          <button
+            type="button"
+            onClick={onOpenMysteryBoxes}
+            className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-full border border-[#FF6B35]/40 bg-[#FF6B35] px-3 py-1 font-extrabold text-white"
+          >
+            <Gift className="size-3" aria-hidden="true" />
+            Mystery Boxes
+          </button>
+        )}
         <a
           href="#christmas-special"
           className="inline-flex shrink-0 items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 font-bold text-emerald-700 dark:text-emerald-300"

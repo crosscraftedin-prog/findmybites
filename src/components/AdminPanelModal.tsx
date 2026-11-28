@@ -10,6 +10,7 @@ import {
   Copy,
   Edit3,
   ExternalLink,
+  Gift,
   Globe2,
   KeyRound,
   Loader2,
@@ -81,6 +82,7 @@ import {
 } from './AdminCommandTabs';
 import { AdminChristmasMenuTab } from './AdminChristmasMenuTab';
 import { AdminBoxBiteTab } from './AdminBoxBiteTab';
+import { AdminMysteryBoxTab } from './mysterybox/AdminMysteryBoxTab';
 import { CustomMenuDish, mergeChristmasDishes } from '../data/christmasMenu';
 import {
   BoxBuilderItem,
@@ -117,6 +119,7 @@ type AdminTab =
   | 'approvals'
   | 'christmas-menu'
   | 'box-and-bite'
+  | 'mystery-boxes'
   | 'create'
   | 'transfers'
   | 'seo'
@@ -805,6 +808,13 @@ export function AdminPanelModal({
                   icon: Briefcase,
                   badge: activeBoxBiteProductCount,
                   badgeTone: 'bg-[#38231E] text-[#FFF8EF]',
+                },
+                {
+                  id: 'mystery-boxes',
+                  label: 'Mystery Boxes',
+                  icon: Gift,
+                  badge: 0,
+                  badgeTone: 'bg-[#6B21A8] text-white',
                 },
                 { id: 'create', label: 'Create & Transfer', icon: Cake, badge: 0 },
                 {
@@ -2050,6 +2060,11 @@ export function AdminPanelModal({
               onPreviewStorefront={onPreviewBoxAndBite}
               onToast={onToast}
             />
+          )}
+
+          {/* TAB 2D: FINDMYBITES MYSTERY BOXES OPERATIONS */}
+          {activeTab === 'mystery-boxes' && (
+            <AdminMysteryBoxTab user={adminUser} onNotify={onToast} />
           )}
 
           {/* TAB 7: CAMPAIGNS & GLOBAL SITE CONTROLS */}

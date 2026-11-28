@@ -13,6 +13,7 @@ import {
   Edit3,
   ExternalLink,
   Eye,
+  Gift,
   Globe2,
   ImagePlus,
   Instagram,
@@ -103,6 +104,7 @@ import { PromoCardModal } from './PromoCardModal';
 import { QrPosterModal } from './QrPosterModal';
 import { StateCoveragePicker } from './StateCoveragePicker';
 import { VendorGoogleToolkit } from './VendorGoogleToolkit';
+import { VendorMysteryBoxTab } from './mysterybox/VendorMysteryBoxTab';
 
 interface VendorDashboardModalProps {
   isOpen: boolean;
@@ -226,7 +228,9 @@ export function VendorDashboardModal({
   onTrackShare,
   onNotify,
 }: VendorDashboardModalProps) {
-  const [tab, setTab] = useState<'storefronts' | 'growth' | 'board' | 'leads'>('storefronts');
+  const [tab, setTab] = useState<'storefronts' | 'growth' | 'board' | 'leads' | 'mystery-boxes'>(
+    'storefronts'
+  );
   const [addingProductForId, setAddingProductForId] = useState<string | null>(null);
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const [confirmDeleteProdKey, setConfirmDeleteProdKey] = useState<string | null>(null);
@@ -1523,6 +1527,18 @@ export function VendorDashboardModal({
                 >
                   <ShoppingBag className="size-3.5 text-brand" aria-hidden="true" />
                   Orders &amp; Leads ({vendorLeads.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTab('mystery-boxes')}
+                  className={`inline-flex cursor-pointer items-center gap-1 rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+                    tab === 'mystery-boxes'
+                      ? 'bg-[#6B21A8] text-white shadow-xs'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <Gift className="size-3.5" aria-hidden="true" />
+                  Mystery Boxes
                 </button>
               </div>
 
@@ -3989,6 +4005,8 @@ export function VendorDashboardModal({
                     onOpenVendorWebsite(vendor);
                   }}
                 />
+              ) : tab === 'mystery-boxes' ? (
+                <VendorMysteryBoxTab user={user} myVendors={myVendors} onNotify={onNotify} />
               ) : tab === 'board' ? (
                 openEventRequests.length === 0 ? (
                   <div className="rounded-2xl border border-dashed border-border p-10 text-center">
