@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import type { User } from 'firebase/auth';
 import QRCode from 'qrcode';
 import {
@@ -21,7 +21,6 @@ import {
 } from 'lucide-react';
 import {
   DEFAULT_MARKETING_CONFIG,
-  MYSTERY_BOX_DEFAULT_CITIES,
   MYSTERY_BOX_DELIVERY_SLOTS,
   type MysteryBoxMarketingConfig,
   type MysteryBoxOrder,
@@ -68,10 +67,6 @@ export function MysteryBoxCheckoutModal({
   onNotify,
 }: MysteryBoxCheckoutModalProps) {
   const cfg = marketing || DEFAULT_MARKETING_CONFIG;
-  const availableCities = useMemo(
-    () => (pkg?.deliveryCities?.length ? pkg.deliveryCities : MYSTERY_BOX_DEFAULT_CITIES),
-    [pkg?.deliveryCities]
-  );
 
   const [step, setStep] = useState<'details' | 'payment'>('details');
   const [isGift, setIsGift] = useState(initialIsGift);
@@ -79,7 +74,7 @@ export function MysteryBoxCheckoutModal({
   const [customerPhone, setCustomerPhone] = useState('');
   const [recipientName, setRecipientName] = useState('');
   const [recipientPhone, setRecipientPhone] = useState('');
-  const [deliveryCity, setDeliveryCity] = useState(availableCities[0] || 'Bengaluru');
+  const [deliveryCity, setDeliveryCity] = useState('Hyderabad');
   const [deliveryAddress, setDeliveryAddress] = useState('');
   const [deliveryDate, setDeliveryDate] = useState(getDefaultDeliveryDateIso());
   const [deliverySlot, setDeliverySlot] = useState(MYSTERY_BOX_DELIVERY_SLOTS[1]);
@@ -110,7 +105,7 @@ export function MysteryBoxCheckoutModal({
     setStep('details');
     setIsGift(initialIsGift);
     setCustomerName(user?.displayName || '');
-    setDeliveryCity(availableCities[0] || 'Bengaluru');
+    setDeliveryCity('Hyderabad');
     setDeliveryDate(getDefaultDeliveryDateIso());
     setAppliedCoupon(null);
     setCouponInput('');
@@ -120,7 +115,7 @@ export function MysteryBoxCheckoutModal({
     setPaymentRefInput('');
     setError(null);
     setIdempotencyKey(`mb-${pkg.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
-  }, [pkg?.id, initialIsGift, user?.displayName, availableCities]);
+  }, [pkg?.id, initialIsGift, user?.displayName]);
 
   useEffect(() => {
     if (!session?.upiUri) {
@@ -190,6 +185,11 @@ export function MysteryBoxCheckoutModal({
     }
     if (!policyAccepted) {
       setError('Please review and accept the allergen & cancellation policy before paying.');
+      return;
+    }
+    const minScheduledDate = getDefaultDeliveryDateIso();
+    if (!deliveryDate || deliveryDate < minScheduledDate) {
+      setError('Same-day delivery is not available. Please select tomorrow or a later date.');
       return;
     }
     setError(null);
@@ -421,29 +421,25 @@ export function MysteryBoxCheckoutModal({
                   <div>
                     <label className="mb-1 flex items-center gap-1 text-xs font-bold text-neutral-700 dark:text-neutral-200">
                       <MapPin className="size-3.5 text-[#FF6B35]" aria-hidden="true" />
-                      City *
+                      City (Hyderabad Only)
                     </label>
-                    <select
+                    <input
+                      type="text"
+                      readOnly
                       value={deliveryCity}
-                      onChange={(e) => setDeliveryCity(e.target.value)}
-                      className="w-full rounded-xl border border-[#E5D4C3] bg-white px-3 py-2.5 text-sm text-neutral-950 outline-none focus:border-[#6B21A8] dark:border-purple-800/50 dark:bg-[#22182F] dark:text-white"
-                    >
-                      {availableCities.map((city) => (
-                        <option key={city} value={city}>
-                          {city}
-                        </option>
-                      ))}
-                    </select>
+                      aria-label="Delivery city Hyderabad only"
+                      className="w-full cursor-not-allowed rounded-xl border border-[#E5D4C3] bg-neutral-100 px-3 py-2.5 text-sm font-semibold text-neutral-800 outline-none dark:border-purple-800/50 dark:bg-[#1A1224] dark:text-neutral-200"
+                    />
                   </div>
                   <div>
                     <label className="mb-1 flex items-center gap-1 text-xs font-bold text-neutral-700 dark:text-neutral-200">
                       <Calendar className="size-3.5 text-[#FF6B35]" aria-hidden="true" />
-                      Delivery Date *
+                      Scheduled Date *
                     </label>
                     <input
                       type="date"
                       required
-                      min={new Date().toISOString().slice(0, 10)}
+                      min={getDefaultDeliveryDateIso()}
                       value={deliveryDate}
                       onChange={(e) => setDeliveryDate(e.target.value)}
                       className="w-full rounded-xl border border-[#E5D4C3] bg-white px-3 py-2.5 text-sm text-neutral-950 outline-none focus:border-[#6B21A8] dark:border-purple-800/50 dark:bg-[#22182F] dark:text-white"
@@ -584,7 +580,7 @@ export function MysteryBoxCheckoutModal({
                   <span className="tabular-nums">{formatInr(grandTotalInr)}</span>
                 </div>
                 <p className="mt-1.5 text-[11px] text-[#6B21A8] dark:text-purple-300">
-                  Guaranteed minimum bakery retail value inside: {formatInr(pkg.guaranteedMinValueInr)}+
+                  Guaranteed minimum retail value inside: {formatInr(pkg.guaranteedMinValueInr)}+ · Scheduled Hyderabad delivery only (no same-day)
                 </p>
               </div>
 
@@ -635,7 +631,7 @@ export function MysteryBoxCheckoutModal({
                   Box Reserved · Ref {session?.order.orderRef}
                 </p>
                 <p className="mt-1 text-xs text-emerald-900/80 dark:text-emerald-200/90">
-                  Your mystery goodies are already locked on our server. Complete online payment of{' '}
+                  Your mystery surprise is already locked on our server. Complete online payment of{' '}
                   <strong>{formatInr(session?.order.totalPaidInr || grandTotalInr)}</strong> to immediately launch your interactive digital unboxing!
                 </p>
               </div>

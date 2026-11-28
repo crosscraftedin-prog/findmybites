@@ -130,7 +130,7 @@ export function MysteryBoxHomepageSection({
               <span aria-hidden="true">·</span>
               <span className="inline-flex items-center gap-1.5">
                 <Truck className={`size-3.5 ${theme.lockIconColor}`} aria-hidden="true" />
-                Doorstep delivery
+                Hyderabad scheduled delivery
               </span>
             </div>
           </div>
@@ -210,7 +210,7 @@ export function MysteryBoxHomepageSection({
                 </div>
                 <div className="flex flex-1 flex-col p-4">
                   <p className={`text-[11px] font-semibold uppercase tracking-wider ${theme.cardCategoryText}`}>
-                    Bakery &amp; Goodies
+                    Mystery
                   </p>
                   <h3 className="mt-1 text-base font-bold text-neutral-950 dark:text-[#FAF6EE]">
                     {pkg.name}

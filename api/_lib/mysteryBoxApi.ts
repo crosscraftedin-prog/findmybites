@@ -234,6 +234,8 @@ const LEGACY_PUBLIC_TAGLINES = new Set([
   'the ultimate bakery surprise experience.',
 ]);
 
+const PUBLIC_CATEGORY_LEAK_RE = /\b(bakery|goodies|same[- ]day)\b/i;
+
 function stripPublicPackageSecrets(pkg: MysteryBoxPackage): MysteryBoxPackage {
   const { curatedItems: _hidden, ...publicPkg } = pkg;
   const seededMatch = DEFAULT_MYSTERY_BOX_PACKAGES.find((d) => d.id === pkg.id);
@@ -243,10 +245,12 @@ function stripPublicPackageSecrets(pkg: MysteryBoxPackage): MysteryBoxPackage {
     isLegacyTagline || SPOILER_WORD_RE.test(rawTagline)
       ? seededMatch?.tagline || 'Unwrap the surprise!'
       : rawTagline;
-  const safeDescription = SPOILER_WORD_RE.test(publicPkg.description || '')
-    ? seededMatch?.description ||
-      'A beautifully sealed FindMyBites mystery box from our Bakery & Goodies collection. Exact items stay 100% secret until you complete checkout and unwrap online.'
-    : publicPkg.description;
+  const safeDescription =
+    SPOILER_WORD_RE.test(publicPkg.description || '') ||
+    PUBLIC_CATEGORY_LEAK_RE.test(publicPkg.description || '')
+      ? seededMatch?.description ||
+        'A beautifully sealed FindMyBites mystery box delivered in Hyderabad. Exact items stay 100% secret until you complete checkout and unwrap online.'
+      : publicPkg.description;
   const safeAllergenNotice = SPOILER_WORD_RE.test(publicPkg.allergenNotice || '')
     ? seededMatch?.allergenNotice ||
       'Prepared in artisan kitchens that handle wheat (gluten), dairy, soy, and tree nuts. Select 100% Eggless / Veg at checkout if required.'
@@ -255,6 +259,12 @@ function stripPublicPackageSecrets(pkg: MysteryBoxPackage): MysteryBoxPackage {
     ? seededMatch?.storageNote ||
       'Store in a cool, dry place or refrigerate chilled items upon delivery. Best enjoyed within 48 hours.'
     : publicPkg.storageNote;
+  const safeDeliveryTime =
+    /same[- ]day/i.test(publicPkg.estimatedDeliveryTime || '') ||
+    !(publicPkg.estimatedDeliveryTime || '').toLowerCase().includes('hyderabad')
+      ? seededMatch?.estimatedDeliveryTime ||
+        'Next-Day / Scheduled Delivery (Hyderabad · Min 24 hrs)'
+      : publicPkg.estimatedDeliveryTime;
   const safeTheme: MysteryBoxPackage['theme'] =
     publicPkg.theme === 'chocolate' || publicPkg.theme === 'brownie'
       ? 'everyday'
@@ -266,7 +276,9 @@ function stripPublicPackageSecrets(pkg: MysteryBoxPackage): MysteryBoxPackage {
     description: safeDescription,
     allergenNotice: safeAllergenNotice,
     storageNote: safeStorageNote,
-    categoryExpectations: ['Bakery & Goodies'],
+    deliveryCities: ['Hyderabad'],
+    estimatedDeliveryTime: safeDeliveryTime,
+    categoryExpectations: ['Mystery'],
   };
 }
 
@@ -706,7 +718,7 @@ export function registerMysteryBoxRoutes(baseRouter: MicroRouterLike, deps: Myst
         customerPhone
       );
       const deliveryAddress = clampStr(body.deliveryAddress, 6, 360);
-      const deliveryCity = clampStr(body.deliveryCity, 2, 80);
+      const deliveryCity = clampStr(body.deliveryCity, 2, 80, 'Hyderabad');
       const deliveryDate = clampStr(body.deliveryDate, 8, 20);
       const deliverySlot = clampStr(body.deliverySlot, 3, 60);
       const giftMessage = clampStr(body.giftMessage, 0, 320, '');
@@ -719,15 +731,28 @@ export function registerMysteryBoxRoutes(baseRouter: MicroRouterLike, deps: Myst
           ? body.paymentMethod
           : 'upi';
 
-      if (!packageId || !customerName || !customerPhone || !deliveryAddress || !deliveryCity) {
+      if (!packageId || !customerName || !customerPhone || !deliveryAddress) {
         return res
           .status(400)
-          .json({ error: 'Please complete your name, phone, city, and delivery address.' });
+          .json({ error: 'Please complete your name, phone, and Hyderabad delivery address.' });
+      }
+      if (deliveryCity.trim().toLowerCase() !== 'hyderabad') {
+        return res.status(400).json({
+          error: 'Mystery Box delivery is currently available exclusively in Hyderabad.',
+        });
       }
       if (!deliveryDate || !deliverySlot) {
         return res
           .status(400)
-          .json({ error: 'Please select a delivery date and time slot.' });
+          .json({ error: 'Please select a scheduled delivery date and time slot.' });
+      }
+      // Enforce NO same-day delivery (IST calendar date check)
+      const nowIst = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+      const todayIstIso = nowIst.toISOString().slice(0, 10);
+      if (deliveryDate <= todayIstIso) {
+        return res.status(400).json({
+          error: 'Same-day delivery is not available. Please choose tomorrow or a later date.',
+        });
       }
 
       const supabase = deps.getSupabase();
@@ -1492,33 +1517,28 @@ export function registerMysteryBoxRoutes(baseRouter: MicroRouterLike, deps: Myst
         id: packageId,
         slug: sanitizeSlug(p.slug || name),
         name,
-        tagline: clampStr(p.tagline, 2, 140, 'Unwrap a delicious bakery surprise.'),
+        tagline: clampStr(p.tagline, 2, 140, 'Unwrap a sealed mystery surprise!'),
         theme,
         priceInr,
         guaranteedMinValueInr,
         minGoodiesCount: Math.max(1, Math.min(30, Math.round(Number(p.minGoodiesCount) || 4))),
-        description: clampStr(p.description, 5, 900, 'Curated bakery mystery box.'),
-        categoryExpectations: Array.isArray(p.categoryExpectations)
-          ? p.categoryExpectations
-              .map((c) => (typeof c === 'string' ? c.trim().slice(0, 120) : ''))
-              .filter(Boolean)
-              .slice(0, 12)
-          : ['Assorted brownies', 'Cookies', 'Cupcakes & chocolates'],
+        description: clampStr(
+          p.description,
+          5,
+          900,
+          'A sealed FindMyBites mystery box delivered across Hyderabad.'
+        ),
+        categoryExpectations: ['Mystery'],
         image: imageValue,
         gallery: [imageValue],
         stockCount: Math.max(0, Math.min(5000, Math.round(Number(p.stockCount) || 0))),
         deliveryAvailable: p.deliveryAvailable !== false,
-        deliveryCities: Array.isArray(p.deliveryCities)
-          ? p.deliveryCities
-              .map((c) => (typeof c === 'string' ? c.trim().slice(0, 60) : ''))
-              .filter(Boolean)
-              .slice(0, 20)
-          : ['Bengaluru', 'Mumbai', 'Hyderabad', 'Chennai'],
+        deliveryCities: ['Hyderabad'],
         estimatedDeliveryTime: clampStr(
           p.estimatedDeliveryTime,
           2,
           80,
-          'Same-day / Next-day (4–6 hrs)'
+          'Next-Day / Scheduled Delivery (Hyderabad · Min 24 hrs)'
         ),
         deliveryFeeInr: Math.max(0, Math.min(2000, Math.round(Number(p.deliveryFeeInr) || 0))),
         packagingCostInr: Math.max(0, Math.min(5000, Math.round(Number(p.packagingCostInr) || 60))),

@@ -400,7 +400,7 @@ export function MysteryBoxPortal({
 
                     <div className="flex flex-1 flex-col p-5">
                       <p className={`text-[11px] font-bold uppercase tracking-wider ${theme.cardCategoryText}`}>
-                        Bakery &amp; Goodies · {pkg.minGoodiesCount}+ items inside
+                        Mystery · {pkg.minGoodiesCount}+ items inside
                       </p>
                       <h2 className="mt-1 text-xl font-extrabold text-neutral-950 dark:text-[#FAF6EE]">
                         {pkg.name}
@@ -494,7 +494,7 @@ export function MysteryBoxPortal({
                     : 'Ordering 15+ Sealed Mystery Boxes for your team, wedding, or festive event?'}
                 </h3>
                 <p className="mt-1.5 text-sm text-[#EFE7D6]">
-                  Custom ribbon colours, branded Christmas gift tags, GST invoicing, and multi-address doorstep delivery across India.
+                  Custom ribbon colours, branded Christmas gift tags, GST invoicing, and scheduled multi-address doorstep delivery across Hyderabad.
                 </p>
               </div>
               <a
@@ -644,7 +644,7 @@ export function MysteryBoxPortal({
           >
             <div className={`flex items-center justify-between px-5 py-3.5 ${theme.headerSurface}`}>
               <p className={`text-xs font-extrabold uppercase tracking-wider ${theme.cardCategoryText}`}>
-                Bakery &amp; Goodies · {detailPkg.minGoodiesCount}+ Surprise Items Guaranteed
+                Mystery · {detailPkg.minGoodiesCount}+ Surprise Items Guaranteed
               </p>
               <button
                 type="button"
@@ -673,7 +673,7 @@ export function MysteryBoxPortal({
                   </p>
                   <p className="flex items-center gap-1.5 text-neutral-600 dark:text-[#CFC5B1]">
                     <MapPin className={`size-3.5 ${theme.lockIconColor}`} aria-hidden="true" />
-                    Cities: {detailPkg.deliveryCities.join(', ')}
+                    Delivery Area: Hyderabad Only (No Same-Day)
                   </p>
                   <p className="text-neutral-500 dark:text-[#AFA692]">
                     Fulfillment: {FULFILLMENT_MODEL_LABELS[detailPkg.fulfillmentModel]}
@@ -684,8 +684,8 @@ export function MysteryBoxPortal({
               <div className="flex flex-col sm:col-span-7">
                 <p className={`text-xs font-bold uppercase tracking-wider ${theme.cardCategoryText}`}>
                   {theme.isChristmas
-                    ? 'Christmas Special Edition · Bakery & Goodies'
-                    : 'General Surprise Category: Bakery & Goodies'}
+                    ? 'Christmas Special Edition · Mystery'
+                    : 'FindMyBites · Mystery'}
                 </p>
                 <h2 className="mt-1 text-2xl font-extrabold text-neutral-950 dark:text-[#FAF6EE]">
                   {detailPkg.name}
